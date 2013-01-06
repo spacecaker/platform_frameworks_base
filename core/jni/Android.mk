@@ -86,6 +86,7 @@ LOCAL_SRC_FILES:= \
 	android_util_Process.cpp \
 	android_util_StringBlock.cpp \
 	android_util_XmlBlock.cpp \
+    android_util_PackageRedirectionMap.cpp \
 	android/graphics/AutoDecodeCancel.cpp \
 	android/graphics/Bitmap.cpp \
 	android/graphics/BitmapFactory.cpp \
@@ -157,6 +158,10 @@ LOCAL_SRC_FILES:= \
 	android_content_res_Configuration.cpp \
     android_animation_PropertyValuesHolder.cpp
 
+ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
+	LOCAL_SRC_FILES += org_codeaurora_Performance.cpp
+endif
+
 LOCAL_C_INCLUDES += \
 	$(JNI_H_INCLUDE) \
 	$(LOCAL_PATH)/android/graphics \
@@ -222,6 +227,13 @@ ifeq ($(USE_OPENGL_RENDERER),true)
 	LOCAL_SHARED_LIBRARIES += libhwui
 endif
 
+ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
+ifeq ($(USE_OPENGL_RENDERER),true)
+LOCAL_SHARED_LIBRARIES += libtilerenderer
+endif
+LOCAL_C_INCLUDES += hardware/qcom/display/libtilerenderer
+endif
+
 ifeq ($(BOARD_HAVE_BLUETOOTH),true)
 LOCAL_C_INCLUDES += \
 	external/dbus \
@@ -243,6 +255,11 @@ ifeq ($(WITH_MALLOC_LEAK_CHECK),true)
 endif
 
 LOCAL_MODULE:= libandroid_runtime
+
+ifneq ($(BOARD_MOBILEDATA_INTERFACE_NAME),)
+	LOCAL_CFLAGS += -DMOBILE_IFACE_NAME='$(BOARD_MOBILEDATA_INTERFACE_NAME)'
+endif
+
 
 include $(BUILD_SHARED_LIBRARY)
 
