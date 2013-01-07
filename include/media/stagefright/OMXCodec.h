@@ -56,6 +56,12 @@ struct OMXCodec : public MediaSource,
 
         // Secure decoding mode
         kUseSecureInputBuffers = 256,
+
+#ifdef QCOM_HARDWARE
+        kEnableThumbnailMode = 512,
+        kUseMinBufferCount = 32768,
+#endif
+
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
@@ -109,10 +115,18 @@ private:
         EXECUTING_TO_IDLE,
         IDLE_TO_LOADED,
         RECONFIGURING,
+#ifdef QCOM_HARDWARE
+        PAUSING,
+        FLUSHING,
+        PAUSED,
+#endif
         ERROR
     };
 
     enum {
+#ifdef QCOM_HARDWARE
+        kPortIndexBoth   = -1,
+#endif
         kPortIndexInput  = 0,
         kPortIndexOutput = 1
     };
@@ -140,6 +154,11 @@ private:
         kAvoidMemcopyInputRecordingFrames     = 2048,
         kRequiresLargerEncoderOutputBuffer    = 4096,
         kOutputBuffersAreUnreadable           = 8192,
+#ifdef QCOM_HARDWARE
+        kStoreMetaDataInInputVideoBuffers     = 16384,
+        kRequiresGlobalFlush                  = 0x20000000, // 2^29
+        kRequiresWMAProComponent              = 0x40000000, //2^30
+#endif
     };
 
     enum BufferStatus {
@@ -156,6 +175,8 @@ private:
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
+        OMX_U8 *mAllocatedBuffer;
+        OMX_U32 mAllocatedSize;
     };
 
     struct CodecSpecificData {
@@ -193,6 +214,9 @@ private:
     ReadOptions::SeekMode mSeekMode;
     int64_t mTargetTimeUs;
     bool mOutputPortSettingsChangedPending;
+#ifdef QCOM_HARDWARE
+    bool mThumbnailMode;
+#endif
 
     MediaBuffer *mLeftOverBuffer;
 
@@ -212,6 +236,14 @@ private:
     List<size_t> mFilledBuffers;
     Condition mBufferFilled;
 
+#ifdef QCOM_HARDWARE
+    bool mIsMetaDataStoredInVideoBuffers;
+    bool mOnlySubmitOneBufferAtOneTime;
+    bool mInterlaceFormatDetected;
+    bool mSPSParsed;
+    bool bInvalidState;
+#endif
+
     // Used to record the decoding time for an output picture from
     // a video encoder.
     List<int64_t> mDecodingTimeList;
@@ -229,7 +261,13 @@ private:
 
     void setAMRFormat(bool isWAMR, int32_t bitRate);
     status_t setAACFormat(int32_t numChannels, int32_t sampleRate, int32_t bitRate);
-    void setG711Format(int32_t numChannels);
+#ifdef QCOM_HARDWARE
+    void setEVRCFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
+#endif
+     void setG711Format(int32_t numChannels);
+#ifdef QCOM_HARDWARE
+    void setQCELPFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
+#endif
 
     status_t setVideoPortFormatType(
             OMX_U32 portIndex,
@@ -338,7 +376,20 @@ private:
 
     status_t parseAVCCodecSpecificData(
             const void *data, size_t size,
-            unsigned *profile, unsigned *level);
+            unsigned *profile, unsigned *level, const sp<MetaData> &meta);
+#ifdef QCOM_HARDWARE
+    void parseFlags( uint32_t flags );
+#endif
+ 
+     OMXCodec(const OMXCodec &);
+     OMXCodec &operator=(const OMXCodec &);
+#ifdef QCOM_HARDWARE
+    status_t setWMAFormat(const sp<MetaData> &inputFormat);
+    void setAC3Format(int32_t numChannels, int32_t sampleRate);
+
+    int32_t mNumBFrames;
+    bool mUseArbitraryMode;
+#endif
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);

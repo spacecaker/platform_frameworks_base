@@ -47,6 +47,9 @@ enum {
     kKeyFrameRate         = 'frmR',  // int32_t (video frame rate fps)
     kKeyBitRate           = 'brte',  // int32_t (bps)
     kKeyESDS              = 'esds',  // raw data
+#ifdef QCOM_HARDWARE
+    kKeyAacCodecSpecificData = 'nacc' , // for native aac files
+#endif
     kKeyAVCC              = 'avcc',  // raw data
     kKeyD263              = 'd263',  // raw data
     kKeyVorbisInfo        = 'vinf',  // raw data
@@ -114,6 +117,21 @@ enum {
 
     kKeyIsUnreadable      = 'unre',  // bool (int32_t)
 
+#ifdef QCOM_HARDWARE
+    kKeyRawCodecSpecificData = 'rcsd',  // raw data - added to support mmParser
+    kKeyDivXVersion       = 'DivX',  // int32_t
+    kKeyDivXDrm           = 'QDrm',  // void *
+    kKeyWMAEncodeOpt      = 'eopt',  // int32_t
+    kKeyWMABlockAlign     = 'blka',  // int32_t
+    kKeyWMAVersion        = 'wmav',  // int32_t
+    kKeyWMAAdvEncOpt1     = 'ade1',   // int16_t
+    kKeyWMAAdvEncOpt2     = 'ade2',  // int32_t
+    kKeyWMAFormatTag      = 'fmtt',  // int64_t
+    kKeyWMABitspersample  = 'bsps',  // int64_t
+    kKeyWMAVirPktSize     = 'vpks',  // int64_t
+    kKeyWMVProfile        = 'wmvp',   //int32_t
+#endif
+
     // An indication that a video buffer has been rendered.
     kKeyRendered          = 'rend',  // bool (int32_t)
 
@@ -123,13 +141,40 @@ enum {
     // To store the timed text format data
     kKeyTextFormatData    = 'text',  // raw data
 
+#ifdef QCOM_HARDWARE
+    kkeyAacFormatAdif     = 'adif', // bool (int32_t)
+    kkeyAacFormatLtp      = 'ltp',
+#endif
+ 
     kKeyRequiresSecureBuffers = 'secu',  // bool (int32_t)
+
+#ifdef QCOM_HARDWARE
+    // 3D Video Flag
+    kKey3D                = '3Dvf',  // bool (int32_t)
+    kKeyHFR               = 'hfr ',  // int32_t
+    //Extractor sets this
+    kKeyUseArbitraryMode  = 'ArbM'  //bool (int32_t)
+#endif
+
 };
 
 enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
     kTypeD263        = 'd263',
+#ifdef QCOM_HARDWARE
+enum {
+    kTypeDivXVer_3_11,
+    kTypeDivXVer_4,
+    kTypeDivXVer_5,
+    kTypeDivXVer_6,
+};
+enum {
+    kTypeWMA,
+    kTypeWMAPro,
+    kTypeWMALossLess,
+};
+#endif
 };
 
 class MetaData : public RefBase {
