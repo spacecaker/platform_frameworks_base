@@ -506,7 +506,11 @@ private:
     // glCopyTexSubImage to read from the texture.  This is a hack to work
     // around a GL driver limitation on the number of FBO attachments, which the
     // browser's tile cache exceeds.
+#ifdef DECIDE_TEXTURE_TARGET
+    GLenum mTexTarget;
+#else
     const GLenum mTexTarget;
+#endif
 
     // mFrameCounter is the free running counter, incremented for every buffer queued
     // with the surface Texture.
@@ -524,7 +528,6 @@ private:
  
      BufferInfo mNextBufferInfo;
 #endif
- 
 
 };
 
