@@ -102,12 +102,13 @@ FramebufferNativeWindow::FramebufferNativeWindow()
 	mNumFreeBuffers = mNumBuffers;
 	mBufferHead = 0;
 
-    LOGD("mNumBuffers = %d", mNumBuffers);
+	LOGD("mNumBuffers = %d", mNumBuffers);
 #else
         mNumBuffers = NUM_FRAME_BUFFERS;
         mNumFreeBuffers = NUM_FRAME_BUFFERS;
         mBufferHead = mNumBuffers-1;
 #endif
+
         for (i = 0; i < mNumBuffers; i++)
         {
                 buffers[i] = new NativeBuffer(
@@ -168,9 +169,10 @@ FramebufferNativeWindow::~FramebufferNativeWindow()
             grDev->free(grDev, buffers[0]->handle);
         if (buffers[1] != NULL)
             grDev->free(grDev, buffers[1]->handle);
+#endif
         gralloc_close(grDev);
     }
-#endif
+
     if (fbDev) {
         framebuffer_close(fbDev);
     }
@@ -223,10 +225,9 @@ int FramebufferNativeWindow::dequeueBuffer(ANativeWindow* window,
 #else
         ANativeWindowBuffer** buffer)
 #endif
-
 {
     FramebufferNativeWindow* self = getSelf(window);
-#ifdef QCOM_HARDWARE
+#ifndef QCOM_HARDWARE
     Mutex::Autolock _l(self->mutex);
 #endif
     framebuffer_device_t* fb = self->fbDev;
@@ -238,7 +239,7 @@ int FramebufferNativeWindow::dequeueBuffer(ANativeWindow* window,
     if (self->mBufferHead >= self->mNumBuffers)
         self->mBufferHead = 0;
 #endif
-    
+
     GraphicLog& logger(GraphicLog::getInstance());
     logger.log(GraphicLog::SF_FB_DEQUEUE_BEFORE, index);
 
@@ -254,13 +255,11 @@ int FramebufferNativeWindow::dequeueBuffer(ANativeWindow* window,
 #endif
         self->mCondition.wait(self->mutex);
     }
-
 #ifdef QCOM_HARDWARE
     self->mBufferHead++;
     if (self->mBufferHead >= self->mNumBuffers)
         self->mBufferHead = 0;
 #endif
-
     // get this buffer
     self->mNumFreeBuffers--;
     self->mCurrentBufferIndex = index;
@@ -303,7 +302,6 @@ int FramebufferNativeWindow::lockBuffer(ANativeWindow* window,
         self->mCondition.wait(self->mutex);
     }
 #endif
-
     logger.log(GraphicLog::SF_FB_LOCK_AFTER, index);
 
     return NO_ERROR;
