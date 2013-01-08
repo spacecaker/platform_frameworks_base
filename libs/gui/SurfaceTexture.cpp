@@ -40,7 +40,6 @@
 #include <qcom_ui.h>
 #endif
 
-
 // This compile option causes SurfaceTexture to return the buffer that is currently
 // attached to the GL texture from dequeueBuffer when no other buffers are
 // available.  It requires the drivers (Gralloc, GL, OMX IL, and Camera) to do
@@ -484,8 +483,8 @@ status_t SurfaceTexture::dequeueBuffer(int *outBuf, uint32_t w, uint32_t h,
 
         const sp<GraphicBuffer>& buffer(mSlots[buf].mGraphicBuffer);
 #ifdef QCOM_HARDWARE
-    qBufGeometry currentGeometry;
-    if (buffer != NULL)
+	qBufGeometry currentGeometry;
+	if (buffer != NULL)
 	   currentGeometry.set(buffer->width, buffer->height, buffer->format);
  	else
 	   currentGeometry.set(0, 0, 0);
@@ -512,7 +511,6 @@ status_t SurfaceTexture::dequeueBuffer(int *outBuf, uint32_t w, uint32_t h,
                 mGraphicBufferAlloc->freeGraphicBufferAtIndex(buf);
             }
 #endif
-
             usage |= GraphicBuffer::USAGE_HW_TEXTURE;
             status_t error;
             sp<GraphicBuffer> graphicBuffer(
@@ -526,6 +524,7 @@ status_t SurfaceTexture::dequeueBuffer(int *outBuf, uint32_t w, uint32_t h,
             if (updateFormat) {
                 mPixelFormat = format;
             }
+
             mSlots[buf].mGraphicBuffer = graphicBuffer;
             mSlots[buf].mRequestBufferCalled = false;
             mSlots[buf].mFence = EGL_NO_SYNC_KHR;
@@ -659,7 +658,7 @@ status_t SurfaceTexture::queueBuffer(int buf, int64_t timestamp,
         mSlots[buf].mTimestamp = timestamp;
         mFrameCounter++;
         mSlots[buf].mFrameNumber = mFrameCounter;
-        
+
 #ifdef QCOM_HARDWARE
         // Update the buffer Geometry if required
         qBufGeometry updatedGeometry;
@@ -1117,6 +1116,9 @@ void SurfaceTexture::freeAllBuffersLocked() {
     for (int i = 0; i < NUM_BUFFER_SLOTS; i++) {
         freeBufferLocked(i);
     }
+#ifdef QCOM_HARDWARE
+    mGraphicBufferAlloc->freeAllGraphicBuffersExcept(-1);
+#endif
 }
 
 void SurfaceTexture::freeAllBuffersExceptHeadLocked() {
