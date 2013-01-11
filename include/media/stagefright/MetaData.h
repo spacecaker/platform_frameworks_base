@@ -162,6 +162,7 @@ enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
     kTypeD263        = 'd263',
+];
 #ifdef QCOM_HARDWARE
 enum {
     kTypeDivXVer_3_11,
@@ -175,7 +176,6 @@ enum {
     kTypeWMALossLess,
 };
 #endif
-};
 
 class MetaData : public RefBase {
 public:
