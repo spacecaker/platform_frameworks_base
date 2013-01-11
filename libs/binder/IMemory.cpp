@@ -247,7 +247,7 @@ BpMemoryHeap::BpMemoryHeap(const sp<IBinder>& impl)
 #ifdef QCOM_HARDWARE
     mIonFd = open("/dev/ion", O_RDONLY);
 #endif
-{
+
 }
 
 BpMemoryHeap::~BpMemoryHeap() {
