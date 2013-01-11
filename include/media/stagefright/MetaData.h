@@ -162,7 +162,7 @@ enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
     kTypeD263        = 'd263',
-];
+};
 #ifdef QCOM_HARDWARE
 enum {
     kTypeDivXVer_3_11,

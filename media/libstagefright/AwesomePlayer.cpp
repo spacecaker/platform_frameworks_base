@@ -66,7 +66,7 @@
 // Disable rendering directly to NativeWindow
 #define USE_SURFACE_ALLOC 0
 #else
- #define USE_SURFACE_ALLOC 1
+#define USE_SURFACE_ALLOC 1
 #endif
 #define FRAME_DROP_FREQ 0
 

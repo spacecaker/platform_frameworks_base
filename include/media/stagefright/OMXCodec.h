@@ -390,9 +390,6 @@ private:
     int32_t mNumBFrames;
     bool mUseArbitraryMode;
 #endif
-
-    OMXCodec(const OMXCodec &);
-    OMXCodec &operator=(const OMXCodec &);
 };
 
 struct CodecCapabilities {
