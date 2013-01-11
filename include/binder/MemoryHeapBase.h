@@ -61,7 +61,10 @@ public:
     virtual void*       getBase() const;
     virtual size_t      getSize() const;
     virtual uint32_t    getFlags() const;
-    virtual uint32_t      getOffset() const;
+#ifndef BINDER_COMPAT
+    virtual uint32_t    getOffset() const;
+#endif
+
 
     const char*         getDevice() const;
 
