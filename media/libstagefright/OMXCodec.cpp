@@ -1265,7 +1265,6 @@ status_t OMXCodec::setVideoPortFormatType(
 #define ALIGN_TO_8KB(x)   ((((x) + (1 << 13) - 1) >> 13) << 13)
 #define ALIGN_TO_32B(x)   ((((x) + (1 <<  5) - 1) >>  5) <<  5)
 #define ALIGN_TO_128B(x)  ((((x) + (1 <<  7) - 1) >>  7) <<  7)
-#define ALIGN(x, a)       (((x) + (a) - 1) & ~((a) - 1))
 #endif
 static size_t getFrameSize(
         OMX_COLOR_FORMATTYPE colorFormat, int32_t width, int32_t height) {
@@ -1294,7 +1293,7 @@ static size_t getFrameSize(
 
 #ifdef QCOM_LEGACY_OMX
     case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
-        return ALIGN(width, 16) * ALIGN(height, 16) * 3 / 2;
+        return (((width + 15) & -16) * ((height + 15) & -16) * 3) / 2;
 #endif
 
 #ifdef SAMSUNG_CODEC_SUPPORT
