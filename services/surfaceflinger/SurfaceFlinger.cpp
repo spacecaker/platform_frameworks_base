@@ -72,9 +72,9 @@
 
 #define DISPLAY_COUNT       1
 
-#ifdef USE_LGE_HDMI
-extern "C" void NvDispMgrAutoOrientation(int rotation);
-#endif
+//#ifdef USE_LGE_HDMI
+//extern "C" void NvDispMgrAutoOrientation(int rotation);
+//#endif
 
 namespace android {
 // ---------------------------------------------------------------------------
@@ -2914,9 +2914,9 @@ status_t GraphicPlane::setOrientation(int orientation)
     mWidth = int(w);
     mHeight = int(h);
 
-#ifdef USE_LGE_HDMI
-    NvDispMgrAutoOrientation(orientation);
-#endif
+// #ifdef USE_LGE_HDMI
+//    NvDispMgrAutoOrientation(orientation);
+//#endif
     Transform orientationTransform;
     GraphicPlane::orientationToTransfrom(orientation, w, h,
             &orientationTransform);
