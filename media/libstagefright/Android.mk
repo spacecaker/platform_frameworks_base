@@ -154,7 +154,6 @@ ifeq ($(BOARD_USES_PROPRIETARY_OMX),SAMSUNG)
 LOCAL_CFLAGS     += -DSAMSUNG_OMX
 endif
 
-
 ################################################################################
 
 # The following was shamelessly copied from external/webkit/Android.mk and

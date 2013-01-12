@@ -565,8 +565,8 @@ void AwesomePlayer::reset_l() {
     mAudioSource.clear();
 
     mTimeSource = NULL;
-
     delete mAudioPlayer;
+
     mAudioPlayer = NULL;
 
     if (mTextPlayer != NULL) {
@@ -605,8 +605,6 @@ void AwesomePlayer::reset_l() {
         mStats.mBitrate = -1;
         mStats.mAudioTrackIndex = -1;
         mStats.mVideoTrackIndex = -1;
-        //mStats.mNumVideoFramesDecoded = 0;
-        //mStats.mNumVideoFramesDropped = 0;
         mStats.mVideoWidth = -1;
         mStats.mVideoHeight = -1;
         mStats.mFlags = 0;
@@ -1224,6 +1222,11 @@ status_t AwesomePlayer::pause_l(bool at_eos) {
     if (mDecryptHandle != NULL) {
         mDrmManagerClient->setPlaybackStatus(mDecryptHandle,
                 Playback::PAUSE, 0);
+    }
+
+    if(mStatistics && !(mFlags & AT_EOS)){
+        Mutex::Autolock autoLock(mStatsLock);
+        logPause();
     }
 
     uint32_t params = IMediaPlayerService::kBatteryDataTrackDecoder;
@@ -1940,7 +1943,7 @@ void AwesomePlayer::onVideoEvent() {
 
         if (latenessUs < -10000) {
             // We're more than 10ms early.
-logOnTime(timeUs,nowUs,latenessUs);
+            logOnTime(timeUs,nowUs,latenessUs);
             {
                 Mutex::Autolock autoLock(mStatsLock);
                 mStats.mConsecutiveFramesDropped = 0;

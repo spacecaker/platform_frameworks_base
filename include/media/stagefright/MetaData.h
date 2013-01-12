@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (C) 2010-2011 Code Aurora Forum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +117,6 @@ enum {
     kKeyValidSamples      = 'valD',  // int32_t
 
     kKeyIsUnreadable      = 'unre',  // bool (int32_t)
-
 #ifdef QCOM_HARDWARE
     kKeyRawCodecSpecificData = 'rcsd',  // raw data - added to support mmParser
     kKeyDivXVersion       = 'DivX',  // int32_t
@@ -140,12 +140,11 @@ enum {
 
     // To store the timed text format data
     kKeyTextFormatData    = 'text',  // raw data
-
 #ifdef QCOM_HARDWARE
     kkeyAacFormatAdif     = 'adif', // bool (int32_t)
     kkeyAacFormatLtp      = 'ltp',
 #endif
- 
+
     kKeyRequiresSecureBuffers = 'secu',  // bool (int32_t)
 
 #ifdef QCOM_HARDWARE

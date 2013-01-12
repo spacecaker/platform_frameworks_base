@@ -126,7 +126,7 @@ public:
     // TODO: Clarify the minute differences bet sycn /async
     // modes (S.Encoder vis-a-vis SurfaceTexture)
     virtual status_t setSynchronousMode(bool enabled);
-    
+
 #ifdef QCOM_HARDWARE
     // performQcomOperation performs Qcom specific operations. The actual
     // operation to be performed depends on the operation specified.

@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*--------------------------------------------------------------------------
+Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+--------------------------------------------------------------------------*/
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "ACodec"
@@ -207,7 +210,7 @@ private:
             void *dataPtr);
 
     void getMoreInputDataIfPossible();
-    
+
 #ifdef QCOM_HARDWARE
     void HandleExtraData(IOMX::buffer_id omxBuffer);
 #endif
@@ -391,7 +394,7 @@ ACodec::ACodec()
       mSentFormat(false),
       mSmoothStreaming(false) {
 #else
-       mSentFormat(false) {
+      mSentFormat(false) {
 #endif
     mUninitializedState = new UninitializedState(this);
     mLoadedToIdleState = new LoadedToIdleState(this);
@@ -2498,13 +2501,11 @@ bool ACodec::ExecutingState::onOMXEvent(
                             OMX_CommandPortDisable, kPortIndexOutput),
 #endif
                      (status_t)OK);
- 
+
 #ifdef QCOM_HARDWARE
                 mCodec->changeState(mCodec->mFlushingOutputState);
 #else
-
                 mCodec->freeOutputBuffersNotOwnedByComponent();
-
                 mCodec->changeState(mCodec->mOutputPortSettingsChangedState);
 #endif
             } else if (data2 == OMX_IndexConfigCommonOutputCrop) {

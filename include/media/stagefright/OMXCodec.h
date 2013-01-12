@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- *
+ * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,6 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*--------------------------------------------------------------------------
+Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+--------------------------------------------------------------------------*/
 
 #ifndef OMX_CODEC_H_
 
@@ -61,7 +64,6 @@ struct OMXCodec : public MediaSource,
         kEnableThumbnailMode = 512,
         kUseMinBufferCount = 32768,
 #endif
-
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
@@ -264,7 +266,7 @@ private:
 #ifdef QCOM_HARDWARE
     void setEVRCFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
 #endif
-     void setG711Format(int32_t numChannels);
+    void setG711Format(int32_t numChannels);
 #ifdef QCOM_HARDWARE
     void setQCELPFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
 #endif
@@ -380,9 +382,9 @@ private:
 #ifdef QCOM_HARDWARE
     void parseFlags( uint32_t flags );
 #endif
- 
-     OMXCodec(const OMXCodec &);
-     OMXCodec &operator=(const OMXCodec &);
+
+    OMXCodec(const OMXCodec &);
+    OMXCodec &operator=(const OMXCodec &);
 #ifdef QCOM_HARDWARE
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);

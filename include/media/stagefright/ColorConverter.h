@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,6 +82,7 @@ private:
 
     ColorConverter(const ColorConverter &);
     ColorConverter &operator=(const ColorConverter &);
+};
 
 #ifdef QCOM_HARDWARE
 //------------------------------------------
@@ -126,8 +128,6 @@ typedef int (* ConvertFn)(ColorConvertParams src,
 int convert(ColorConvertParams src, ColorConvertParams dst,
             uint8_t *adjustedClip);
 #endif
-
-};
 
 }  // namespace android
 
