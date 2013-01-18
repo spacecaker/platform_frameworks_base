@@ -274,6 +274,10 @@ BpMemoryHeap::~BpMemoryHeap() {
             free_heap(binder);
         }
     }
+#ifdef QCOM_HARDWARE
+    if (mIonFd > 0)
+        close(mIonFd);
+#endif
 }
 
 void BpMemoryHeap::assertMapped() const
