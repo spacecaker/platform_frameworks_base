@@ -56,6 +56,7 @@ public:
                                 int output,
                                 int *sessionId,
                                 status_t *status) = 0;
+
 #ifdef WITH_QCOM_LPA
     virtual     void        createSession(
                                 pid_t pid,
@@ -104,7 +105,6 @@ public:
 #ifdef WITH_QCOM_LPA
     virtual     status_t    setSessionVolume(int stream, float value, float right) = 0;
 #endif
-
     /* set/get stream type state. This will probably be used by
      * the preference panel, mostly.
      */
@@ -164,10 +164,9 @@ public:
                                     uint32_t *pInputClientId = NULL) = 0;
     virtual status_t closeInput(int input, uint32_t* inputClientId = NULL) = 0;
 #else
-                                     uint32_t acoustics) = 0;
-     virtual status_t closeInput(int input) = 0;
+                                    uint32_t acoustics) = 0;
+    virtual status_t closeInput(int input) = 0;
 #endif
-
     virtual status_t setStreamOutput(uint32_t stream, int output) = 0;
 
     virtual status_t setVoiceVolume(float volume) = 0;

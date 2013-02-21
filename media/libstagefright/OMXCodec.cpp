@@ -1265,6 +1265,7 @@ status_t OMXCodec::setVideoPortFormatType(
 #define ALIGN_TO_8KB(x)   ((((x) + (1 << 13) - 1) >> 13) << 13)
 #define ALIGN_TO_32B(x)   ((((x) + (1 <<  5) - 1) >>  5) <<  5)
 #define ALIGN_TO_128B(x)  ((((x) + (1 <<  7) - 1) >>  7) <<  7)
+#define ALIGN(x, a)       (((x) + (a) - 1) & ~((a) - 1))
 #endif
 static size_t getFrameSize(
         OMX_COLOR_FORMATTYPE colorFormat, int32_t width, int32_t height) {

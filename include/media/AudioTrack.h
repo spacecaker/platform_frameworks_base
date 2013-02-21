@@ -516,7 +516,7 @@ private:
     uint32_t                mFlags;
 #ifdef WITH_QCOM_LPA
     audio_io_handle_t       mAudioSession;
-#endif    
+#endif
     int                     mSessionId;
     int                     mAuxEffectId;
     Mutex                   mLock;
