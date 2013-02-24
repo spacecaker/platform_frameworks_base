@@ -767,10 +767,4 @@
          legacy USB manager should be started. -->
     <string name="config_legacyUmsLunFile">/sys/devices/platform/usb_mass_storage/lun0/file</string>
 
-    <!-- Boolean indicating whether Softap rely only on one interface -->
-    <bool name="config_wifi_ap_use_single_interface">true</bool>
-
-    <!-- Boolean indicating whether Softap require reloading AP firware -->
-    <bool name="config_wifi_ap_firmware_reload">false</bool>
-
 </resources>
