@@ -773,4 +773,7 @@
     <!-- Boolean indicating whether Softap require reloading AP firware -->
     <bool name="config_wifi_ap_firmware_reload">false</bool>
 
+    <!-- Boolean to enable stk functionality on Samsung phones -->
+    <bool name="config_samsung_stk">true</bool>
+
 </resources>
