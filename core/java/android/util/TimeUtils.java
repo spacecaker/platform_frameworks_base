@@ -19,7 +19,7 @@ package android.util;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
 
-import libcore.util.ZoneInfoDB;
+import org.apache.harmony.luni.internal.util.ZoneInfoDB;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -34,7 +34,6 @@ import com.android.internal.util.XmlUtils;
  * A class containing utility methods related to time zones.
  */
 public class TimeUtils {
-    /** @hide */ public TimeUtils() {}
     private static final String TAG = "TimeUtils";
 
     /**
@@ -113,18 +112,64 @@ public class TimeUtils {
     }
 
     /**
+     * Returns the ID of the specified country's primary time zone.
+     * Returns null if no suitable zone could be found.
+     * @hide
+     */
+    public static String getPrimaryTimeZoneID(String country) {
+        if (country == null) {
+            return null;
+        }
+
+        String id = null;
+
+        Resources r = Resources.getSystem();
+        XmlResourceParser parser = r.getXml(com.android.internal.R.xml.time_zones_by_country);
+
+        try {
+            XmlUtils.beginDocument(parser, "timezones");
+
+            while (true) {
+                XmlUtils.nextElement(parser);
+
+                String element = parser.getName();
+                if (element == null || !(element.equals("timezone"))) {
+                    break;
+                }
+
+                String code = parser.getAttributeValue(null, "code");
+
+                if (country.equals(code)) {
+                    if (parser.next() == XmlPullParser.TEXT) {
+                        id = parser.getText();
+                        break;
+                    }
+                }
+            }
+        } catch (XmlPullParserException e) {
+            Log.e(TAG, "Got exception while getting preferred time zone.", e);
+        } catch (IOException e) {
+            Log.e(TAG, "Got exception while getting preferred time zone.", e);
+        } finally {
+            parser.close();
+        }
+
+        return id;
+    }
+
+    /**
      * Returns a String indicating the version of the time zone database currently
      * in use.  The format of the string is dependent on the underlying time zone
      * database implementation, but will typically contain the year in which the database
      * was updated plus a letter from a to z indicating changes made within that year.
-     *
+     * 
      * <p>Time zone database updates should be expected to occur periodically due to
      * political and legal changes that cannot be anticipated in advance.  Therefore,
      * when computing the UTC time for a future event, applications should be aware that
      * the results may differ following a time zone database update.  This method allows
      * applications to detect that a database change has occurred, and to recalculate any
      * cached times accordingly.
-     *
+     * 
      * <p>The time zone database may be assumed to change only when the device runtime
      * is restarted.  Therefore, it is not necessary to re-query the database version
      * during the lifetime of an activity.
@@ -135,14 +180,14 @@ public class TimeUtils {
 
     /** @hide Field length that can hold 999 days of time */
     public static final int HUNDRED_DAY_FIELD_LEN = 19;
-
+    
     private static final int SECONDS_PER_MINUTE = 60;
     private static final int SECONDS_PER_HOUR = 60 * 60;
     private static final int SECONDS_PER_DAY = 24 * 60 * 60;
 
     private static final Object sFormatSync = new Object();
     private static char[] sFormatStr = new char[HUNDRED_DAY_FIELD_LEN+5];
-
+    
     static private int accumField(int amt, int suffix, boolean always, int zeropad) {
         if (amt > 99 || (always && zeropad >= 3)) {
             return 3+suffix;
@@ -155,7 +200,7 @@ public class TimeUtils {
         }
         return 0;
     }
-
+    
     static private int printField(char[] formatStr, int amt, char suffix, int pos,
             boolean always, int zeropad) {
         if (always || amt > 0) {
@@ -179,14 +224,14 @@ public class TimeUtils {
         }
         return pos;
     }
-
+    
     private static int formatDurationLocked(long duration, int fieldLen) {
         if (sFormatStr.length < fieldLen) {
             sFormatStr = new char[fieldLen];
         }
-
+        
         char[] formatStr = sFormatStr;
-
+        
         if (duration == 0) {
             int pos = 0;
             fieldLen -= 1;
@@ -196,7 +241,7 @@ public class TimeUtils {
             formatStr[pos] = '0';
             return pos+1;
         }
-
+        
         char prefix;
         if (duration > 0) {
             prefix = '+';
@@ -223,7 +268,7 @@ public class TimeUtils {
         }
 
         int pos = 0;
-
+        
         if (fieldLen != 0) {
             int myLen = accumField(days, 1, false, 0);
             myLen += accumField(hours, 1, myLen > 0, 2);
@@ -236,10 +281,10 @@ public class TimeUtils {
                 myLen++;
             }
         }
-
+        
         formatStr[pos] = prefix;
         pos++;
-
+        
         int start = pos;
         boolean zeropad = fieldLen != 0;
         pos = printField(formatStr, days, 'd', pos, false, 0);
@@ -250,7 +295,7 @@ public class TimeUtils {
         formatStr[pos] = 's';
         return pos + 1;
     }
-
+    
     /** @hide Just for debugging; not internationalized. */
     public static void formatDuration(long duration, StringBuilder builder) {
         synchronized (sFormatSync) {
@@ -271,7 +316,7 @@ public class TimeUtils {
     public static void formatDuration(long duration, PrintWriter pw) {
         formatDuration(duration, pw, 0);
     }
-
+    
     /** @hide Just for debugging; not internationalized. */
     public static void formatDuration(long time, long now, PrintWriter pw) {
         if (time == 0) {

@@ -30,8 +30,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.WindowManagerImpl;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityManager;
 
 /**
  * A toast is a view containing a quick little message for the user.  The toast class
@@ -48,13 +46,6 @@ import android.view.accessibility.AccessibilityManager;
  * <p>
  * The easiest way to use this class is to call one of the static methods that constructs
  * everything you need and returns a new Toast object.
- *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For information about creating Toast notifications, read the
- * <a href="{@docRoot}guide/topics/ui/notifiers/toasts.html">Toast Notifications</a> developer
- * guide.</p>
- * </div>
  */ 
 public class Toast {
     static final String TAG = "Toast";
@@ -74,9 +65,15 @@ public class Toast {
      */
     public static final int LENGTH_LONG = 1;
 
+    final Handler mHandler = new Handler();    
     final Context mContext;
     final TN mTN;
     int mDuration;
+    int mGravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
+    int mX, mY;
+    float mHorizontalMargin;
+    float mVerticalMargin;
+    View mView;
     View mNextView;
 
     /**
@@ -89,7 +86,7 @@ public class Toast {
     public Toast(Context context) {
         mContext = context;
         mTN = new TN();
-        mTN.mY = context.getResources().getDimensionPixelSize(
+        mY = context.getResources().getDimensionPixelSize(
                 com.android.internal.R.dimen.toast_y_offset);
     }
     
@@ -102,9 +99,10 @@ public class Toast {
         }
 
         INotificationManager service = getService();
+
         String pkg = mContext.getPackageName();
+
         TN tn = mTN;
-        tn.mNextView = mNextView;
 
         try {
             service.enqueueToast(pkg, tn, mDuration);
@@ -167,22 +165,22 @@ public class Toast {
      *        notification
      */
     public void setMargin(float horizontalMargin, float verticalMargin) {
-        mTN.mHorizontalMargin = horizontalMargin;
-        mTN.mVerticalMargin = verticalMargin;
+        mHorizontalMargin = horizontalMargin;
+        mVerticalMargin = verticalMargin;
     }
 
     /**
      * Return the horizontal margin.
      */
     public float getHorizontalMargin() {
-        return mTN.mHorizontalMargin;
+        return mHorizontalMargin;
     }
 
     /**
      * Return the vertical margin.
      */
     public float getVerticalMargin() {
-        return mTN.mVerticalMargin;
+        return mVerticalMargin;
     }
 
     /**
@@ -191,9 +189,9 @@ public class Toast {
      * @see #getGravity
      */
     public void setGravity(int gravity, int xOffset, int yOffset) {
-        mTN.mGravity = gravity;
-        mTN.mX = xOffset;
-        mTN.mY = yOffset;
+        mGravity = gravity;
+        mX = xOffset;
+        mY = yOffset;
     }
 
      /**
@@ -202,21 +200,21 @@ public class Toast {
      * @see #getGravity
      */
     public int getGravity() {
-        return mTN.mGravity;
+        return mGravity;
     }
 
     /**
      * Return the X offset in pixels to apply to the gravity's location.
      */
     public int getXOffset() {
-        return mTN.mX;
+        return mX;
     }
     
     /**
      * Return the Y offset in pixels to apply to the gravity's location.
      */
     public int getYOffset() {
-        return mTN.mY;
+        return mY;
     }
     
     /**
@@ -298,7 +296,7 @@ public class Toast {
         return sService;
     }
 
-    private static class TN extends ITransientNotification.Stub {
+    private class TN extends ITransientNotification.Stub {
         final Runnable mShow = new Runnable() {
             public void run() {
                 handleShow();
@@ -308,22 +306,10 @@ public class Toast {
         final Runnable mHide = new Runnable() {
             public void run() {
                 handleHide();
-                // Don't do this in handleHide() because it is also invoked by handleShow()
-                mNextView = null;
             }
         };
 
         private final WindowManager.LayoutParams mParams = new WindowManager.LayoutParams();
-        final Handler mHandler = new Handler();    
-
-        int mGravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
-        int mX, mY;
-        float mHorizontalMargin;
-        float mVerticalMargin;
-
-       
-        View mView;
-        View mNextView;
         
         WindowManagerImpl mWM;
 
@@ -379,30 +365,14 @@ public class Toast {
                 mParams.verticalMargin = mVerticalMargin;
                 mParams.horizontalMargin = mHorizontalMargin;
                 if (mView.getParent() != null) {
-                    if (localLOGV) Log.v(TAG, "REMOVE! " + mView + " in " + this);
+                    if (localLOGV) Log.v(
+                            TAG, "REMOVE! " + mView + " in " + this);
                     mWM.removeView(mView);
                 }
                 if (localLOGV) Log.v(TAG, "ADD! " + mView + " in " + this);
                 mWM.addView(mView, mParams);
-                trySendAccessibilityEvent();
             }
         }
-
-        private void trySendAccessibilityEvent() {
-            AccessibilityManager accessibilityManager =
-                    AccessibilityManager.getInstance(mView.getContext());
-            if (!accessibilityManager.isEnabled()) {
-                return;
-            }
-            // treat toasts as notifications since they are used to
-            // announce a transient piece of information to the user
-            AccessibilityEvent event = AccessibilityEvent.obtain(
-                    AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED);
-            event.setClassName(getClass().getName());
-            event.setPackageName(mView.getContext().getPackageName());
-            mView.dispatchPopulateAccessibilityEvent(event);
-            accessibilityManager.sendAccessibilityEvent(event);
-        }        
 
         public void handleHide() {
             if (localLOGV) Log.v(TAG, "HANDLE HIDE: " + this + " mView=" + mView);
@@ -411,7 +381,8 @@ public class Toast {
                 // been added...  i have seen cases where we get here when
                 // the view isn't yet added, so let's try not to crash.
                 if (mView.getParent() != null) {
-                    if (localLOGV) Log.v(TAG, "REMOVE! " + mView + " in " + this);
+                    if (localLOGV) Log.v(
+                            TAG, "REMOVE! " + mView + " in " + this);
                     mWM.removeView(mView);
                 }
 

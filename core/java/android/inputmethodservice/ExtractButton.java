@@ -41,6 +41,6 @@ class ExtractButton extends Button {
      * highlight when selected.
      */
     @Override public boolean hasWindowFocus() {
-        return isEnabled() && getVisibility() == VISIBLE ? true : false;
+        return this.isEnabled() ? true : false;
     }
 }

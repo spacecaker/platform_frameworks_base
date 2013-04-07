@@ -198,7 +198,7 @@ Type::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, int fl
 }
 
 void
-Type::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+Type::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d qualifiedName=%s\n",
             __FILE__, __LINE__, m_qualifiedName.c_str());
@@ -207,7 +207,7 @@ Type::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Var
 }
 
 void
-Type::ReadFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+Type::ReadFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d qualifiedName=%s\n",
             __FILE__, __LINE__, m_qualifiedName.c_str());
@@ -226,7 +226,7 @@ Type::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, i
 
 void
 Type::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d qualifiedName=%s\n",
             __FILE__, __LINE__, m_qualifiedName.c_str());
@@ -235,7 +235,7 @@ Type::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
 }
 
 void
-Type::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+Type::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d qualifiedName=%s\n",
             __FILE__, __LINE__, m_qualifiedName.c_str());
@@ -284,7 +284,7 @@ BasicType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, i
 }
 
 void
-BasicType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+BasicType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, m_unmarshallMethod)));
 }
@@ -303,13 +303,13 @@ BasicType::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable* parc
 
 void
 BasicType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, m_createArrayMethod)));
 }
 
 void
-BasicType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+BasicType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new MethodCall(parcel, m_readArrayMethod, 1, v));
 }
@@ -331,7 +331,7 @@ BooleanType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel,
 }
 
 void
-BooleanType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+BooleanType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new Assignment(v, new Comparison(new LiteralExpression("0"),
                     "!=", new MethodCall(parcel, "readInt"))));
@@ -351,13 +351,13 @@ BooleanType::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable* pa
 
 void
 BooleanType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "createBooleanArray")));
 }
 
 void
-BooleanType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+BooleanType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new MethodCall(parcel, "readBooleanArray", 1, v));
 }
@@ -378,7 +378,7 @@ CharType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, in
 }
 
 void
-CharType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+CharType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "readInt"), this));
 }
@@ -397,13 +397,13 @@ CharType::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable* parce
 
 void
 CharType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "createCharArray")));
 }
 
 void
-CharType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+CharType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new MethodCall(parcel, "readCharArray", 1, v));
 }
@@ -428,7 +428,7 @@ StringType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, 
 }
 
 void
-StringType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+StringType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "readString")));
 }
@@ -447,13 +447,13 @@ StringType::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable* par
 
 void
 StringType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "createStringArray")));
 }
 
 void
-StringType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+StringType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new MethodCall(parcel, "readStringArray", 1, v));
 }
@@ -496,7 +496,7 @@ CharSequenceType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* pa
 
 void
 CharSequenceType::CreateFromParcel(StatementBlock* addTo, Variable* v,
-                                Variable* parcel, Variable**)
+                                Variable* parcel)
 {
     // if (0 != parcel.readInt()) {
     //     v = TextUtils.createFromParcel(parcel)
@@ -532,7 +532,7 @@ RemoteExceptionType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable*
 }
 
 void
-RemoteExceptionType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+RemoteExceptionType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -551,7 +551,7 @@ RuntimeExceptionType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable
 }
 
 void
-RuntimeExceptionType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+RuntimeExceptionType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -571,7 +571,7 @@ IBinderType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel,
 }
 
 void
-IBinderType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+IBinderType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "readStrongBinder")));
 }
@@ -584,13 +584,13 @@ IBinderType::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable* pa
 
 void
 IBinderType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     addTo->Add(new Assignment(v, new MethodCall(parcel, "createBinderArray")));
 }
 
 void
-IBinderType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+IBinderType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     addTo->Add(new MethodCall(parcel, "readBinderArray", 1, v));
 }
@@ -610,7 +610,7 @@ IInterfaceType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parc
 }
 
 void
-IInterfaceType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+IInterfaceType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -631,7 +631,7 @@ BinderType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, 
 
 void
 BinderType::CreateFromParcel(StatementBlock* addTo, Variable* v,
-                                    Variable* parcel, Variable**)
+                                    Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -652,7 +652,7 @@ BinderProxyType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* par
 
 void
 BinderProxyType::CreateFromParcel(StatementBlock* addTo, Variable* v,
-                                    Variable* parcel, Variable**)
+                                    Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -672,7 +672,7 @@ ParcelType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, 
 }
 
 void
-ParcelType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+ParcelType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -691,7 +691,7 @@ ParcelableInterfaceType::WriteToParcel(StatementBlock* addTo, Variable* v, Varia
 }
 
 void
-ParcelableInterfaceType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+ParcelableInterfaceType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "aidl:internal error %s:%d\n", __FILE__, __LINE__);
 }
@@ -709,31 +709,25 @@ MapType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, int
     addTo->Add(new MethodCall(parcel, "writeMap", 1, v));
 }
 
-static void EnsureClassLoader(StatementBlock* addTo, Variable** cl)
-{
-    // We don't want to look up the class loader once for every
-    // collection argument, so ensure we do it at most once per method.
-    if (*cl == NULL) {
-        *cl = new Variable(CLASSLOADER_TYPE, "cl");
-        addTo->Add(new VariableDeclaration(*cl,
-                new LiteralExpression("this.getClass().getClassLoader()"),
-                CLASSLOADER_TYPE));
-    }
-}
-
 void
-MapType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable** cl)
+MapType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
-    EnsureClassLoader(addTo, cl);
-    addTo->Add(new Assignment(v, new MethodCall(parcel, "readHashMap", 1, *cl)));
+    Variable *cl = new Variable(CLASSLOADER_TYPE, "cl");
+    addTo->Add(new VariableDeclaration(cl,
+        new LiteralExpression("this.getClass().getClassLoader()"),
+        CLASSLOADER_TYPE));
+    addTo->Add(new Assignment(v, new MethodCall(parcel, "readHashMap", 1, cl)));
 }
 
 void
 MapType::ReadFromParcel(StatementBlock* addTo, Variable* v,
-                    Variable* parcel, Variable** cl)
+                    Variable* parcel)
 {
-    EnsureClassLoader(addTo, cl);
-    addTo->Add(new MethodCall(parcel, "readMap", 2, v, *cl));
+    Variable *cl = new Variable(CLASSLOADER_TYPE, "cl");
+    addTo->Add(new VariableDeclaration(cl, 
+        new LiteralExpression("this.getClass().getClassLoader()"),
+        CLASSLOADER_TYPE));
+    addTo->Add(new MethodCall(parcel, "readMap", 2, v, cl));
 }
 
 
@@ -757,18 +751,24 @@ ListType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel, in
 }
 
 void
-ListType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable** cl)
+ListType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
-    EnsureClassLoader(addTo, cl);
-    addTo->Add(new Assignment(v, new MethodCall(parcel, "readArrayList", 1, *cl)));
+    Variable *cl = new Variable(CLASSLOADER_TYPE, "cl");
+    addTo->Add(new VariableDeclaration(cl, 
+        new LiteralExpression("this.getClass().getClassLoader()"),
+        CLASSLOADER_TYPE));
+    addTo->Add(new Assignment(v, new MethodCall(parcel, "readArrayList", 1, cl)));
 }
 
 void
 ListType::ReadFromParcel(StatementBlock* addTo, Variable* v,
-                    Variable* parcel, Variable** cl)
+                    Variable* parcel)
 {
-    EnsureClassLoader(addTo, cl);
-    addTo->Add(new MethodCall(parcel, "readList", 2, v, *cl));
+    Variable *cl = new Variable(CLASSLOADER_TYPE, "cl");
+    addTo->Add(new VariableDeclaration(cl, 
+        new LiteralExpression("this.getClass().getClassLoader()"),
+        CLASSLOADER_TYPE));
+    addTo->Add(new MethodCall(parcel, "readList", 2, v, cl));
 }
 
 
@@ -811,7 +811,7 @@ ParcelableType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parc
 }
 
 void
-ParcelableType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+ParcelableType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     // if (0 != parcel.readInt()) {
     //     v = CLASS.CREATOR.createFromParcel(parcel)
@@ -833,7 +833,7 @@ ParcelableType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* p
 
 void
 ParcelableType::ReadFromParcel(StatementBlock* addTo, Variable* v,
-                    Variable* parcel, Variable**)
+                    Variable* parcel)
 {
     // TODO: really, we don't need to have this extra check, but we
     // don't have two separate marshalling code paths
@@ -862,7 +862,7 @@ ParcelableType::WriteArrayToParcel(StatementBlock* addTo, Variable* v, Variable*
 
 void
 ParcelableType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     string creator = v->type->QualifiedName() + ".CREATOR";
     addTo->Add(new Assignment(v, new MethodCall(parcel,
@@ -870,7 +870,7 @@ ParcelableType::CreateArrayFromParcel(StatementBlock* addTo, Variable* v,
 }
 
 void
-ParcelableType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+ParcelableType::ReadArrayFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     string creator = v->type->QualifiedName() + ".CREATOR";
     addTo->Add(new MethodCall(parcel, "readTypedArray", 2,
@@ -907,7 +907,7 @@ InterfaceType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parce
 }
 
 void
-InterfaceType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+InterfaceType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     // v = Interface.asInterface(parcel.readStrongBinder());
     string type = v->type->QualifiedName();
@@ -961,14 +961,14 @@ GenericType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* parcel,
 }
 
 void
-GenericType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+GenericType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     fprintf(stderr, "implement GenericType::CreateFromParcel\n");
 }
 
 void
 GenericType::ReadFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     fprintf(stderr, "implement GenericType::ReadFromParcel\n");
 }
@@ -1009,7 +1009,7 @@ GenericListType::WriteToParcel(StatementBlock* addTo, Variable* v, Variable* par
 }
 
 void
-GenericListType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel, Variable**)
+GenericListType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* parcel)
 {
     if (m_creator == STRING_TYPE->CreatorName()) {
         addTo->Add(new Assignment(v,
@@ -1027,7 +1027,7 @@ GenericListType::CreateFromParcel(StatementBlock* addTo, Variable* v, Variable* 
 
 void
 GenericListType::ReadFromParcel(StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable**)
+                            Variable* parcel)
 {
     if (m_creator == STRING_TYPE->CreatorName()) {
         addTo->Add(new MethodCall(parcel, "readStringList", 1, v));

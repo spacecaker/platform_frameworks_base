@@ -19,7 +19,7 @@
 #include <utils/Log.h>
 
 #include "include/MPEG2TSExtractor.h"
-#include "include/LiveSession.h"
+#include "include/LiveSource.h"
 #include "include/NuCachedSource2.h"
 
 #include <media/stagefright/DataSource.h>
@@ -82,8 +82,8 @@ sp<MetaData> MPEG2TSSource::getFormat() {
     sp<MetaData> meta = mImpl->getFormat();
 
     int64_t durationUs;
-    if (mExtractor->mLiveSession != NULL
-            && mExtractor->mLiveSession->getDuration(&durationUs) == OK) {
+    if (mExtractor->mLiveSource != NULL
+            && mExtractor->mLiveSource->getDuration(&durationUs)) {
         meta->setInt64(kKeyDuration, durationUs);
     }
 
@@ -175,7 +175,7 @@ void MPEG2TSExtractor::init() {
         if (!haveVideo) {
             sp<AnotherPacketSource> impl =
                 (AnotherPacketSource *)mParser->getSource(
-                        ATSParser::VIDEO).get();
+                        ATSParser::AVC_VIDEO).get();
 
             if (impl != NULL) {
                 haveVideo = true;
@@ -186,7 +186,7 @@ void MPEG2TSExtractor::init() {
         if (!haveAudio) {
             sp<AnotherPacketSource> impl =
                 (AnotherPacketSource *)mParser->getSource(
-                        ATSParser::AUDIO).get();
+                        ATSParser::MPEG2ADTS_AUDIO).get();
 
             if (impl != NULL) {
                 haveAudio = true;
@@ -194,12 +194,16 @@ void MPEG2TSExtractor::init() {
             }
         }
 
-        if (++numPacketsParsed > 10000) {
+        if (++numPacketsParsed > 2500) {
             break;
         }
     }
 
     LOGI("haveAudio=%d, haveVideo=%d", haveAudio, haveVideo);
+}
+
+static bool isDiscontinuity(const uint8_t *data, ssize_t size) {
+    return size == 188 && data[0] == 0x00;
 }
 
 status_t MPEG2TSExtractor::feedMore() {
@@ -208,28 +212,46 @@ status_t MPEG2TSExtractor::feedMore() {
     uint8_t packet[kTSPacketSize];
     ssize_t n = mDataSource->readAt(mOffset, packet, kTSPacketSize);
 
-    if (n < (ssize_t)kTSPacketSize) {
+    if (isDiscontinuity(packet, n)) {
+        LOGI("XXX discontinuity detected");
+        mParser->signalDiscontinuity();
+    } else if (n < (ssize_t)kTSPacketSize) {
         return (n < 0) ? (status_t)n : ERROR_END_OF_STREAM;
+    } else {
+        mParser->feedTSPacket(packet, kTSPacketSize);
     }
 
     mOffset += n;
-    return mParser->feedTSPacket(packet, kTSPacketSize);
+
+    return OK;
 }
 
-void MPEG2TSExtractor::setLiveSession(const sp<LiveSession> &liveSession) {
+void MPEG2TSExtractor::setLiveSource(const sp<LiveSource> &liveSource) {
     Mutex::Autolock autoLock(mLock);
 
-    mLiveSession = liveSession;
+    mLiveSource = liveSource;
 }
 
 void MPEG2TSExtractor::seekTo(int64_t seekTimeUs) {
     Mutex::Autolock autoLock(mLock);
 
-    if (mLiveSession == NULL) {
+    if (mLiveSource == NULL) {
         return;
     }
 
-    mLiveSession->seekTo(seekTimeUs);
+    if (mDataSource->flags() & DataSource::kIsCachingDataSource) {
+        static_cast<NuCachedSource2 *>(mDataSource.get())->suspend();
+    }
+
+    if (mLiveSource->seekTo(seekTimeUs)) {
+        mParser->signalDiscontinuity(true  /* isSeek */);
+        mOffset = 0;
+    }
+
+    if (mDataSource->flags() & DataSource::kIsCachingDataSource) {
+        static_cast<NuCachedSource2 *>(mDataSource.get())
+            ->clearCacheAndResume();
+    }
 }
 
 uint32_t MPEG2TSExtractor::flags() const {
@@ -237,7 +259,7 @@ uint32_t MPEG2TSExtractor::flags() const {
 
     uint32_t flags = CAN_PAUSE;
 
-    if (mLiveSession != NULL && mLiveSession->isSeekable()) {
+    if (mLiveSource != NULL && mLiveSource->isSeekable()) {
         flags |= CAN_SEEK_FORWARD | CAN_SEEK_BACKWARD | CAN_SEEK;
     }
 

@@ -9,13 +9,15 @@ LOCAL_SRC_FILES:=       \
         AMPEG4AudioAssembler.cpp    \
         AMPEG4ElementaryAssembler.cpp \
         APacketSource.cpp           \
-        ARawAudioAssembler.cpp      \
         ARTPAssembler.cpp           \
         ARTPConnection.cpp          \
+        ARTPSession.cpp             \
         ARTPSource.cpp              \
         ARTPWriter.cpp              \
         ARTSPConnection.cpp         \
+        ARTSPController.cpp         \
         ASessionDescription.cpp     \
+        UDPPusher.cpp               \
 
 LOCAL_C_INCLUDES:= \
 	$(JNI_H_INCLUDE) \
@@ -55,4 +57,4 @@ LOCAL_MODULE_TAGS := debug
 
 LOCAL_MODULE:= rtp_test
 
-# include $(BUILD_EXECUTABLE)
+include $(BUILD_EXECUTABLE)

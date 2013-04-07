@@ -22,13 +22,8 @@ import android.os.RegistrantList;
 import android.os.Registrant;
 import android.os.Handler;
 import android.os.AsyncResult;
-import android.os.SystemProperties;
+import android.util.Config;
 import android.util.Log;
-
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * {@hide}
@@ -39,9 +34,6 @@ public abstract class BaseCommands implements CommandsInterface {
     //***** Instance Variables
     protected Context mContext;
     protected RadioState mState = RadioState.RADIO_UNAVAILABLE;
-    protected RadioState mSimState = RadioState.RADIO_UNAVAILABLE;
-    protected RadioState mRuimState = RadioState.RADIO_UNAVAILABLE;
-    protected RadioState mNvState = RadioState.RADIO_UNAVAILABLE;
     protected Object mStateMonitor = new Object();
 
     protected RegistrantList mRadioStateChangedRegistrants = new RegistrantList();
@@ -55,8 +47,8 @@ public abstract class BaseCommands implements CommandsInterface {
     protected RegistrantList mRUIMLockedRegistrants = new RegistrantList();
     protected RegistrantList mNVReadyRegistrants = new RegistrantList();
     protected RegistrantList mCallStateRegistrants = new RegistrantList();
-    protected RegistrantList mVoiceNetworkStateRegistrants = new RegistrantList();
-    protected RegistrantList mDataNetworkStateRegistrants = new RegistrantList();
+    protected RegistrantList mNetworkStateRegistrants = new RegistrantList();
+    protected RegistrantList mDataConnectionRegistrants = new RegistrantList();
     protected RegistrantList mRadioTechnologyChangedRegistrants = new RegistrantList();
     protected RegistrantList mIccStatusChangedRegistrants = new RegistrantList();
     protected RegistrantList mVoicePrivacyOnRegistrants = new RegistrantList();
@@ -73,40 +65,32 @@ public abstract class BaseCommands implements CommandsInterface {
     protected RegistrantList mT53AudCntrlInfoRegistrants = new RegistrantList();
     protected RegistrantList mRingbackToneRegistrants = new RegistrantList();
     protected RegistrantList mResendIncallMuteRegistrants = new RegistrantList();
-    protected RegistrantList mCdmaSubscriptionChangedRegistrants = new RegistrantList();
-    protected RegistrantList mCdmaPrlChangedRegistrants = new RegistrantList();
-    protected RegistrantList mExitEmergencyCallbackModeRegistrants = new RegistrantList();
-    protected RegistrantList mRilConnectedRegistrants = new RegistrantList();
-    protected RegistrantList mIccRefreshRegistrants = new RegistrantList();
 
-    protected Registrant mGsmSmsRegistrant;
-    protected Registrant mCdmaSmsRegistrant;
+    protected Registrant mSMSRegistrant;
     protected Registrant mNITZTimeRegistrant;
     protected Registrant mSignalStrengthRegistrant;
     protected Registrant mUSSDRegistrant;
     protected Registrant mSmsOnSimRegistrant;
     protected Registrant mSmsStatusRegistrant;
     protected Registrant mSsnRegistrant;
-    protected Registrant mCatSessionEndRegistrant;
-    protected Registrant mCatProCmdRegistrant;
-    protected Registrant mCatEventRegistrant;
-    protected Registrant mCatCallSetUpRegistrant;
+    protected Registrant mStkSessionEndRegistrant;
+    protected Registrant mStkProCmdRegistrant;
+    protected Registrant mStkEventRegistrant;
+    protected Registrant mStkCallSetUpRegistrant;
     protected Registrant mIccSmsFullRegistrant;
     protected Registrant mEmergencyCallbackModeRegistrant;
+    protected Registrant mIccRefreshRegistrant;
     protected Registrant mRingRegistrant;
     protected Registrant mRestrictedStateRegistrant;
     protected Registrant mGsmBroadcastSmsRegistrant;
 
-    // Preferred network type received from PhoneFactory.
-    // This is used when establishing a connection to the
-    // vendor ril so it starts up in the correct mode.
-    protected int mPreferredNetworkType;
+    // Network Mode received from PhoneFactory
+    protected int mNetworkMode;
     // CDMA subscription received from PhoneFactory
     protected int mCdmaSubscription;
     // Type of Phone, GSM or CDMA. Set by CDMAPhone or GSMPhone.
     protected int mPhoneType;
-    // RIL Version
-    protected int mRilVersion = -1;
+
 
     public BaseCommands(Context context) {
         mContext = context;  // May be null (if so we won't log statistics)
@@ -116,18 +100,6 @@ public abstract class BaseCommands implements CommandsInterface {
 
     public RadioState getRadioState() {
         return mState;
-    }
-
-    public RadioState getSimState() {
-        return mSimState;
-    }
-
-    public RadioState getRuimState() {
-        return mRuimState;
-    }
-
-    public RadioState getNvState() {
-        return mNvState;
     }
 
 
@@ -225,7 +197,7 @@ public abstract class BaseCommands implements CommandsInterface {
         synchronized (mStateMonitor) {
             mSIMReadyRegistrants.add(r);
 
-            if (mSimState.isSIMReady()) {
+            if (mState.isSIMReady()) {
                 r.notifyRegistrant(new AsyncResult(null, null, null));
             }
         }
@@ -244,7 +216,7 @@ public abstract class BaseCommands implements CommandsInterface {
         synchronized (mStateMonitor) {
             mRUIMReadyRegistrants.add(r);
 
-            if (mRuimState.isRUIMReady()) {
+            if (mState.isRUIMReady()) {
                 r.notifyRegistrant(new AsyncResult(null, null, null));
             }
         }
@@ -263,7 +235,7 @@ public abstract class BaseCommands implements CommandsInterface {
         synchronized (mStateMonitor) {
             mNVReadyRegistrants.add(r);
 
-            if (mNvState.isNVReady()) {
+            if (mState.isNVReady()) {
                 r.notifyRegistrant(new AsyncResult(null, null, null));
             }
         }
@@ -281,7 +253,7 @@ public abstract class BaseCommands implements CommandsInterface {
         synchronized (mStateMonitor) {
             mSIMLockedRegistrants.add(r);
 
-            if (mSimState == RadioState.SIM_LOCKED_OR_ABSENT) {
+            if (mState == RadioState.SIM_LOCKED_OR_ABSENT) {
                 r.notifyRegistrant(new AsyncResult(null, null, null));
             }
         }
@@ -299,7 +271,7 @@ public abstract class BaseCommands implements CommandsInterface {
         synchronized (mStateMonitor) {
             mRUIMLockedRegistrants.add(r);
 
-            if (mRuimState == RadioState.RUIM_LOCKED_OR_ABSENT) {
+            if (mState == RadioState.RUIM_LOCKED_OR_ABSENT) {
                 r.notifyRegistrant(new AsyncResult(null, null, null));
             }
         }
@@ -321,24 +293,24 @@ public abstract class BaseCommands implements CommandsInterface {
         mCallStateRegistrants.remove(h);
     }
 
-    public void registerForVoiceNetworkStateChanged(Handler h, int what, Object obj) {
+    public void registerForNetworkStateChanged(Handler h, int what, Object obj) {
         Registrant r = new Registrant (h, what, obj);
 
-        mVoiceNetworkStateRegistrants.add(r);
+        mNetworkStateRegistrants.add(r);
     }
 
-    public void unregisterForVoiceNetworkStateChanged(Handler h) {
-        mVoiceNetworkStateRegistrants.remove(h);
+    public void unregisterForNetworkStateChanged(Handler h) {
+        mNetworkStateRegistrants.remove(h);
     }
 
-    public void registerForDataNetworkStateChanged(Handler h, int what, Object obj) {
+    public void registerForDataStateChanged(Handler h, int what, Object obj) {
         Registrant r = new Registrant (h, what, obj);
 
-        mDataNetworkStateRegistrants.add(r);
+        mDataConnectionRegistrants.add(r);
     }
 
-    public void unregisterForDataNetworkStateChanged(Handler h) {
-        mDataNetworkStateRegistrants.remove(h);
+    public void unregisterForDataStateChanged(Handler h) {
+        mDataConnectionRegistrants.remove(h);
     }
 
     public void registerForRadioTechnologyChanged(Handler h, int what, Object obj) {
@@ -359,20 +331,12 @@ public abstract class BaseCommands implements CommandsInterface {
         mIccStatusChangedRegistrants.remove(h);
     }
 
-    public void setOnNewGsmSms(Handler h, int what, Object obj) {
-        mGsmSmsRegistrant = new Registrant (h, what, obj);
+    public void setOnNewSMS(Handler h, int what, Object obj) {
+        mSMSRegistrant = new Registrant (h, what, obj);
     }
 
-    public void unSetOnNewGsmSms(Handler h) {
-        mGsmSmsRegistrant.clear();
-    }
-
-    public void setOnNewCdmaSms(Handler h, int what, Object obj) {
-        mCdmaSmsRegistrant = new Registrant (h, what, obj);
-    }
-
-    public void unSetOnNewCdmaSms(Handler h) {
-        mCdmaSmsRegistrant.clear();
+    public void unSetOnNewSMS(Handler h) {
+        mSMSRegistrant.clear();
     }
 
     public void setOnNewGsmBroadcastSms(Handler h, int what, Object obj) {
@@ -431,36 +395,36 @@ public abstract class BaseCommands implements CommandsInterface {
         mSsnRegistrant.clear();
     }
 
-    public void setOnCatSessionEnd(Handler h, int what, Object obj) {
-        mCatSessionEndRegistrant = new Registrant (h, what, obj);
+    public void setOnStkSessionEnd(Handler h, int what, Object obj) {
+        mStkSessionEndRegistrant = new Registrant (h, what, obj);
     }
 
-    public void unSetOnCatSessionEnd(Handler h) {
-        mCatSessionEndRegistrant.clear();
+    public void unSetOnStkSessionEnd(Handler h) {
+        mStkSessionEndRegistrant.clear();
     }
 
-    public void setOnCatProactiveCmd(Handler h, int what, Object obj) {
-        mCatProCmdRegistrant = new Registrant (h, what, obj);
+    public void setOnStkProactiveCmd(Handler h, int what, Object obj) {
+        mStkProCmdRegistrant = new Registrant (h, what, obj);
     }
 
-    public void unSetOnCatProactiveCmd(Handler h) {
-        mCatProCmdRegistrant.clear();
+    public void unSetOnStkProactiveCmd(Handler h) {
+        mStkProCmdRegistrant.clear();
     }
 
-    public void setOnCatEvent(Handler h, int what, Object obj) {
-        mCatEventRegistrant = new Registrant (h, what, obj);
+    public void setOnStkEvent(Handler h, int what, Object obj) {
+        mStkEventRegistrant = new Registrant (h, what, obj);
     }
 
-    public void unSetOnCatEvent(Handler h) {
-        mCatEventRegistrant.clear();
+    public void unSetOnStkEvent(Handler h) {
+        mStkEventRegistrant.clear();
     }
 
-    public void setOnCatCallSetUp(Handler h, int what, Object obj) {
-        mCatCallSetUpRegistrant = new Registrant (h, what, obj);
+    public void setOnStkCallSetUp(Handler h, int what, Object obj) {
+        mStkCallSetUpRegistrant = new Registrant (h, what, obj);
     }
 
-    public void unSetOnCatCallSetUp(Handler h) {
-        mCatCallSetUpRegistrant.clear();
+    public void unSetOnStkCallSetUp(Handler h) {
+        mStkCallSetUpRegistrant.clear();
     }
 
     public void setOnIccSmsFull(Handler h, int what, Object obj) {
@@ -471,23 +435,16 @@ public abstract class BaseCommands implements CommandsInterface {
         mIccSmsFullRegistrant.clear();
     }
 
-    public void registerForIccRefresh(Handler h, int what, Object obj) {
-        Registrant r = new Registrant (h, what, obj);
-        mIccRefreshRegistrants.add(r);
-    }
     public void setOnIccRefresh(Handler h, int what, Object obj) {
-        registerForIccRefresh(h, what, obj);
+        mIccRefreshRegistrant = new Registrant (h, what, obj);
     }
 
     public void setEmergencyCallbackMode(Handler h, int what, Object obj) {
         mEmergencyCallbackModeRegistrant = new Registrant (h, what, obj);
     }
 
-    public void unregisterForIccRefresh(Handler h) {
-        mIccRefreshRegistrants.remove(h);
-    }
-    public void unsetOnIccRefresh(Handler h) {
-        unregisterForIccRefresh(h);
+    public void unSetOnIccRefresh(Handler h) {
+        mIccRefreshRegistrant.clear();
     }
 
     public void setOnCallRing(Handler h, int what, Object obj) {
@@ -631,65 +588,6 @@ public abstract class BaseCommands implements CommandsInterface {
         mResendIncallMuteRegistrants.remove(h);
     }
 
-    @Override
-    public void registerForCdmaSubscriptionChanged(Handler h, int what, Object obj) {
-        Registrant r = new Registrant (h, what, obj);
-        mCdmaSubscriptionChangedRegistrants.add(r);
-    }
-
-    @Override
-    public void unregisterForCdmaSubscriptionChanged(Handler h) {
-        mCdmaSubscriptionChangedRegistrants.remove(h);
-    }
-
-    @Override
-    public void registerForCdmaPrlChanged(Handler h, int what, Object obj) {
-        Registrant r = new Registrant (h, what, obj);
-        mCdmaPrlChangedRegistrants.add(r);
-    }
-
-    @Override
-    public void unregisterForCdmaPrlChanged(Handler h) {
-        mCdmaPrlChangedRegistrants.remove(h);
-    }
-
-    @Override
-    public void registerForExitEmergencyCallbackMode(Handler h, int what, Object obj) {
-        Registrant r = new Registrant (h, what, obj);
-        mExitEmergencyCallbackModeRegistrants.add(r);
-    }
-
-    @Override
-    public void unregisterForExitEmergencyCallbackMode(Handler h) {
-        mExitEmergencyCallbackModeRegistrants.remove(h);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void registerForRilConnected(Handler h, int what, Object obj) {
-        Log.d(LOG_TAG, "registerForRilConnected h=" + h + " w=" + what);
-        Registrant r = new Registrant (h, what, obj);
-        mRilConnectedRegistrants.add(r);
-        if (mRilVersion != -1) {
-            Log.d(LOG_TAG, "Notifying: ril connected mRilVersion=" + mRilVersion);
-            r.notifyRegistrant(new AsyncResult(null, new Integer(mRilVersion), null));
-        }
-    }
-
-    @Override
-    public void unregisterForRilConnected(Handler h) {
-        mRilConnectedRegistrants.remove(h);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void setCurrentPreferredNetworkType() {
-    }
-
     //***** Protected Methods
     /**
      * Store new RadioState and send notification based on the changes
@@ -706,7 +604,7 @@ public abstract class BaseCommands implements CommandsInterface {
         RadioState oldState;
 
         synchronized (mStateMonitor) {
-            if (false) {
+            if (Config.LOGV) {
                 Log.v(LOG_TAG, "setRadioState old: " + mState
                     + " new " + newState);
             }
@@ -717,22 +615,6 @@ public abstract class BaseCommands implements CommandsInterface {
             if (oldState == mState) {
                 // no state transition
                 return;
-            }
-
-            // FIXME: Use Constants or Enums
-            if(mState.getType() == 0) {
-                mSimState = mState;
-                mRuimState = mState;
-                mNvState = mState;
-            }
-            else if (mState.getType() == 1) {
-                mSimState = mState;
-            }
-            else if (mState.getType() == 2) {
-                mRuimState = mState;
-            }
-            else if (mState.getType() == 3) {
-                mNvState = mState;
             }
 
             mRadioStateChangedRegistrants.notifyRegistrants();
@@ -815,88 +697,4 @@ public abstract class BaseCommands implements CommandsInterface {
 
     protected void onRadioAvailable() {
     }
-
-    /**
-     * The contents of the /proc/cmdline file
-     */
-    private static String getProcCmdLine()
-    {
-        String cmdline = "";
-        FileInputStream is = null;
-        try {
-            is = new FileInputStream("/proc/cmdline");
-            byte [] buffer = new byte[2048];
-            int count = is.read(buffer);
-            if (count > 0) {
-                cmdline = new String(buffer, 0, count);
-            }
-        } catch (IOException e) {
-            Log.d(LOG_TAG, "No /proc/cmdline exception=" + e);
-        } finally {
-            if (is != null) {
-                try {
-                    is.close();
-                } catch (IOException e) {
-                }
-            }
-        }
-        Log.d(LOG_TAG, "/proc/cmdline=" + cmdline);
-        return cmdline;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public int getLteOnCdmaMode() {
-        return getLteOnCdmaModeStatic();
-    }
-
-    /** Kernel command line */
-    private static final String sKernelCmdLine = getProcCmdLine();
-
-    /** Pattern for selecting the product type from the kernel command line */
-    private static final Pattern sProductTypePattern =
-        Pattern.compile("\\sproduct_type\\s*=\\s*(\\w+)");
-
-    /** The ProductType used for LTE on CDMA devices */
-    private static final String sLteOnCdmaProductType =
-        SystemProperties.get(TelephonyProperties.PROPERTY_LTE_ON_CDMA_PRODUCT_TYPE, "");
-
-    /**
-     * Return if the current radio is LTE on CDMA. This
-     * is a tri-state return value as for a period of time
-     * the mode may be unknown.
-     *
-     * @return {@link Phone#LTE_ON_CDMA_UNKNOWN}, {@link Phone#LTE_ON_CDMA_FALSE}
-     * or {@link Phone#LTE_ON_CDMA_TRUE}
-     */
-    public static int getLteOnCdmaModeStatic() {
-        int retVal;
-        int curVal;
-        String productType = "";
-
-        curVal = SystemProperties.getInt(TelephonyProperties.PROPERTY_LTE_ON_CDMA_DEVICE,
-                    Phone.LTE_ON_CDMA_UNKNOWN);
-        retVal = curVal;
-        if (retVal == Phone.LTE_ON_CDMA_UNKNOWN) {
-            Matcher matcher = sProductTypePattern.matcher(sKernelCmdLine);
-            if (matcher.find()) {
-                productType = matcher.group(1);
-                if (sLteOnCdmaProductType.equals(productType)) {
-                    retVal = Phone.LTE_ON_CDMA_TRUE;
-                } else {
-                    retVal = Phone.LTE_ON_CDMA_FALSE;
-                }
-            } else {
-                retVal = Phone.LTE_ON_CDMA_FALSE;
-            }
-        }
-
-        Log.d(LOG_TAG, "getLteOnCdmaMode=" + retVal + " curVal=" + curVal +
-                " product_type='" + productType +
-                "' lteOnCdmaProductType='" + sLteOnCdmaProductType + "'");
-        return retVal;
-    }
-
 }

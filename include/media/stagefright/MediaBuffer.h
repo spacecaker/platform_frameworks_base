@@ -25,8 +25,6 @@
 
 namespace android {
 
-struct ABuffer;
-class GraphicBuffer;
 class MediaBuffer;
 class MediaBufferObserver;
 class MetaData;
@@ -50,10 +48,6 @@ public:
 
     MediaBuffer(size_t size);
 
-    MediaBuffer(const sp<GraphicBuffer>& graphicBuffer);
-
-    MediaBuffer(const sp<ABuffer> &buffer);
-
     // Decrements the reference count and returns the buffer to its
     // associated MediaBufferGroup if the reference count drops to 0.
     void release();
@@ -61,6 +55,7 @@ public:
     // Increments the reference count.
     void add_ref();
 
+    void setData(void *);
     void *data() const;
     size_t size() const;
 
@@ -68,8 +63,6 @@ public:
     size_t range_length() const;
 
     void set_range(size_t offset, size_t length);
-
-    sp<GraphicBuffer> graphicBuffer() const;
 
     sp<MetaData> meta_data();
 
@@ -102,8 +95,6 @@ private:
 
     void *mData;
     size_t mSize, mRangeOffset, mRangeLength;
-    sp<GraphicBuffer> mGraphicBuffer;
-    sp<ABuffer> mBuffer;
 
     bool mOwnsData;
 

@@ -169,6 +169,12 @@ void ARTPConnection::onMessageReceived(const sp<AMessage> &msg) {
             break;
         }
 
+        case kWhatFakeTimestamps:
+        {
+            onFakeTimestamps();
+            break;
+        }
+
         default:
         {
             TRESPASS();
@@ -220,7 +226,7 @@ void ARTPConnection::onRemoveStream(const sp<AMessage> &msg) {
     }
 
     if (it == mStreams.end()) {
-        return;
+        TRESPASS();
     }
 
     mStreams.erase(it);
@@ -274,52 +280,41 @@ void ARTPConnection::onPollStreams() {
     }
 
     int res = select(maxSocket + 1, &rs, NULL, NULL, &tv);
+    CHECK_GE(res, 0);
 
     if (res > 0) {
-        List<StreamInfo>::iterator it = mStreams.begin();
-        while (it != mStreams.end()) {
+        for (List<StreamInfo>::iterator it = mStreams.begin();
+             it != mStreams.end(); ++it) {
             if ((*it).mIsInjected) {
-                ++it;
                 continue;
             }
 
-            status_t err = OK;
             if (FD_ISSET(it->mRTPSocket, &rs)) {
-                err = receive(&*it, true);
+                receive(&*it, true);
             }
-            if (err == OK && FD_ISSET(it->mRTCPSocket, &rs)) {
-                err = receive(&*it, false);
+            if (FD_ISSET(it->mRTCPSocket, &rs)) {
+                receive(&*it, false);
             }
-
-            if (err == -ECONNRESET) {
-                // socket failure, this stream is dead, Jim.
-
-                LOGW("failed to receive RTP/RTCP datagram.");
-                it = mStreams.erase(it);
-                continue;
-            }
-
-            ++it;
         }
     }
+
+    postPollEvent();
 
     int64_t nowUs = ALooper::GetNowUs();
     if (mLastReceiverReportTimeUs <= 0
             || mLastReceiverReportTimeUs + 5000000ll <= nowUs) {
         sp<ABuffer> buffer = new ABuffer(kMaxUDPSize);
-        List<StreamInfo>::iterator it = mStreams.begin();
-        while (it != mStreams.end()) {
+        for (List<StreamInfo>::iterator it = mStreams.begin();
+             it != mStreams.end(); ++it) {
             StreamInfo *s = &*it;
 
             if (s->mIsInjected) {
-                ++it;
                 continue;
             }
 
             if (s->mNumRTCPPacketsReceived == 0) {
                 // We have never received any RTCP packets on this stream,
                 // we don't even know where to send a report.
-                ++it;
                 continue;
             }
 
@@ -338,33 +333,15 @@ void ARTPConnection::onPollStreams() {
             if (buffer->size() > 0) {
                 LOGV("Sending RR...");
 
-                ssize_t n;
-                do {
-                    n = sendto(
+                ssize_t n = sendto(
                         s->mRTCPSocket, buffer->data(), buffer->size(), 0,
                         (const struct sockaddr *)&s->mRemoteRTCPAddr,
                         sizeof(s->mRemoteRTCPAddr));
-                } while (n < 0 && errno == EINTR);
-
-                if (n <= 0) {
-                    LOGW("failed to send RTCP receiver report (%s).",
-                         n == 0 ? "connection gone" : strerror(errno));
-
-                    it = mStreams.erase(it);
-                    continue;
-                }
-
                 CHECK_EQ(n, (ssize_t)buffer->size());
 
                 mLastReceiverReportTimeUs = nowUs;
             }
-
-            ++it;
         }
-    }
-
-    if (!mStreams.empty()) {
-        postPollEvent();
     }
 }
 
@@ -379,19 +356,16 @@ status_t ARTPConnection::receive(StreamInfo *s, bool receiveRTP) {
         (!receiveRTP && s->mNumRTCPPacketsReceived == 0)
             ? sizeof(s->mRemoteRTCPAddr) : 0;
 
-    ssize_t nbytes;
-    do {
-        nbytes = recvfrom(
+    ssize_t nbytes = recvfrom(
             receiveRTP ? s->mRTPSocket : s->mRTCPSocket,
             buffer->data(),
             buffer->capacity(),
             0,
             remoteAddrLen > 0 ? (struct sockaddr *)&s->mRemoteRTCPAddr : NULL,
             remoteAddrLen > 0 ? &remoteAddrLen : NULL);
-    } while (nbytes < 0 && errno == EINTR);
 
-    if (nbytes <= 0) {
-        return -ECONNRESET;
+    if (nbytes < 0) {
+        return -1;
     }
 
     buffer->setRange(0, nbytes);
@@ -488,6 +462,12 @@ status_t ARTPConnection::parseRTP(StreamInfo *s, const sp<ABuffer> &buffer) {
 
     buffer->setInt32Data(u16at(&data[2]));
     buffer->setRange(payloadOffset, size - payloadOffset);
+
+    if ((mFlags & kFakeTimestamps) && !source->timeEstablished()) {
+        source->timeUpdate(rtpTime, 0);
+        source->timeUpdate(rtpTime + 90000, 0x100000000ll);
+        CHECK(source->timeEstablished());
+    }
 
     source->processRTPPacket(buffer);
 
@@ -614,7 +594,9 @@ status_t ARTPConnection::parseSR(
 
     sp<ARTPSource> source = findSource(s, id);
 
-    source->timeUpdate(rtpTime, ntpTime);
+    if ((mFlags & kFakeTimestamps) == 0) {
+        source->timeUpdate(rtpTime, ntpTime);
+    }
 
     return 0;
 }
@@ -669,6 +651,28 @@ void ARTPConnection::onInjectPacket(const sp<AMessage> &msg) {
         err = parseRTP(s, buffer);
     } else {
         err = parseRTCP(s, buffer);
+    }
+}
+
+void ARTPConnection::fakeTimestamps() {
+    (new AMessage(kWhatFakeTimestamps, id()))->post();
+}
+
+void ARTPConnection::onFakeTimestamps() {
+    List<StreamInfo>::iterator it = mStreams.begin();
+    while (it != mStreams.end()) {
+        StreamInfo &info = *it++;
+
+        for (size_t j = 0; j < info.mSources.size(); ++j) {
+            sp<ARTPSource> source = info.mSources.valueAt(j);
+
+            if (!source->timeEstablished()) {
+                source->timeUpdate(0, 0);
+                source->timeUpdate(0 + 90000, 0x100000000ll);
+
+                mFlags |= kFakeTimestamps;
+            }
+        }
     }
 }
 

@@ -19,38 +19,33 @@ package android.nfc;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import java.io.IOException;
-
 /**
  * Class used to pipe transceive result from the NFC service.
  *
  * @hide
  */
 public final class TransceiveResult implements Parcelable {
-    public static final int RESULT_SUCCESS = 0;
-    public static final int RESULT_FAILURE = 1;
-    public static final int RESULT_TAGLOST = 2;
-    public static final int RESULT_EXCEEDED_LENGTH = 3;
+    private final boolean mTagLost;
+    private final boolean mSuccess;
+    private final byte[] mResponseData;
 
-    final int mResult;
-    final byte[] mResponseData;
-
-    public TransceiveResult(final int result, final byte[] data) {
-        mResult = result;
+    public TransceiveResult(final boolean success, final boolean tagIsLost,
+            final byte[] data) {
+        mSuccess = success;
+        mTagLost = tagIsLost;
         mResponseData = data;
     }
 
-    public byte[] getResponseOrThrow() throws IOException {
-        switch (mResult) {
-            case RESULT_SUCCESS:
-                return mResponseData;
-            case RESULT_TAGLOST:
-                throw new TagLostException("Tag was lost.");
-            case RESULT_EXCEEDED_LENGTH:
-                throw new IOException("Transceive length exceeds supported maximum");
-            default:
-                throw new IOException("Transceive failed");
-        }
+    public boolean isSuccessful() {
+        return mSuccess;
+    }
+
+    public boolean isTagLost() {
+        return mTagLost;
+    }
+
+    public byte[] getResponseData() {
+        return mResponseData;
     }
 
     @Override
@@ -60,8 +55,9 @@ public final class TransceiveResult implements Parcelable {
 
     @Override
     public void writeToParcel(Parcel dest, int flags) {
-        dest.writeInt(mResult);
-        if (mResult == RESULT_SUCCESS) {
+        dest.writeInt(mSuccess ? 1 : 0);
+        dest.writeInt(mTagLost ? 1 : 0);
+        if (mSuccess) {
             dest.writeInt(mResponseData.length);
             dest.writeByteArray(mResponseData);
         }
@@ -71,17 +67,18 @@ public final class TransceiveResult implements Parcelable {
             new Parcelable.Creator<TransceiveResult>() {
         @Override
         public TransceiveResult createFromParcel(Parcel in) {
-            int result = in.readInt();
+            boolean success = (in.readInt() == 1) ? true : false;
+            boolean tagLost = (in.readInt() == 1) ? true : false;
             byte[] responseData;
 
-            if (result == RESULT_SUCCESS) {
+            if (success) {
                 int responseLength = in.readInt();
                 responseData = new byte[responseLength];
                 in.readByteArray(responseData);
             } else {
                 responseData = null;
             }
-            return new TransceiveResult(result, responseData);
+            return new TransceiveResult(success, tagLost, responseData);
         }
 
         @Override

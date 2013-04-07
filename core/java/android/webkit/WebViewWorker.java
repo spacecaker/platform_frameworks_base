@@ -125,7 +125,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_CREATE_CACHE: {
-                assert !JniUtil.useChromiumHttpStack();
                 CacheCreateData data = (CacheCreateData) msg.obj;
                 CacheManager.CacheResult cache = CacheManager.createCacheFile(
                         data.mUrl, data.mStatusCode, data.mHeaders,
@@ -138,7 +137,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_UPDATE_CACHE_ENCODING: {
-                assert !JniUtil.useChromiumHttpStack();
                 CacheEncoding data = (CacheEncoding) msg.obj;
                 CacheManager.CacheResult cache = mCacheResultMap
                         .get(data.mListener);
@@ -148,7 +146,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_APPEND_CACHE: {
-                assert !JniUtil.useChromiumHttpStack();
                 CacheData data = (CacheData) msg.obj;
                 CacheManager.CacheResult cache = mCacheResultMap
                         .get(data.mListener);
@@ -171,7 +168,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_SAVE_CACHE: {
-                assert !JniUtil.useChromiumHttpStack();
                 CacheSaveData data = (CacheSaveData) msg.obj;
                 CacheManager.CacheResult cache = mCacheResultMap
                         .get(data.mListener);
@@ -182,7 +178,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_REMOVE_CACHE: {
-                assert !JniUtil.useChromiumHttpStack();
                 LoadListener listener = (LoadListener) msg.obj;
                 CacheManager.CacheResult cache = mCacheResultMap.get(listener);
                 if (cache != null) {
@@ -192,17 +187,14 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_TRIM_CACHE: {
-                assert !JniUtil.useChromiumHttpStack();
                 CacheManager.trimCacheIfNeeded();
                 break;
             }
             case MSG_CLEAR_CACHE: {
-                assert !JniUtil.useChromiumHttpStack();
                 CacheManager.clearCache();
                 break;
             }
             case MSG_CACHE_TRANSACTION_TICKER: {
-                assert !JniUtil.useChromiumHttpStack();
                 if (!mCacheTickersBlocked) {
                     CacheManager.endTransaction();
                     CacheManager.startTransaction();
@@ -212,7 +204,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_PAUSE_CACHE_TRANSACTION: {
-                assert !JniUtil.useChromiumHttpStack();
                 if (CacheManager.disableTransaction()) {
                     mCacheTickersBlocked = true;
                     removeMessages(MSG_CACHE_TRANSACTION_TICKER);
@@ -220,7 +211,6 @@ final class WebViewWorker extends Handler {
                 break;
             }
             case MSG_RESUME_CACHE_TRANSACTION: {
-                assert !JniUtil.useChromiumHttpStack();
                 if (CacheManager.enableTransaction()) {
                     mCacheTickersBlocked = false;
                     sendEmptyMessageDelayed(MSG_CACHE_TRANSACTION_TICKER,

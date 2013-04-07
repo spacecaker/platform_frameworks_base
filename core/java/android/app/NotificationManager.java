@@ -16,13 +16,17 @@
 
 package android.app;
 
+import java.io.FileOutputStream;
+
 import android.content.Context;
+import android.content.Intent;
 import android.os.Binder;
 import android.os.RemoteException;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.ServiceManager;
 import android.util.Log;
+import android.widget.Toast;
 
 /**
  * Class to notify the user of events that happen.  This is how you tell
@@ -39,28 +43,17 @@ import android.util.Log;
  * </ul>
  *
  * <p>
- * Each of the notify methods takes an int id parameter and optionally a
- * {@link String} tag parameter, which may be {@code null}.  These parameters
- * are used to form a pair (tag, id), or ({@code null}, id) if tag is
- * unspecified.  This pair identifies this notification from your app to the
- * system, so that pair should be unique within your app.  If you call one
- * of the notify methods with a (tag, id) pair that is currently active and
- * a new set of notification parameters, it will be updated.  For example,
- * if you pass a new status bar icon, the old icon in the status bar will
- * be replaced with the new one.  This is also the same tag and id you pass
- * to the {@link #cancel(int)} or {@link #cancel(String, int)} method to clear
- * this notification.
+ * Each of the notify methods takes an int id parameter.  This id identifies
+ * this notification from your app to the system, so that id should be unique
+ * within your app.  If you call one of the notify methods with an id that is
+ * currently active and a new set of notification parameters, it will be
+ * updated.  For example, if you pass a new status bar icon, the old icon in
+ * the status bar will be replaced with the new one.  This is also the same
+ * id you pass to the {@link #cancel} method to clear this notification.
  *
  * <p>
  * You do not instantiate this class directly; instead, retrieve it through
  * {@link android.content.Context#getSystemService}.
- *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For a guide to creating notifications, read the
- * <a href="{@docRoot}guide/topics/ui/notifiers/notifications.html">Status Bar Notifications</a>
- * developer guide.</p>
- * </div>
  *
  * @see android.app.Notification
  * @see android.content.Context#getSystemService
@@ -68,7 +61,17 @@ import android.util.Log;
 public class NotificationManager
 {
     private static String TAG = "NotificationManager";
-    private static boolean localLOGV = false;
+    private static boolean DEBUG = false;
+    private static boolean localLOGV = DEBUG || android.util.Config.LOGV;
+
+    /** @hide */
+    public static final String ACTION_NOTIFY = "android.app.NotificationManager.ACTION_NOTIFY";
+    /** @hide */
+    public static final String EXTRA_PACKAGE = "android.app.NotificationManager.EXTRA_PACKAGE";
+    /** @hide */
+    public static final String EXTRA_USES_LIGHT = "android.app.NotificationManager.EXTRA_USES_LIGHT";
+    /** @hide */
+    public static final String EXTRA_IS_ONGOING = "android.app.NotificationManager.EXTRA_IS_ONGOING";
 
     private static INotificationManager sService;
 
@@ -89,14 +92,12 @@ public class NotificationManager
     }
 
     /**
-     * Post a notification to be shown in the status bar. If a notification with
-     * the same id has already been posted by your application and has not yet been canceled, it
-     * will be replaced by the updated information.
+     * Persistent notification on the status bar, 
      *
      * @param id An identifier for this notification unique within your
      *        application.
-     * @param notification A {@link Notification} object describing what to show the user. Must not
-     *        be null.
+     * @param notification A {@link Notification} object describing how to
+     *        notify the user, other than the view you're providing. Must not be null.
      */
     public void notify(int id, Notification notification)
     {
@@ -104,24 +105,33 @@ public class NotificationManager
     }
 
     /**
-     * Post a notification to be shown in the status bar. If a notification with
-     * the same tag and id has already been posted by your application and has not yet been
-     * canceled, it will be replaced by the updated information.
+     * Persistent notification on the status bar,
      *
-     * @param tag A string identifier for this notification.  May be {@code null}.
-     * @param id An identifier for this notification.  The pair (tag, id) must be unique
-     *        within your application.
-     * @param notification A {@link Notification} object describing what to
-     *        show the user. Must not be null.
+     * @param tag An string identifier for this notification unique within your
+     *        application.
+     * @param notification A {@link Notification} object describing how to
+     *        notify the user, other than the view you're providing. Must not be null.
+     * @return the id of the notification that is associated with the string identifier that
+     * can be used to cancel the notification
      */
     public void notify(String tag, int id, Notification notification)
     {
         int[] idOut = new int[1];
         INotificationManager service = getService();
         String pkg = mContext.getPackageName();
+
+        boolean usesLight = (notification.flags & Notification.FLAG_SHOW_LIGHTS) != 0;
+        boolean isOngoing = (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0;
+        Intent notifyIntent = new Intent(ACTION_NOTIFY);
+        notifyIntent.putExtra(EXTRA_PACKAGE, pkg);
+        notifyIntent.putExtra(EXTRA_USES_LIGHT, usesLight);
+        notifyIntent.putExtra(EXTRA_IS_ONGOING, isOngoing);
+        mContext.sendBroadcast(notifyIntent);
+
         if (localLOGV) Log.v(TAG, pkg + ": notify(" + id + ", " + notification + ")");
         try {
             service.enqueueNotificationWithTag(pkg, tag, id, notification, idOut);
+            //Log.i("NotificationManager", "Pulsing: " + pkg);
             if (id != idOut[0]) {
                 Log.w(TAG, "notify: id corrupted: sent " + id + ", got back " + idOut[0]);
             }

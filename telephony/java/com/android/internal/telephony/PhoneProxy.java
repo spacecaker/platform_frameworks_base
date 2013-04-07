@@ -20,20 +20,21 @@ package com.android.internal.telephony;
 import android.app.ActivityManagerNative;
 import android.content.Context;
 import android.content.Intent;
-import android.net.LinkCapabilities;
-import android.net.LinkProperties;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemProperties;
+import android.preference.PreferenceManager;
 import android.telephony.CellLocation;
+import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
 import android.util.Log;
 
 import com.android.internal.telephony.cdma.CDMAPhone;
 import com.android.internal.telephony.gsm.GSMPhone;
-import com.android.internal.telephony.gsm.UsimServiceTable;
-import com.android.internal.telephony.ims.IsimRecords;
+import com.android.internal.telephony.gsm.NetworkInfo;
+import com.android.internal.telephony.gsm.GsmDataConnection;
 import com.android.internal.telephony.test.SimulatedRadioControl;
 
 import java.util.List;
@@ -73,7 +74,7 @@ public class PhoneProxy extends Handler implements Phone {
         switch(msg.what) {
         case EVENT_RADIO_TECHNOLOGY_CHANGED:
             //switch Phone from CDMA to GSM or vice versa
-            mOutgoingPhone = mActivePhone.getPhoneName();
+            mOutgoingPhone = ((PhoneBase)mActivePhone).getPhoneName();
             logd("Switching phone from " + mOutgoingPhone + "Phone to " +
                     (mOutgoingPhone.equals("GSM") ? "CDMAPhone" : "GSMPhone") );
             boolean oldPowerState = false; // old power state to off
@@ -88,6 +89,8 @@ public class PhoneProxy extends Handler implements Phone {
             if(mOutgoingPhone.equals("GSM")) {
                 logd("Make a new CDMAPhone and destroy the old GSMPhone.");
 
+                // Since we already know we're disposing of this
+                CallManager.getInstance().unregisterPhone(mActivePhone);
                 ((GSMPhone)mActivePhone).dispose();
                 Phone oldPhone = mActivePhone;
 
@@ -99,10 +102,16 @@ public class PhoneProxy extends Handler implements Phone {
 
                 mActivePhone = PhoneFactory.getCdmaPhone();
                 ((GSMPhone)oldPhone).removeReferences();
+
+                // out with the old...
                 oldPhone = null;
+
+                // ...and in with the new!
+                CallManager.getInstance().registerPhoneAsDefault(mActivePhone);
             } else {
                 logd("Make a new GSMPhone and destroy the old CDMAPhone.");
 
+                CallManager.getInstance().unregisterPhone(mActivePhone);
                 ((CDMAPhone)mActivePhone).dispose();
                 //mActivePhone = null;
                 Phone oldPhone = mActivePhone;
@@ -115,7 +124,9 @@ public class PhoneProxy extends Handler implements Phone {
 
                 mActivePhone = PhoneFactory.getGsmPhone();
                 ((CDMAPhone)oldPhone).removeReferences();
+
                 oldPhone = null;
+                CallManager.getInstance().registerPhoneAsDefault(mActivePhone);
             }
 
             if (mResetModemOnRadioTechnologyChange) {
@@ -145,9 +156,22 @@ public class PhoneProxy extends Handler implements Phone {
         super.handleMessage(msg);
     }
 
-    private static void logd(String msg) {
+    private void logv(String msg) {
+        Log.v(LOG_TAG, "[PhoneProxy] " + msg);
+    }
+
+    private void logd(String msg) {
         Log.d(LOG_TAG, "[PhoneProxy] " + msg);
     }
+
+    private void logw(String msg) {
+        Log.w(LOG_TAG, "[PhoneProxy] " + msg);
+    }
+
+    private void loge(String msg) {
+        Log.e(LOG_TAG, "[PhoneProxy] " + msg);
+    }
+
 
     public ServiceState getServiceState() {
         return mActivePhone.getServiceState();
@@ -158,11 +182,7 @@ public class PhoneProxy extends Handler implements Phone {
     }
 
     public DataState getDataConnectionState() {
-        return mActivePhone.getDataConnectionState(Phone.APN_TYPE_DEFAULT);
-    }
-
-    public DataState getDataConnectionState(String apnType) {
-        return mActivePhone.getDataConnectionState(apnType);
+        return mActivePhone.getDataConnectionState();
     }
 
     public DataActivityState getDataActivityState() {
@@ -197,16 +217,8 @@ public class PhoneProxy extends Handler implements Phone {
         return mActivePhone.getActiveApnTypes();
     }
 
-    public String getActiveApnHost(String apnType) {
-        return mActivePhone.getActiveApnHost(apnType);
-    }
-
-    public LinkProperties getLinkProperties(String apnType) {
-        return mActivePhone.getLinkProperties(apnType);
-    }
-
-    public LinkCapabilities getLinkCapabilities(String apnType) {
-        return mActivePhone.getLinkCapabilities(apnType);
+    public String getActiveApn() {
+        return mActivePhone.getActiveApn();
     }
 
     public SignalStrength getSignalStrength() {
@@ -538,7 +550,7 @@ public class PhoneProxy extends Handler implements Phone {
         mActivePhone.setNetworkSelectionModeAutomatic(response);
     }
 
-    public void selectNetworkManually(OperatorInfo network, Message response) {
+    public void selectNetworkManually(NetworkInfo network, Message response) {
         mActivePhone.selectNetworkManually(network, response);
     }
 
@@ -580,6 +592,10 @@ public class PhoneProxy extends Handler implements Phone {
 
     public void getDataCallList(Message response) {
         mActivePhone.getDataCallList(response);
+    }
+
+    public List<DataConnection> getCurrentDataConnectionList() {
+        return mActivePhone.getCurrentDataConnectionList();
     }
 
     public void updateServiceLocation() {
@@ -634,6 +650,14 @@ public class PhoneProxy extends Handler implements Phone {
         return mActivePhone.getSimulatedRadioControl();
     }
 
+    public boolean enableDataConnectivity() {
+        return mActivePhone.enableDataConnectivity();
+    }
+
+    public boolean disableDataConnectivity() {
+        return mActivePhone.disableDataConnectivity();
+    }
+
     public int enableApnType(String type) {
         return mActivePhone.enableApnType(type);
     }
@@ -642,12 +666,28 @@ public class PhoneProxy extends Handler implements Phone {
         return mActivePhone.disableApnType(type);
     }
 
-    public boolean isDataConnectivityPossible() {
-        return mActivePhone.isDataConnectivityPossible(Phone.APN_TYPE_DEFAULT);
+    public boolean isDataConnectivityEnabled() {
+        return mActivePhone.isDataConnectivityEnabled();
     }
 
-    public boolean isDataConnectivityPossible(String apnType) {
-        return mActivePhone.isDataConnectivityPossible(apnType);
+    public boolean isDataConnectivityPossible() {
+        return mActivePhone.isDataConnectivityPossible();
+    }
+
+    public String getInterfaceName(String apnType) {
+        return mActivePhone.getInterfaceName(apnType);
+    }
+
+    public String getIpAddress(String apnType) {
+        return mActivePhone.getIpAddress(apnType);
+    }
+
+    public String getGateway(String apnType) {
+        return mActivePhone.getGateway(apnType);
+    }
+
+    public String[] getDnsServers(String apnType) {
+        return mActivePhone.getDnsServers(apnType);
     }
 
     public String getDeviceId() {
@@ -672,14 +712,6 @@ public class PhoneProxy extends Handler implements Phone {
 
     public String getMeid() {
         return mActivePhone.getMeid();
-    }
-
-    public String getMsisdn() {
-        return mActivePhone.getMsisdn();
-    }
-
-    public String getImei() {
-        return mActivePhone.getImei();
     }
 
     public PhoneSubInfo getPhoneSubInfo(){
@@ -727,19 +759,15 @@ public class PhoneProxy extends Handler implements Phone {
     }
 
     public int getCdmaEriIconIndex() {
-        return mActivePhone.getCdmaEriIconIndex();
+         return mActivePhone.getCdmaEriIconIndex();
     }
 
-    public String getCdmaEriText() {
-        return mActivePhone.getCdmaEriText();
-    }
+     public String getCdmaEriText() {
+         return mActivePhone.getCdmaEriText();
+     }
 
     public int getCdmaEriIconMode() {
-        return mActivePhone.getCdmaEriIconMode();
-    }
-
-    public Phone getActivePhone() {
-        return mActivePhone;
+         return mActivePhone.getCdmaEriIconMode();
     }
 
     public void sendBurstDtmf(String dtmfString, int on, int off, Message onComplete){
@@ -748,10 +776,6 @@ public class PhoneProxy extends Handler implements Phone {
 
     public void exitEmergencyCallbackMode(){
         mActivePhone.exitEmergencyCallbackMode();
-    }
-
-    public boolean needsOtaServiceProvisioning(){
-        return mActivePhone.needsOtaServiceProvisioning();
     }
 
     public boolean isOtaSpNumber(String dialStr){
@@ -832,31 +856,5 @@ public class PhoneProxy extends Handler implements Phone {
 
     public boolean isCspPlmnEnabled() {
         return mActivePhone.isCspPlmnEnabled();
-    }
-
-    public IsimRecords getIsimRecords() {
-        return mActivePhone.getIsimRecords();
-    }
-
-    public void requestIsimAuthentication(String nonce, Message response) {
-        mActivePhone.requestIsimAuthentication(nonce, response);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public int getLteOnCdmaMode() {
-        return mActivePhone.getLteOnCdmaMode();
-    }
-
-    @Override
-    public void setVoiceMessageWaiting(int line, int countWaiting) {
-        mActivePhone.setVoiceMessageWaiting(line, countWaiting);
-    }
-
-    @Override
-    public UsimServiceTable getUsimServiceTable() {
-        return mActivePhone.getUsimServiceTable();
     }
 }

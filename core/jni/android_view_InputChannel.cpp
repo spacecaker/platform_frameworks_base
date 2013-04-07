@@ -111,9 +111,7 @@ static jobject android_view_InputChannel_createInputChannel(JNIEnv* env,
         NativeInputChannel* nativeInputChannel) {
     jobject inputChannelObj = env->NewObject(gInputChannelClassInfo.clazz,
             gInputChannelClassInfo.ctor);
-    if (inputChannelObj) {
-        android_view_InputChannel_setNativeInputChannel(env, inputChannelObj, nativeInputChannel);
-    }
+    android_view_InputChannel_setNativeInputChannel(env, inputChannelObj, nativeInputChannel);
     return inputChannelObj;
 }
 
@@ -128,29 +126,18 @@ static jobjectArray android_view_InputChannel_nativeOpenInputChannelPair(JNIEnv*
     status_t result = InputChannel::openInputChannelPair(name, serverChannel, clientChannel);
 
     if (result) {
-        String8 message;
-        message.appendFormat("Could not open input channel pair.  status=%d", result);
-        jniThrowRuntimeException(env, message.string());
+        LOGE("Could not open input channel pair.  status=%d", result);
+        jniThrowRuntimeException(env, "Could not open input channel pair.");
         return NULL;
     }
 
-    jobjectArray channelPair = env->NewObjectArray(2, gInputChannelClassInfo.clazz, NULL);
-    if (env->ExceptionCheck()) {
-        return NULL;
-    }
-
+    // TODO more robust error checking
     jobject serverChannelObj = android_view_InputChannel_createInputChannel(env,
             new NativeInputChannel(serverChannel));
-    if (env->ExceptionCheck()) {
-        return NULL;
-    }
-
     jobject clientChannelObj = android_view_InputChannel_createInputChannel(env,
             new NativeInputChannel(clientChannel));
-    if (env->ExceptionCheck()) {
-        return NULL;
-    }
 
+    jobjectArray channelPair = env->NewObjectArray(2, gInputChannelClassInfo.clazz, NULL);
     env->SetObjectArrayElement(channelPair, 0, serverChannelObj);
     env->SetObjectArrayElement(channelPair, 1, clientChannelObj);
     return channelPair;
@@ -174,7 +161,7 @@ static void android_view_InputChannel_nativeDispose(JNIEnv* env, jobject obj, jb
 
 static void android_view_InputChannel_nativeTransferTo(JNIEnv* env, jobject obj,
         jobject otherObj) {
-    if (android_view_InputChannel_getNativeInputChannel(env, otherObj) != NULL) {
+    if (android_view_InputChannel_getInputChannel(env, otherObj) != NULL) {
         jniThrowException(env, "java/lang/IllegalStateException",
                 "Other object already has a native input channel.");
         return;
@@ -188,7 +175,7 @@ static void android_view_InputChannel_nativeTransferTo(JNIEnv* env, jobject obj,
 
 static void android_view_InputChannel_nativeReadFromParcel(JNIEnv* env, jobject obj,
         jobject parcelObj) {
-    if (android_view_InputChannel_getNativeInputChannel(env, obj) != NULL) {
+    if (android_view_InputChannel_getInputChannel(env, obj) != NULL) {
         jniThrowException(env, "java/lang/IllegalStateException",
                 "This object already has a native input channel.");
         return;
@@ -199,21 +186,9 @@ static void android_view_InputChannel_nativeReadFromParcel(JNIEnv* env, jobject 
         bool isInitialized = parcel->readInt32();
         if (isInitialized) {
             String8 name = parcel->readString8();
-            int32_t parcelAshmemFd = parcel->readFileDescriptor();
-            int32_t ashmemFd = dup(parcelAshmemFd);
-            if (ashmemFd < 0) {
-                LOGE("Error %d dup ashmem fd %d.", errno, parcelAshmemFd);
-            }
-            int32_t parcelReceivePipeFd = parcel->readFileDescriptor();
-            int32_t receivePipeFd = dup(parcelReceivePipeFd);
-            if (receivePipeFd < 0) {
-                LOGE("Error %d dup receive pipe fd %d.", errno, parcelReceivePipeFd);
-            }
-            int32_t parcelSendPipeFd = parcel->readFileDescriptor();
-            int32_t sendPipeFd = dup(parcelSendPipeFd);
-            if (sendPipeFd < 0) {
-                LOGE("Error %d dup send pipe fd %d.", errno, parcelSendPipeFd);
-            }
+            int32_t ashmemFd = dup(parcel->readFileDescriptor());
+            int32_t receivePipeFd = dup(parcel->readFileDescriptor());
+            int32_t sendPipeFd = dup(parcel->readFileDescriptor());
             if (ashmemFd < 0 || receivePipeFd < 0 || sendPipeFd < 0) {
                 if (ashmemFd >= 0) ::close(ashmemFd);
                 if (receivePipeFd >= 0) ::close(receivePipeFd);

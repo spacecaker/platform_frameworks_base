@@ -25,21 +25,14 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.AuthAlgorithm;
-import android.net.wifi.WifiConfiguration.IpAssignment;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
-import android.net.wifi.WifiConfiguration.ProxySettings;
-import android.net.LinkAddress;
-import android.net.LinkProperties;
-import android.net.RouteInfo;
-import android.util.Log;
+import android.net.DhcpInfo;
 
 import java.io.InputStream;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-
 
 /**
  * Help class to process configurations of access points saved in an XML file.
@@ -47,8 +40,8 @@ import java.util.List;
  * <accesspoint></accesspoint>. The supported configuration includes: ssid,
  * security, eap, phase2, identity, password, anonymousidentity, cacert, usercert,
  * in which each is included in the corresponding tags. Static IP setting is also supported.
- * Tags that can be used include: ip, gateway, networkprefixlength, dns1, dns2. All access points
- * have to be enclosed in tags of <resources></resources>.
+ * Tags that can be used include: ip, gateway, netmask, dns1, dns2. All access points have to be
+ * enclosed in tags of <resources></resources>.
  *
  * The following is a sample configuration file for an access point using EAP-PEAP with MSCHAP2.
  * <resources>
@@ -63,8 +56,7 @@ import java.util.List;
  * </resources>
  *
  * Note:ssid and security have to be the first two tags
- *      for static ip setting, tag "ip" should be listed before other fields: dns, gateway,
- *      networkprefixlength.
+ *      for static ip setting, tag "ip" should be listed before other fields: dns, gateway, netmask.
  */
 public class AccessPointParserHelper {
     private static final String KEYSTORE_SPACE = "keystore://";
@@ -75,6 +67,7 @@ public class AccessPointParserHelper {
     static final int EAP = 3;
 
     List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
+    HashMap<String, DhcpInfo> ssidToDhcpInfoHM = new HashMap<String, DhcpInfo>();
 
     private int getSecurityType (String security) {
         if (security.equalsIgnoreCase("NONE")) {
@@ -100,14 +93,32 @@ public class AccessPointParserHelper {
         }
     }
 
+    private static int stringToIpAddr(String addrString) throws UnknownHostException {
+        try {
+            String[] parts = addrString.split("\\.");
+            if (parts.length != 4) {
+                throw new UnknownHostException(addrString);
+            }
+
+            int a = Integer.parseInt(parts[0])      ;
+            int b = Integer.parseInt(parts[1]) <<  8;
+            int c = Integer.parseInt(parts[2]) << 16;
+            int d = Integer.parseInt(parts[3]) << 24;
+
+            return a | b | c | d;
+        } catch (NumberFormatException ex) {
+            throw new UnknownHostException(addrString);
+        }
+    }
+
     DefaultHandler mHandler = new DefaultHandler() {
 
         boolean ssid = false;
         boolean security = false;
         boolean password = false;
         boolean ip = false;
+        boolean netmask = false;
         boolean gateway = false;
-        boolean networkprefix = false;
         boolean dns1 = false;
         boolean dns2 = false;
         boolean eap = false;
@@ -118,8 +129,7 @@ public class AccessPointParserHelper {
         boolean usercert = false;
         WifiConfiguration config = null;
         int securityType = NONE;
-        LinkProperties mLinkProperties = null;
-        InetAddress mInetAddr = null;
+        DhcpInfo mDhcpInfo = null;
 
         @Override
         public void startElement(String uri, String localName, String tagName,
@@ -155,14 +165,14 @@ public class AccessPointParserHelper {
                 usercert = true;
             }
             if (tagName.equalsIgnoreCase("ip")) {
-                mLinkProperties = new LinkProperties();
                 ip = true;
+                mDhcpInfo = new DhcpInfo();
             }
             if (tagName.equalsIgnoreCase("gateway")) {
                 gateway = true;
             }
-            if (tagName.equalsIgnoreCase("networkprefixlength")) {
-                networkprefix = true;
+            if (tagName.equalsIgnoreCase("netmask")) {
+                netmask = true;
             }
             if (tagName.equalsIgnoreCase("dns1")) {
                 dns1 = true;
@@ -175,15 +185,11 @@ public class AccessPointParserHelper {
         @Override
         public void endElement(String uri, String localName, String tagName) throws SAXException {
             if (tagName.equalsIgnoreCase("accesspoint")) {
-                if (mLinkProperties != null) {
-                    config.ipAssignment = IpAssignment.STATIC;
-                    config.linkProperties = mLinkProperties;
-                } else {
-                    config.ipAssignment = IpAssignment.DHCP;
-                }
-                config.proxySettings = ProxySettings.NONE;
                 networks.add(config);
-                mLinkProperties = null;
+                if (mDhcpInfo != null) {
+                    ssidToDhcpInfoHM.put(config.SSID, mDhcpInfo);
+                    mDhcpInfo = null;
+                }
             }
         }
 
@@ -286,11 +292,7 @@ public class AccessPointParserHelper {
             }
             if (ip) {
                 try {
-                    String ipAddr = new String(ch, start, length);
-                    if (!InetAddress.isNumeric(ipAddr)) {
-                        throw new SAXException();
-                    }
-                    mInetAddr = InetAddress.getByName(ipAddr);
+                    mDhcpInfo.ipAddress = stringToIpAddr(new String(ch, start, length));
                 } catch (UnknownHostException e) {
                     throw new SAXException();
                 }
@@ -298,35 +300,23 @@ public class AccessPointParserHelper {
             }
             if (gateway) {
                 try {
-                    String gwAddr = new String(ch, start, length);
-                    if (!InetAddress.isNumeric(gwAddr)) {
-                        throw new SAXException();
-                    }
-                    mLinkProperties.addRoute(new RouteInfo(InetAddress.getByName(gwAddr)));
+                    mDhcpInfo.gateway = stringToIpAddr(new String(ch, start, length));
                 } catch (UnknownHostException e) {
                     throw new SAXException();
                 }
                 gateway = false;
             }
-            if (networkprefix) {
+            if (netmask) {
                 try {
-                    int nwPrefixLength = Integer.parseInt(new String(ch, start, length));
-                    if ((nwPrefixLength < 0) || (nwPrefixLength > 32)) {
-                        throw new SAXException();
-                    }
-                    mLinkProperties.addLinkAddress(new LinkAddress(mInetAddr, nwPrefixLength));
-                } catch (NumberFormatException e) {
+                    mDhcpInfo.netmask = stringToIpAddr(new String(ch, start, length));
+                } catch (UnknownHostException e) {
                     throw new SAXException();
                 }
-                networkprefix = false;
+                netmask = false;
             }
             if (dns1) {
                 try {
-                    String dnsAddr = new String(ch, start, length);
-                    if (!InetAddress.isNumeric(dnsAddr)) {
-                        throw new SAXException();
-                    }
-                    mLinkProperties.addDns(InetAddress.getByName(dnsAddr));
+                    mDhcpInfo.dns1 = stringToIpAddr(new String(ch, start, length));
                 } catch (UnknownHostException e) {
                     throw new SAXException();
                 }
@@ -334,11 +324,7 @@ public class AccessPointParserHelper {
             }
             if (dns2) {
                 try {
-                    String dnsAddr = new String(ch, start, length);
-                    if (!InetAddress.isNumeric(dnsAddr)) {
-                        throw new SAXException();
-                    }
-                    mLinkProperties.addDns(InetAddress.getByName(dnsAddr));
+                    mDhcpInfo.dns2 = stringToIpAddr(new String(ch, start, length));
                 } catch (UnknownHostException e) {
                     throw new SAXException();
                 }
@@ -360,5 +346,9 @@ public class AccessPointParserHelper {
 
     public List<WifiConfiguration> getNetworkConfigurations() throws Exception {
         return networks;
+    }
+
+    public HashMap<String, DhcpInfo> getSsidToDhcpInfoHashMap() {
+        return ssidToDhcpInfoHM;
     }
 }

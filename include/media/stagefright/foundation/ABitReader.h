@@ -31,8 +31,6 @@ struct ABitReader {
     uint32_t getBits(size_t n);
     void skipBits(size_t n);
 
-    void putBits(uint32_t x, size_t n);
-
     size_t numBitsLeft() const;
 
     const uint8_t *data() const;
@@ -45,6 +43,7 @@ private:
     size_t mNumBitsLeft;
 
     void fillReservoir();
+    void putBits(uint32_t x, size_t n);
 
     DISALLOW_EVIL_CONSTRUCTORS(ABitReader);
 };

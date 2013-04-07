@@ -25,6 +25,7 @@ import android.media.IMediaScannerService;
 import android.net.Uri;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.util.Config;
 import android.util.Log;
 
 
@@ -125,13 +126,13 @@ public class MediaScannerConnection implements ServiceConnection {
     public void disconnect() {
         synchronized (this) {
             if (mConnected) {
-                if (false) {
+                if (Config.LOGV) {
                     Log.v(TAG, "Disconnecting from Media Scanner");
                 }
                 try {
                     mContext.unbindService(this);
                 } catch (IllegalArgumentException ex) {
-                    if (false) {
+                    if (Config.LOGV) {
                         Log.v(TAG, "disconnect failed: " + ex);
                     }
                 }
@@ -163,12 +164,12 @@ public class MediaScannerConnection implements ServiceConnection {
                 throw new IllegalStateException("not connected to MediaScannerService");
             }
             try {
-                if (false) {
+                if (Config.LOGV) {
                     Log.v(TAG, "Scanning file " + path);
                 }
                 mService.requestScanFile(path, mimeType, mListener);
             } catch (RemoteException e) {
-                if (false) {
+                if (Config.LOGD) {
                     Log.d(TAG, "Failed to scan file " + path);
                 }
             }
@@ -239,7 +240,7 @@ public class MediaScannerConnection implements ServiceConnection {
      * Part of the ServiceConnection interface.  Do not call.
      */
     public void onServiceConnected(ComponentName className, IBinder service) {
-        if (false) {
+        if (Config.LOGV) {
             Log.v(TAG, "Connected to Media Scanner");
         }
         synchronized (this) {
@@ -254,7 +255,7 @@ public class MediaScannerConnection implements ServiceConnection {
      * Part of the ServiceConnection interface.  Do not call.
      */
     public void onServiceDisconnected(ComponentName className) {
-        if (false) {
+        if (Config.LOGV) {
             Log.v(TAG, "Disconnected from Media Scanner");
         }
         synchronized (this) {

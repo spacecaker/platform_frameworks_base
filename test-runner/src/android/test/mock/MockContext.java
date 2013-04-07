@@ -29,7 +29,6 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
-import android.database.DatabaseErrorHandler;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
@@ -164,11 +163,6 @@ public class MockContext extends Context {
     }
 
     @Override
-    public File getObbDir() {
-        throw new UnsupportedOperationException();
-    }
-    
-    @Override
     public File getCacheDir() {
         throw new UnsupportedOperationException();
     }
@@ -186,12 +180,6 @@ public class MockContext extends Context {
     @Override
     public SQLiteDatabase openOrCreateDatabase(String file, int mode, 
             SQLiteDatabase.CursorFactory factory) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public SQLiteDatabase openOrCreateDatabase(String file, int mode,
-            SQLiteDatabase.CursorFactory factory, DatabaseErrorHandler errorHandler) {
         throw new UnsupportedOperationException();
     }
 
@@ -247,11 +235,6 @@ public class MockContext extends Context {
 
     @Override
     public void startActivity(Intent intent) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void startActivities(Intent[] intents) {
         throw new UnsupportedOperationException();
     }
 

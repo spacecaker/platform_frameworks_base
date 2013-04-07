@@ -48,7 +48,7 @@ public:
                    ~EGLTextureObject();
 
     status_t    setSurface(GGLSurface const* s);
-    status_t    setImage(ANativeWindowBuffer* buffer);
+    status_t    setImage(android_native_buffer_t* buffer);
     void        setImageBits(void* vaddr) { surface.data = (GGLubyte*)vaddr; }
 
     status_t            reallocate(GLint level,
@@ -80,7 +80,10 @@ public:
     GLint               crop_rect[4];
     GLint               generate_mipmap;
     GLint               direct;
-    ANativeWindowBuffer* buffer;
+#ifdef LIBAGL_USE_GRALLOC_COPYBITS
+    bool                try_copybit;
+#endif // LIBAGL_USE_GRALLOC_COPYBITS
+    android_native_buffer_t* buffer;
 };
 
 // ----------------------------------------------------------------------------

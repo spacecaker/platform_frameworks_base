@@ -32,6 +32,5 @@ oneway interface IPhoneStateListener {
     void onDataConnectionStateChanged(int state, int networkType);
     void onDataActivity(int direction);
     void onSignalStrengthsChanged(in SignalStrength signalStrength);
-    void onOtaspChanged(in int otaspMode);
 }
 

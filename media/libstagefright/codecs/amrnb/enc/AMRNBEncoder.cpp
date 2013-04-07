@@ -82,11 +82,7 @@ status_t AMRNBEncoder::start(MetaData *params) {
                 &mEncState, &mSidState, false /* dtx_enable */),
              0);
 
-    status_t err = mSource->start(params);
-    if (err != OK) {
-        LOGE("AudioSource is not available");
-        return err;
-    }
+    mSource->start(params);
 
     mAnchorTimeUs = 0;
     mNumFramesOutput = 0;

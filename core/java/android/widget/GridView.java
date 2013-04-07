@@ -17,18 +17,15 @@
 package android.widget;
 
 import android.content.Context;
-import android.content.Intent;
 import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.SoundEffectConstants;
 import android.view.View;
-import android.view.ViewDebug;
 import android.view.ViewGroup;
+import android.view.SoundEffectConstants;
 import android.view.animation.GridLayoutAnimationController;
-import android.widget.RemoteViews.RemoteView;
 
 
 /**
@@ -37,46 +34,13 @@ import android.widget.RemoteViews.RemoteView;
  *
  * <p>See the <a href="{@docRoot}resources/tutorials/views/hello-gridview.html">Grid
  * View tutorial</a>.</p>
- * 
- * @attr ref android.R.styleable#GridView_horizontalSpacing
- * @attr ref android.R.styleable#GridView_verticalSpacing
- * @attr ref android.R.styleable#GridView_stretchMode
- * @attr ref android.R.styleable#GridView_columnWidth
- * @attr ref android.R.styleable#GridView_numColumns
- * @attr ref android.R.styleable#GridView_gravity
  */
-@RemoteView
 public class GridView extends AbsListView {
-    /**
-     * Disables stretching.
-     * 
-     * @see #setStretchMode(int) 
-     */
     public static final int NO_STRETCH = 0;
-    /**
-     * Stretches the spacing between columns.
-     * 
-     * @see #setStretchMode(int) 
-     */
     public static final int STRETCH_SPACING = 1;
-    /**
-     * Stretches columns.
-     * 
-     * @see #setStretchMode(int) 
-     */
     public static final int STRETCH_COLUMN_WIDTH = 2;
-    /**
-     * Stretches the spacing between columns. The spacing is uniform.
-     * 
-     * @see #setStretchMode(int) 
-     */
     public static final int STRETCH_SPACING_UNIFORM = 3;
-
-    /**
-     * Creates as many columns as can fit on screen.
-     * 
-     * @see #setNumColumns(int) 
-     */
+    
     public static final int AUTO_FIT = -1;
 
     private int mNumColumns = AUTO_FIT;
@@ -145,23 +109,13 @@ public class GridView extends AbsListView {
     }
 
     /**
-     * Sets up this AbsListView to use a remote views adapter which connects to a RemoteViewsService
-     * through the specified intent.
-     * @param intent the intent used to identify the RemoteViewsService for the adapter to connect to.
-     */
-    @android.view.RemotableViewMethod
-    public void setRemoteViewsAdapter(Intent intent) {
-        super.setRemoteViewsAdapter(intent);
-    }
-
-    /**
      * Sets the data behind this GridView.
      *
      * @param adapter the adapter providing the grid's data
      */
     @Override
     public void setAdapter(ListAdapter adapter) {
-        if (mAdapter != null && mDataSetObserver != null) {
+        if (null != mAdapter) {
             mAdapter.unregisterDataSetObserver(mDataSetObserver);
         }
 
@@ -171,10 +125,7 @@ public class GridView extends AbsListView {
 
         mOldSelectedPosition = INVALID_POSITION;
         mOldSelectedRowId = INVALID_ROW_ID;
-
-        // AbsListView#setAdapter will update choice mode states.
-        super.setAdapter(adapter);
-
+        
         if (mAdapter != null) {
             mOldItemCount = mItemCount;
             mItemCount = mAdapter.getCount();
@@ -228,12 +179,8 @@ public class GridView extends AbsListView {
         final int count = getChildCount();
 
         if (down) {
-            int paddingTop = 0;
-            if ((mGroupFlags & CLIP_TO_PADDING_MASK) == CLIP_TO_PADDING_MASK) {
-                paddingTop = getListPaddingTop();
-            }
             final int startOffset = count > 0 ?
-                    getChildAt(count - 1).getBottom() + verticalSpacing : paddingTop;
+                    getChildAt(count - 1).getBottom() + verticalSpacing : getListPaddingTop();
             int position = mFirstPosition + count;
             if (mStackFromBottom) {
                 position += numColumns - 1;
@@ -241,12 +188,8 @@ public class GridView extends AbsListView {
             fillDown(position, startOffset);
             correctTooHigh(numColumns, verticalSpacing, getChildCount());
         } else {
-            int paddingBottom = 0;
-            if ((mGroupFlags & CLIP_TO_PADDING_MASK) == CLIP_TO_PADDING_MASK) {
-                paddingBottom = getListPaddingBottom();
-            }
             final int startOffset = count > 0 ?
-                    getChildAt(0).getTop() - verticalSpacing : getHeight() - paddingBottom;
+                    getChildAt(0).getTop() - verticalSpacing : getHeight() - getListPaddingBottom();
             int position = mFirstPosition;
             if (!mStackFromBottom) {
                 position -= numColumns;
@@ -272,10 +215,7 @@ public class GridView extends AbsListView {
     private View fillDown(int pos, int nextTop) {
         View selectedView = null;
 
-        int end = (mBottom - mTop);
-        if ((mGroupFlags & CLIP_TO_PADDING_MASK) == CLIP_TO_PADDING_MASK) {
-            end -= mListPadding.bottom;
-        }
+        final int end = (mBottom - mTop) - mListPadding.bottom;
 
         while (nextTop < end && pos < mItemCount) {
             View temp = makeRow(pos, nextTop, true);
@@ -359,10 +299,7 @@ public class GridView extends AbsListView {
     private View fillUp(int pos, int nextBottom) {
         View selectedView = null;
 
-        int end = 0;
-        if ((mGroupFlags & CLIP_TO_PADDING_MASK) == CLIP_TO_PADDING_MASK) {
-            end = mListPadding.top;
-        }
+        final int end = mListPadding.top;
 
         while (nextBottom > end && pos >= 0) {
 
@@ -805,26 +742,6 @@ public class GridView extends AbsListView {
     }
 
     /**
-     * Smoothly scroll to the specified adapter position. The view will
-     * scroll such that the indicated position is displayed.
-     * @param position Scroll to this adapter position.
-     */
-    @android.view.RemotableViewMethod
-    public void smoothScrollToPosition(int position) {
-        super.smoothScrollToPosition(position);
-    }
-
-    /**
-     * Smoothly scroll to the specified adapter position offset. The view will
-     * scroll such that the indicated position is displayed.
-     * @param offset The amount to offset from the adapter position to scroll to.
-     */
-    @android.view.RemotableViewMethod
-    public void smoothScrollByOffset(int offset) {
-        super.smoothScrollByOffset(offset);
-    }
-
-    /**
      * Fills the grid based on positioning the new selection relative to the old
      * selection. The new selection will be placed at, above, or below the
      * location of the new selection depending on how the selection is moving.
@@ -921,11 +838,10 @@ public class GridView extends AbsListView {
         return sel;
     }
 
-    private boolean determineColumns(int availableSpace) {
+    private void determineColumns(int availableSpace) {
         final int requestedHorizontalSpacing = mRequestedHorizontalSpacing;
         final int stretchMode = mStretchMode;
         final int requestedColumnWidth = mRequestedColumnWidth;
-        boolean didNotInitiallyFit = false;
         
         if (mRequestedNumColumns == AUTO_FIT) {
             if (requestedColumnWidth > 0) {
@@ -955,11 +871,6 @@ public class GridView extends AbsListView {
         default:
             int spaceLeftOver = availableSpace - (mNumColumns * requestedColumnWidth) -
                     ((mNumColumns - 1) * requestedHorizontalSpacing);
-
-            if (spaceLeftOver < 0) {
-                didNotInitiallyFit = true;
-            }
-
             switch (stretchMode) {
             case STRETCH_COLUMN_WIDTH:
                 // Stretch the columns
@@ -992,7 +903,6 @@ public class GridView extends AbsListView {
 
             break;
         }
-        return didNotInitiallyFit;
     }
 
     @Override
@@ -1015,10 +925,9 @@ public class GridView extends AbsListView {
         }
         
         int childWidth = widthSize - mListPadding.left - mListPadding.right;
-        boolean didNotInitiallyFit = determineColumns(childWidth);
+        determineColumns(childWidth);
 
         int childHeight = 0;
-        int childState = 0;
 
         mItemCount = mAdapter == null ? 0 : mAdapter.getCount();
         final int count = mItemCount;
@@ -1041,10 +950,9 @@ public class GridView extends AbsListView {
             child.measure(childWidthSpec, childHeightSpec);
 
             childHeight = child.getMeasuredHeight();
-            childState = combineMeasuredStates(childState, child.getMeasuredState());
 
             if (mRecycler.shouldRecycleViewType(p.viewType)) {
-                mRecycler.addScrapView(child, -1);
+                mRecycler.addScrapView(child);
             }
         }
         
@@ -1068,15 +976,6 @@ public class GridView extends AbsListView {
                 }
             }
             heightSize = ourSize;
-        }
-
-        if (widthMode == MeasureSpec.AT_MOST && mRequestedNumColumns != AUTO_FIT) {
-            int ourSize = (mRequestedNumColumns*mColumnWidth)
-                    + ((mRequestedNumColumns-1)*mHorizontalSpacing)
-                    + mListPadding.left + mListPadding.right;
-            if (ourSize > widthSize || didNotInitiallyFit) {
-                widthSize |= MEASURED_STATE_TOO_SMALL;
-            }
         }
 
         setMeasuredDimension(widthSize, heightSize);
@@ -1192,7 +1091,7 @@ public class GridView extends AbsListView {
 
             if (dataChanged) {
                 for (int i = 0; i < childCount; i++) {
-                    recycleBin.addScrapView(getChildAt(i), firstPosition+i);
+                    recycleBin.addScrapView(getChildAt(i));
                 }
             } else {
                 recycleBin.fillActiveViews(childCount, firstPosition);
@@ -1259,11 +1158,11 @@ public class GridView extends AbsListView {
             recycleBin.scrapActiveViews();
 
             if (sel != null) {
-               positionSelector(INVALID_POSITION, sel);
+               positionSelector(sel);
                mSelectedTop = sel.getTop();
             } else if (mTouchMode > TOUCH_MODE_DOWN && mTouchMode < TOUCH_MODE_SCROLL) {
                 View child = getChildAt(mMotionPosition - mFirstPosition);
-                if (child != null) positionSelector(mMotionPosition, child);
+                if (child != null) positionSelector(child);                
             } else {
                 mSelectedTop = 0;
                 mSelectorRect.setEmpty();
@@ -1382,15 +1281,6 @@ public class GridView extends AbsListView {
             child.setPressed(isPressed);
         }
 
-        if (mChoiceMode != CHOICE_MODE_NONE && mCheckStates != null) {
-            if (child instanceof Checkable) {
-                ((Checkable) child).setChecked(mCheckStates.get(position));
-            } else if (getContext().getApplicationInfo().targetSdkVersion
-                    >= android.os.Build.VERSION_CODES.HONEYCOMB) {
-                child.setActivated(mCheckStates.get(position));
-            }
-        }
-
         if (needToMeasure) {
             int childHeightSpec = ViewGroup.getChildMeasureSpec(
                     MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), 0, p.height);
@@ -1408,21 +1298,19 @@ public class GridView extends AbsListView {
         int childLeft;
         final int childTop = flow ? y : y - h;
 
-        final int layoutDirection = getResolvedLayoutDirection();
-        final int absoluteGravity = Gravity.getAbsoluteGravity(mGravity, layoutDirection);
-        switch (absoluteGravity & Gravity.HORIZONTAL_GRAVITY_MASK) {
-            case Gravity.LEFT:
-                childLeft = childrenLeft;
-                break;
-            case Gravity.CENTER_HORIZONTAL:
-                childLeft = childrenLeft + ((mColumnWidth - w) / 2);
-                break;
-            case Gravity.RIGHT:
-                childLeft = childrenLeft + mColumnWidth - w;
-                break;
-            default:
-                childLeft = childrenLeft;
-                break;
+        switch (mGravity & Gravity.HORIZONTAL_GRAVITY_MASK) {
+        case Gravity.LEFT:
+            childLeft = childrenLeft;
+            break;
+        case Gravity.CENTER_HORIZONTAL:
+            childLeft = childrenLeft + ((mColumnWidth - w) / 2);
+            break;
+        case Gravity.RIGHT:
+            childLeft = childrenLeft + mColumnWidth - w;
+            break;
+        default:
+            childLeft = childrenLeft;
+            break;
         }
 
         if (needToMeasure) {
@@ -1436,11 +1324,6 @@ public class GridView extends AbsListView {
 
         if (mCachingStarted) {
             child.setDrawingCacheEnabled(true);
-        }
-
-        if (recycled && (((AbsListView.LayoutParams)child.getLayoutParams()).scrappedFromPosition)
-                != position) {
-            child.jumpDrawablesToCurrentState();
         }
     }
 
@@ -1517,122 +1400,84 @@ public class GridView extends AbsListView {
         int action = event.getAction();
 
         if (action != KeyEvent.ACTION_UP) {
+            if (mSelectedPosition < 0) {
+                switch (keyCode) {
+                    case KeyEvent.KEYCODE_DPAD_UP:
+                    case KeyEvent.KEYCODE_DPAD_DOWN:
+                    case KeyEvent.KEYCODE_DPAD_LEFT:
+                    case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    case KeyEvent.KEYCODE_DPAD_CENTER:
+                    case KeyEvent.KEYCODE_SPACE:
+                    case KeyEvent.KEYCODE_ENTER:
+                        resurrectSelection();
+                        return true;
+                }
+            }
+
             switch (keyCode) {
                 case KeyEvent.KEYCODE_DPAD_LEFT:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || arrowScroll(FOCUS_LEFT);
-                    }
+                    handled = arrowScroll(FOCUS_LEFT);
                     break;
 
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || arrowScroll(FOCUS_RIGHT);
-                    }
+                    handled = arrowScroll(FOCUS_RIGHT);
                     break;
 
                 case KeyEvent.KEYCODE_DPAD_UP:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || arrowScroll(FOCUS_UP);
-                    } else if (event.hasModifiers(KeyEvent.META_ALT_ON)) {
-                        handled = resurrectSelectionIfNeeded() || fullScroll(FOCUS_UP);
+                    if (!event.isAltPressed()) {
+                        handled = arrowScroll(FOCUS_UP);
+
+                    } else {
+                        handled = fullScroll(FOCUS_UP);
                     }
                     break;
 
                 case KeyEvent.KEYCODE_DPAD_DOWN:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || arrowScroll(FOCUS_DOWN);
-                    } else if (event.hasModifiers(KeyEvent.META_ALT_ON)) {
-                        handled = resurrectSelectionIfNeeded() || fullScroll(FOCUS_DOWN);
+                    if (!event.isAltPressed()) {
+                        handled = arrowScroll(FOCUS_DOWN);
+                    } else {
+                        handled = fullScroll(FOCUS_DOWN);
                     }
                     break;
 
                 case KeyEvent.KEYCODE_DPAD_CENTER:
-                case KeyEvent.KEYCODE_ENTER:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded();
-                        if (!handled
-                                && event.getRepeatCount() == 0 && getChildCount() > 0) {
-                            keyPressed();
-                            handled = true;
-                        }
+                case KeyEvent.KEYCODE_ENTER: {
+                    if (getChildCount() > 0 && event.getRepeatCount() == 0) {
+                        keyPressed();
                     }
-                    break;
+
+                    return true;
+                }
 
                 case KeyEvent.KEYCODE_SPACE:
                     if (mPopup == null || !mPopup.isShowing()) {
-                        if (event.hasNoModifiers()) {
-                            handled = resurrectSelectionIfNeeded() || pageScroll(FOCUS_DOWN);
-                        } else if (event.hasModifiers(KeyEvent.META_SHIFT_ON)) {
-                            handled = resurrectSelectionIfNeeded() || pageScroll(FOCUS_UP);
-                        }
-                    }
-                    break;
-
-                case KeyEvent.KEYCODE_PAGE_UP:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || pageScroll(FOCUS_UP);
-                    } else if (event.hasModifiers(KeyEvent.META_ALT_ON)) {
-                        handled = resurrectSelectionIfNeeded() || fullScroll(FOCUS_UP);
-                    }
-                    break;
-
-                case KeyEvent.KEYCODE_PAGE_DOWN:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || pageScroll(FOCUS_DOWN);
-                    } else if (event.hasModifiers(KeyEvent.META_ALT_ON)) {
-                        handled = resurrectSelectionIfNeeded() || fullScroll(FOCUS_DOWN);
-                    }
-                    break;
-
-                case KeyEvent.KEYCODE_MOVE_HOME:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || fullScroll(FOCUS_UP);
-                    }
-                    break;
-
-                case KeyEvent.KEYCODE_MOVE_END:
-                    if (event.hasNoModifiers()) {
-                        handled = resurrectSelectionIfNeeded() || fullScroll(FOCUS_DOWN);
-                    }
-                    break;
-
-                case KeyEvent.KEYCODE_TAB:
-                    // XXX Sometimes it is useful to be able to TAB through the items in
-                    //     a GridView sequentially.  Unfortunately this can create an
-                    //     asymmetry in TAB navigation order unless the list selection
-                    //     always reverts to the top or bottom when receiving TAB focus from
-                    //     another widget.  Leaving this behavior disabled for now but
-                    //     perhaps it should be configurable (and more comprehensive).
-                    if (false) {
-                        if (event.hasNoModifiers()) {
-                            handled = resurrectSelectionIfNeeded()
-                                    || sequenceScroll(FOCUS_FORWARD);
-                        } else if (event.hasModifiers(KeyEvent.META_SHIFT_ON)) {
-                            handled = resurrectSelectionIfNeeded()
-                                    || sequenceScroll(FOCUS_BACKWARD);
+                        if (!event.isShiftPressed()) {
+                            handled = pageScroll(FOCUS_DOWN);
+                        } else {
+                            handled = pageScroll(FOCUS_UP);
                         }
                     }
                     break;
             }
         }
 
+        if (!handled) {
+            handled = sendToTextFilter(keyCode, count, event);
+        }
+
         if (handled) {
             return true;
-        }
-
-        if (sendToTextFilter(keyCode, count, event)) {
-            return true;
-        }
-
-        switch (action) {
-            case KeyEvent.ACTION_DOWN:
-                return super.onKeyDown(keyCode, event);
-            case KeyEvent.ACTION_UP:
-                return super.onKeyUp(keyCode, event);
-            case KeyEvent.ACTION_MULTIPLE:
-                return super.onKeyMultiple(keyCode, count, event);
-            default:
-                return false;
+        } else {
+            switch (action) {
+                case KeyEvent.ACTION_DOWN:
+                    return super.onKeyDown(keyCode, event);
+                case KeyEvent.ACTION_UP:
+                    return super.onKeyUp(keyCode, event);
+                case KeyEvent.ACTION_MULTIPLE:
+                    return super.onKeyMultiple(keyCode, count, event);
+                default:
+                    return false;
+            }
         }
     }
 
@@ -1646,9 +1491,9 @@ public class GridView extends AbsListView {
         int nextPage = -1;
 
         if (direction == FOCUS_UP) {
-            nextPage = Math.max(0, mSelectedPosition - getChildCount());
+            nextPage = Math.max(0, mSelectedPosition - getChildCount() - 1);
         } else if (direction == FOCUS_DOWN) {
-            nextPage = Math.min(mItemCount - 1, mSelectedPosition + getChildCount());
+            nextPage = Math.min(mItemCount - 1, mSelectedPosition + getChildCount() - 1);
         }
 
         if (nextPage >= 0) {
@@ -1758,64 +1603,6 @@ public class GridView extends AbsListView {
         return moved;
     }
 
-    /**
-     * Goes to the next or previous item according to the order set by the
-     * adapter.
-     */
-    boolean sequenceScroll(int direction) {
-        int selectedPosition = mSelectedPosition;
-        int numColumns = mNumColumns;
-        int count = mItemCount;
-
-        int startOfRow;
-        int endOfRow;
-        if (!mStackFromBottom) {
-            startOfRow = (selectedPosition / numColumns) * numColumns;
-            endOfRow = Math.min(startOfRow + numColumns - 1, count - 1);
-        } else {
-            int invertedSelection = count - 1 - selectedPosition;
-            endOfRow = count - 1 - (invertedSelection / numColumns) * numColumns;
-            startOfRow = Math.max(0, endOfRow - numColumns + 1);
-        }
-
-        boolean moved = false;
-        boolean showScroll = false;
-        switch (direction) {
-            case FOCUS_FORWARD:
-                if (selectedPosition < count - 1) {
-                    // Move to the next item.
-                    mLayoutMode = LAYOUT_MOVE_SELECTION;
-                    setSelectionInt(selectedPosition + 1);
-                    moved = true;
-                    // Show the scrollbar only if changing rows.
-                    showScroll = selectedPosition == endOfRow;
-                }
-                break;
-
-            case FOCUS_BACKWARD:
-                if (selectedPosition > 0) {
-                    // Move to the previous item.
-                    mLayoutMode = LAYOUT_MOVE_SELECTION;
-                    setSelectionInt(selectedPosition - 1);
-                    moved = true;
-                    // Show the scrollbar only if changing rows.
-                    showScroll = selectedPosition == startOfRow;
-                }
-                break;
-        }
-
-        if (moved) {
-            playSoundEffect(SoundEffectConstants.getContantForFocusDirection(direction));
-            invokeOnItemScrollListener();
-        }
-
-        if (showScroll) {
-            awakenScrollBars();
-        }
-
-        return moved;
-    }
-
     @Override
     protected void onFocusChanged(boolean gainFocus, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
@@ -1859,7 +1646,7 @@ public class GridView extends AbsListView {
      * change is coming from?
      * @param childIndex The index to check.
      * @param direction The direction, one of
-     *        {FOCUS_UP, FOCUS_DOWN, FOCUS_LEFT, FOCUS_RIGHT, FOCUS_FORWARD, FOCUS_BACKWARD}
+     *        {FOCUS_UP, FOCUS_DOWN, FOCUS_LEFT, FOCUS_RIGHT}
      * @return Whether childIndex is a candidate.
      */
     private boolean isCandidateSelection(int childIndex, int direction) {
@@ -1891,16 +1678,9 @@ public class GridView extends AbsListView {
             case View.FOCUS_UP:
                 // coming from bottom, need to be in last row
                 return rowEnd == count - 1;
-            case View.FOCUS_FORWARD:
-                // coming from top-left, need to be first in top row
-                return childIndex == rowStart && rowStart == 0;
-            case View.FOCUS_BACKWARD:
-                // coming from bottom-right, need to be last in bottom row
-                return childIndex == rowEnd && rowEnd == count - 1;
             default:
                 throw new IllegalArgumentException("direction must be one of "
-                        + "{FOCUS_UP, FOCUS_DOWN, FOCUS_LEFT, FOCUS_RIGHT, "
-                        + "FOCUS_FORWARD, FOCUS_BACKWARD}.");
+                        + "{FOCUS_UP, FOCUS_DOWN, FOCUS_LEFT, FOCUS_RIGHT}.");
         }
     }
 
@@ -1996,19 +1776,6 @@ public class GridView extends AbsListView {
             mRequestedNumColumns = numColumns;
             requestLayoutIfNecessary();
         }
-    }
-    
-    /**
-     * Get the number of columns in the grid. 
-     * Returns {@link #AUTO_FIT} if the Grid has never been laid out.
-     *
-     * @attr ref android.R.styleable#GridView_numColumns
-     * 
-     * @see #setNumColumns(int)
-     */
-    @ViewDebug.ExportedProperty
-    public int getNumColumns() {  
-        return mNumColumns;
     }
 
     /**

@@ -23,6 +23,13 @@
 #include <media/JetPlayer.h>
 
 
+#ifdef HAVE_GETTID
+static pid_t myTid() { return gettid(); }
+#else
+static pid_t myTid() { return getpid(); }
+#endif
+
+
 namespace android
 {
 
@@ -89,15 +96,11 @@ int JetPlayer::init()
 
     // create the output AudioTrack
     mAudioTrack = new AudioTrack();
-    mAudioTrack->set(AUDIO_STREAM_MUSIC,  //TODO parametrize this
+    mAudioTrack->set(AudioSystem::MUSIC,  //TODO parametrize this
             pLibConfig->sampleRate,
             1, // format = PCM 16bits per sample,
-            (pLibConfig->numChannels == 2) ? AUDIO_CHANNEL_OUT_STEREO : AUDIO_CHANNEL_OUT_MONO,
+            (pLibConfig->numChannels == 2) ? AudioSystem::CHANNEL_OUT_STEREO : AudioSystem::CHANNEL_OUT_MONO,
             mTrackBufferSize,
-#ifdef WITH_QCOM_LPA
-            0,
-            0,
-#endif
             0);
 
     // create render and playback thread
@@ -185,7 +188,7 @@ int JetPlayer::render() {
     // signal main thread that we started
     {
         Mutex::Autolock l(mMutex);
-        mTid = gettid();
+        mTid = myTid();
         LOGV("JetPlayer::render(): render thread(%d) signal", mTid);
         mCondition.signal();
     }

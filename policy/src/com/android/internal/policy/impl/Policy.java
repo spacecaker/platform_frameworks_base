@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Patched by Sven Dawitz; Copyright (C) 2011 CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +19,6 @@ package com.android.internal.policy.impl;
 
 import android.content.Context;
 import android.util.Log;
-import android.view.FallbackEventHandler;
-import android.view.LayoutInflater;
-import android.view.Window;
-import android.view.WindowManagerPolicy;
 
 import com.android.internal.policy.IPolicy;
 import com.android.internal.policy.impl.PhoneLayoutInflater;
@@ -59,19 +56,15 @@ public class Policy implements IPolicy {
         }
     }
 
-    public Window makeNewWindow(Context context) {
+    public PhoneWindow makeNewWindow(Context context) {
         return new PhoneWindow(context);
     }
 
-    public LayoutInflater makeNewLayoutInflater(Context context) {
+    public PhoneLayoutInflater makeNewLayoutInflater(Context context) {
         return new PhoneLayoutInflater(context);
     }
 
-    public WindowManagerPolicy makeNewWindowManager() {
-        return new PhoneWindowManager();
-    }
-
-    public FallbackEventHandler makeNewFallbackEventHandler(Context context) {
-        return new PhoneFallbackEventHandler(context);
+    public CmPhoneWindowManager makeNewWindowManager() {
+        return new CmPhoneWindowManager();
     }
 }

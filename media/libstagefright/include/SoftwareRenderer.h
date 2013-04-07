@@ -19,38 +19,45 @@
 #define SOFTWARE_RENDERER_H_
 
 #include <media/stagefright/ColorConverter.h>
+#include <media/stagefright/VideoRenderer.h>
 #include <utils/RefBase.h>
-#include <ui/android_native_buffer.h>
 
 namespace android {
 
-struct MetaData;
+class ISurface;
+class MemoryHeapBase;
 
-class SoftwareRenderer {
+class SoftwareRenderer : public VideoRenderer {
 public:
     SoftwareRenderer(
-            const sp<ANativeWindow> &nativeWindow, const sp<MetaData> &meta);
+            OMX_COLOR_FORMATTYPE colorFormat,
+            const sp<ISurface> &surface,
+            size_t displayWidth, size_t displayHeight,
+            size_t decodedWidth, size_t decodedHeight,
+            int32_t rotationDegrees = 0);
 
-    ~SoftwareRenderer();
+    virtual ~SoftwareRenderer();
 
-    void render(
+    status_t initCheck() const;
+
+    virtual void render(
             const void *data, size_t size, void *platformPrivate);
+#ifdef OMAP_ENHANCEMENT
+    virtual Vector< sp<IMemory> > getBuffers();
+    virtual void resizeRenderer(void* resize_params) {}
+    virtual void requestRendererClone(bool enable) {}
+#endif
 
 private:
-    enum YUVMode {
-        None,
-    };
-
+    status_t mInitCheck;
     OMX_COLOR_FORMATTYPE mColorFormat;
-    ColorConverter *mConverter;
-    YUVMode mYUVMode;
-    sp<ANativeWindow> mNativeWindow;
-    int32_t mWidth, mHeight;
-    int32_t mCropLeft, mCropTop, mCropRight, mCropBottom;
-    int32_t mCropWidth, mCropHeight;
-#ifdef QCOM_LEGACY_OMX
-    int32_t mAlign;
-#endif
+    ColorConverter mConverter;
+    sp<ISurface> mISurface;
+    size_t mDisplayWidth, mDisplayHeight;
+    size_t mDecodedWidth, mDecodedHeight;
+    size_t mFrameSize;
+    sp<MemoryHeapBase> mMemoryHeap;
+    int mIndex;
 
     SoftwareRenderer(const SoftwareRenderer &);
     SoftwareRenderer &operator=(const SoftwareRenderer &);

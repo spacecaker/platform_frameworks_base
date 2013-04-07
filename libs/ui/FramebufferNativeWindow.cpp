@@ -47,22 +47,21 @@ namespace android {
 
 class NativeBuffer 
     : public EGLNativeBase<
-        ANativeWindowBuffer, 
+        android_native_buffer_t, 
         NativeBuffer, 
         LightRefBase<NativeBuffer> >
 {
 public:
     NativeBuffer(int w, int h, int f, int u) : BASE() {
-        ANativeWindowBuffer::width  = w;
-        ANativeWindowBuffer::height = h;
-        ANativeWindowBuffer::format = f;
-        ANativeWindowBuffer::usage  = u;
+        android_native_buffer_t::width  = w;
+        android_native_buffer_t::height = h;
+        android_native_buffer_t::format = f;
+        android_native_buffer_t::usage  = u;
     }
 private:
     friend class LightRefBase<NativeBuffer>;    
     ~NativeBuffer() { }; // this class cannot be overloaded
 };
-
 
 /*
  * This implements the (main) framebuffer management. This class is used
@@ -71,19 +70,22 @@ private:
  * In fact this is an implementation of ANativeWindow on top of
  * the framebuffer.
  * 
- * Currently it is pretty simple, it manages only two buffers (the front and 
- * back buffer).
- * 
+ * This implementation is able to manage any number of buffers,
+ * defined by NUM_FRAME_BUFFERS (currently set to 2: front
+ * and back buffer)
+ *
  */
 
-FramebufferNativeWindow::FramebufferNativeWindow() 
+FramebufferNativeWindow::FramebufferNativeWindow()
     : BASE(), fbDev(0), grDev(0), mUpdateOnDemand(false)
 {
     hw_module_t const* module;
     if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &module) == 0) {
         int stride;
         int err;
+#ifdef OMAP_ENHANCEMENT
         int i;
+#endif
         err = framebuffer_open(module, &fbDev);
         LOGE_IF(err, "couldn't open framebuffer HAL (%s)", strerror(-err));
         
@@ -97,42 +99,55 @@ FramebufferNativeWindow::FramebufferNativeWindow()
         mUpdateOnDemand = (fbDev->setUpdateRect != 0);
         
         // initialize the buffer FIFO
-#ifdef QCOM_HARDWARE
-	mNumBuffers = fbDev->numFramebuffers;
-	mNumFreeBuffers = mNumBuffers;
-	mBufferHead = 0;
-
-	LOGD("mNumBuffers = %d", mNumBuffers);
-#else
+#ifdef OMAP_ENHANCEMENT
         mNumBuffers = NUM_FRAME_BUFFERS;
         mNumFreeBuffers = NUM_FRAME_BUFFERS;
-        mBufferHead = mNumBuffers-1;
+#else
+        mNumBuffers = 2;
+        mNumFreeBuffers = 2;
 #endif
-
-        for (i = 0; i < mNumBuffers; i++)
-        {
-                buffers[i] = new NativeBuffer(
-                        fbDev->width, fbDev->height, fbDev->format, GRALLOC_USAGE_HW_FB);
+        mBufferHead = mNumBuffers-1;
+#ifdef OMAP_ENHANCEMENT
+        for(i = 0; i < NUM_FRAME_BUFFERS; i++){
+            buffers[i] = new NativeBuffer(
+                    fbDev->width, fbDev->height, fbDev->format, GRALLOC_USAGE_HW_FB);
         }
 
-        for (i = 0; i < mNumBuffers; i++)
-        {
-                err = grDev->alloc(grDev,
-                        fbDev->width, fbDev->height, fbDev->format,
-                        GRALLOC_USAGE_HW_FB, &buffers[i]->handle, &buffers[i]->stride);
+        for(i = 0; i < NUM_FRAME_BUFFERS; i++){
+            err = grDev->alloc(grDev,
+                    fbDev->width, fbDev->height, fbDev->format,
+                    GRALLOC_USAGE_HW_FB, &buffers[i]->handle, &buffers[i]->stride);
 
-                LOGE_IF(err, "fb buffer %d allocation failed w=%d, h=%d, err=%s",
-                        i, fbDev->width, fbDev->height, strerror(-err));
+            LOGE_IF(err, "fb buffer %d allocation failed w=%d, h=%d, err=%s",
+                    i, fbDev->width, fbDev->height, strerror(-err));
 
-                if (err)
-                {
-                        mNumBuffers = i;
-                        mNumFreeBuffers = i;
-                        mBufferHead = mNumBuffers-1;
-                        break;
-                }
-        }
+            if(err){
+                mNumBuffers = i;
+                mNumFreeBuffers = i;
+                mBufferHead = mNumBuffers-1;
+                break;
+            }
+       }
+#else
+        buffers[0] = new NativeBuffer(
+                fbDev->width, fbDev->height, fbDev->format, GRALLOC_USAGE_HW_FB);
+        buffers[1] = new NativeBuffer(
+                fbDev->width, fbDev->height, fbDev->format, GRALLOC_USAGE_HW_FB);
+        
+        err = grDev->alloc(grDev,
+                fbDev->width, fbDev->height, fbDev->format, 
+                GRALLOC_USAGE_HW_FB, &buffers[0]->handle, &buffers[0]->stride);
 
+        LOGE_IF(err, "fb buffer 0 allocation failed w=%d, h=%d, err=%s",
+                fbDev->width, fbDev->height, strerror(-err));
+
+        err = grDev->alloc(grDev,
+                fbDev->width, fbDev->height, fbDev->format, 
+                GRALLOC_USAGE_HW_FB, &buffers[1]->handle, &buffers[1]->stride);
+
+        LOGE_IF(err, "fb buffer 1 allocation failed w=%d, h=%d, err=%s",
+                fbDev->width, fbDev->height, strerror(-err));
+#endif
         const_cast<uint32_t&>(ANativeWindow::flags) = fbDev->flags; 
         const_cast<float&>(ANativeWindow::xdpi) = fbDev->xdpi;
         const_cast<float&>(ANativeWindow::ydpi) = fbDev->ydpi;
@@ -148,31 +163,110 @@ FramebufferNativeWindow::FramebufferNativeWindow()
     ANativeWindow::dequeueBuffer = dequeueBuffer;
     ANativeWindow::lockBuffer = lockBuffer;
     ANativeWindow::queueBuffer = queueBuffer;
+    ANativeWindow::cancelBuffer = NULL;
     ANativeWindow::query = query;
     ANativeWindow::perform = perform;
-#ifdef QCOM_HARDWARE
-    ANativeWindow::cancelBuffer = NULL;
+    ANativeWindow::cancelBuffer = 0;
+#ifdef OMAP_ENHANCEMENT
+    LOGE("%d buffers flip-chain implementation enabled\n", mNumBuffers);
 #endif
 }
 
+#ifdef OMAP_ENHANCEMENT
+FramebufferNativeWindow::FramebufferNativeWindow(uint32_t idx)
+    : BASE(), fbDev(0), grDev(0), mUpdateOnDemand(false)
+{
+    hw_module_t const* module;
+
+    if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &module) == 0) {
+        int stride;
+        int err;
+        int i;
+        const size_t SIZE = 16;
+        char fbname[SIZE];
+        snprintf(fbname, SIZE, "fb%u", idx);
+
+        err = framebuffer_open_by_name(module, &fbDev, fbname);
+        LOGE_IF(err, "couldn't open framebuffer HAL (%s)", strerror(-err));
+
+        err = gralloc_open(module, &grDev);
+        LOGE_IF(err, "couldn't open gralloc HAL (%s)", strerror(-err));
+
+        // bail out if we can't initialize the modules
+        if (!fbDev || !grDev)
+            return;
+
+        mUpdateOnDemand = (fbDev->setUpdateRect != 0);
+
+        // initialize the buffer FIFO
+        mNumBuffers = NUM_FRAME_BUFFERS;
+        mNumFreeBuffers = NUM_FRAME_BUFFERS;
+        mBufferHead = mNumBuffers-1;
+
+        for(i = 0; i < NUM_FRAME_BUFFERS; i++){
+            buffers[i] = new NativeBuffer(
+                    fbDev->width, fbDev->height, fbDev->format, GRALLOC_USAGE_HW_FB << idx);
+        }
+
+        for(i = 0; i < NUM_FRAME_BUFFERS; i++){
+            err = grDev->alloc(grDev,
+                    fbDev->width, fbDev->height, fbDev->format,
+                    GRALLOC_USAGE_HW_FB << idx, &buffers[i]->handle, &buffers[i]->stride);
+
+            LOGE_IF(err, "fb buffer %d allocation failed w=%d, h=%d, err=%s",
+                    i, fbDev->width, fbDev->height, strerror(-err));
+
+            if(err){
+                mNumBuffers = i;
+                mNumFreeBuffers = i;
+                mBufferHead = mNumBuffers-1;
+                break;
+            }
+       }
+
+        const_cast<uint32_t&>(ANativeWindow::flags) = fbDev->flags;
+        const_cast<float&>(ANativeWindow::xdpi) = fbDev->xdpi;
+        const_cast<float&>(ANativeWindow::ydpi) = fbDev->ydpi;
+        const_cast<int&>(ANativeWindow::minSwapInterval) =
+            fbDev->minSwapInterval;
+        const_cast<int&>(ANativeWindow::maxSwapInterval) =
+            fbDev->maxSwapInterval;
+    } else {
+        LOGE("Couldn't get gralloc module");
+    }
+
+    ANativeWindow::setSwapInterval = setSwapInterval;
+    ANativeWindow::dequeueBuffer = dequeueBuffer;
+    ANativeWindow::lockBuffer = lockBuffer;
+    ANativeWindow::queueBuffer = queueBuffer;
+    ANativeWindow::query = query;
+    ANativeWindow::perform = perform;
+
+    LOGE("%d buffers flip-chain implementation enabled\n", mNumBuffers);
+}
+#endif
+
 FramebufferNativeWindow::~FramebufferNativeWindow() 
 {
-    if (grDev) {
-#ifdef QCOM_HARDWARE
-       for(int i = 0; i < mNumBuffers; i++) {
-            if (buffers[i] != NULL) {
+#ifdef OMAP_ENHANCEMENT
+    int i;
+
+   if (grDev){
+        for (i = 0; i < mNumBuffers; i++){
+            if (buffers[i] != NULL)
                 grDev->free(grDev, buffers[i]->handle);
-            }
         }
+        gralloc_close(grDev);
+    }
 #else
+    if (grDev) {
         if (buffers[0] != NULL)
             grDev->free(grDev, buffers[0]->handle);
         if (buffers[1] != NULL)
             grDev->free(grDev, buffers[1]->handle);
-#endif
         gralloc_close(grDev);
     }
-
+#endif
     if (fbDev) {
         framebuffer_close(fbDev);
     }
@@ -201,16 +295,6 @@ int FramebufferNativeWindow::setSwapInterval(
     return fb->setSwapInterval(fb, interval);
 }
 
-void FramebufferNativeWindow::dump(String8& result) {
-    if (fbDev->common.version >= 1 && fbDev->dump) {
-        const size_t SIZE = 4096;
-        char buffer[SIZE];
-
-        fbDev->dump(fbDev, buffer, SIZE);
-        result.append(buffer);
-    }
-}
-
 // only for debugging / logging
 int FramebufferNativeWindow::getCurrentBufferIndex() const
 {
@@ -220,46 +304,23 @@ int FramebufferNativeWindow::getCurrentBufferIndex() const
 }
 
 int FramebufferNativeWindow::dequeueBuffer(ANativeWindow* window, 
-#ifdef QCOM_HARDWARE
         android_native_buffer_t** buffer)
-#else
-        ANativeWindowBuffer** buffer)
-#endif
 {
     FramebufferNativeWindow* self = getSelf(window);
-#ifndef QCOM_HARDWARE
     Mutex::Autolock _l(self->mutex);
-#endif
     framebuffer_device_t* fb = self->fbDev;
 
-#ifdef QCOM_HARDWARE
-    int index = self->mBufferHead;
-#else
     int index = self->mBufferHead++;
     if (self->mBufferHead >= self->mNumBuffers)
         self->mBufferHead = 0;
-#endif
 
     GraphicLog& logger(GraphicLog::getInstance());
     logger.log(GraphicLog::SF_FB_DEQUEUE_BEFORE, index);
 
-#ifdef QCOM_HARDWARE
-    /* The buffer is available, return it */
-    Mutex::Autolock _l(self->mutex);
-
-    // wait if the number of free buffers <= 0
-    while (self->mNumFreeBuffers <= 0) {
-#else
     // wait for a free buffer
     while (!self->mNumFreeBuffers) {
-#endif
         self->mCondition.wait(self->mutex);
     }
-#ifdef QCOM_HARDWARE
-    self->mBufferHead++;
-    if (self->mBufferHead >= self->mNumBuffers)
-        self->mBufferHead = 0;
-#endif
     // get this buffer
     self->mNumFreeBuffers--;
     self->mCurrentBufferIndex = index;
@@ -271,44 +332,27 @@ int FramebufferNativeWindow::dequeueBuffer(ANativeWindow* window,
 }
 
 int FramebufferNativeWindow::lockBuffer(ANativeWindow* window, 
-#ifdef QCOM_HARDWARE
         android_native_buffer_t* buffer)
-#else
-        ANativeWindowBuffer* buffer)
-#endif
 {
     FramebufferNativeWindow* self = getSelf(window);
-#ifdef QCOM_HARDWARE
-    framebuffer_device_t* fb = self->fbDev;
-    int index = -1;
-
-    {
-        Mutex::Autolock _l(self->mutex);
-        index = self->mCurrentBufferIndex;
-    }
-#else
     Mutex::Autolock _l(self->mutex);
 
     const int index = self->mCurrentBufferIndex;
-#endif
     GraphicLog& logger(GraphicLog::getInstance());
     logger.log(GraphicLog::SF_FB_LOCK_BEFORE, index);
 
-#ifdef QCOM_HARDWARE
-    fb->lockBuffer(fb, index);
-#else
     // wait that the buffer we're locking is not front anymore
     while (self->front == buffer) {
         self->mCondition.wait(self->mutex);
     }
-#endif
+
     logger.log(GraphicLog::SF_FB_LOCK_AFTER, index);
 
     return NO_ERROR;
 }
 
 int FramebufferNativeWindow::queueBuffer(ANativeWindow* window, 
-        ANativeWindowBuffer* buffer)
+        android_native_buffer_t* buffer)
 {
     FramebufferNativeWindow* self = getSelf(window);
     Mutex::Autolock _l(self->mutex);
@@ -329,10 +373,10 @@ int FramebufferNativeWindow::queueBuffer(ANativeWindow* window,
     return res;
 }
 
-int FramebufferNativeWindow::query(const ANativeWindow* window,
+int FramebufferNativeWindow::query(ANativeWindow* window,
         int what, int* value) 
 {
-    const FramebufferNativeWindow* self = getSelf(window);
+    FramebufferNativeWindow* self = getSelf(window);
     Mutex::Autolock _l(self->mutex);
     framebuffer_device_t* fb = self->fbDev;
     switch (what) {
@@ -345,26 +389,6 @@ int FramebufferNativeWindow::query(const ANativeWindow* window,
         case NATIVE_WINDOW_FORMAT:
             *value = fb->format;
             return NO_ERROR;
-        case NATIVE_WINDOW_CONCRETE_TYPE:
-            *value = NATIVE_WINDOW_FRAMEBUFFER;
-            return NO_ERROR;
-#ifdef QCOM_HARDWARE
-        case NATIVE_WINDOW_NUM_BUFFERS:
-            *value = fb->numFramebuffers;
-            return NO_ERROR;
-#endif
-        case NATIVE_WINDOW_QUEUES_TO_WINDOW_COMPOSER:
-            *value = 0;
-            return NO_ERROR;
-        case NATIVE_WINDOW_DEFAULT_WIDTH:
-            *value = fb->width;
-            return NO_ERROR;
-        case NATIVE_WINDOW_DEFAULT_HEIGHT:
-            *value = fb->height;
-            return NO_ERROR;
-        case NATIVE_WINDOW_TRANSFORM_HINT:
-            *value = 0;
-            return NO_ERROR;
     }
     *value = 0;
     return BAD_VALUE;
@@ -374,27 +398,14 @@ int FramebufferNativeWindow::perform(ANativeWindow* window,
         int operation, ...)
 {
     switch (operation) {
+        case NATIVE_WINDOW_SET_USAGE:
         case NATIVE_WINDOW_CONNECT:
         case NATIVE_WINDOW_DISCONNECT:
-        case NATIVE_WINDOW_SET_USAGE:
-        case NATIVE_WINDOW_SET_BUFFERS_GEOMETRY:
-        case NATIVE_WINDOW_SET_BUFFERS_DIMENSIONS:
-        case NATIVE_WINDOW_SET_BUFFERS_FORMAT:
-        case NATIVE_WINDOW_SET_BUFFERS_TRANSFORM:
-        case NATIVE_WINDOW_API_CONNECT:
-        case NATIVE_WINDOW_API_DISCONNECT:
-            // TODO: we should implement these
-            return NO_ERROR;
-
-        case NATIVE_WINDOW_LOCK:
-        case NATIVE_WINDOW_UNLOCK_AND_POST:
-        case NATIVE_WINDOW_SET_CROP:
-        case NATIVE_WINDOW_SET_BUFFER_COUNT:
-        case NATIVE_WINDOW_SET_BUFFERS_TIMESTAMP:
-        case NATIVE_WINDOW_SET_SCALING_MODE:
-            return INVALID_OPERATION;
+            break;
+        default:
+            return NAME_NOT_FOUND;
     }
-    return NAME_NOT_FOUND;
+    return NO_ERROR;
 }
 
 // ----------------------------------------------------------------------------
@@ -402,6 +413,20 @@ int FramebufferNativeWindow::perform(ANativeWindow* window,
 // ----------------------------------------------------------------------------
 
 using namespace android;
+
+#ifdef OMAP_ENHANCEMENT
+EGLNativeWindowType android_createDisplaySurfaceOnFB(uint32_t fb_idx)
+{
+    FramebufferNativeWindow* w;
+    w = new FramebufferNativeWindow(fb_idx);
+    if (w->getDevice() == NULL) {
+        // get a ref so it can be destroyed when we exit this block
+        sp<FramebufferNativeWindow> ref(w);
+        return NULL;
+    }
+    return (EGLNativeWindowType)w;
+}
+#endif
 
 EGLNativeWindowType android_createDisplaySurface(void)
 {

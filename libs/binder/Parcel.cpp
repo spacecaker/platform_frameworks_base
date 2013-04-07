@@ -31,14 +31,12 @@
 #include <utils/TextOutput.h>
 #include <utils/misc.h>
 #include <utils/Flattenable.h>
-#include <cutils/ashmem.h>
 
 #include <private/binder/binder_module.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <sys/mman.h>
 
 #ifndef INT32_MAX
 #define INT32_MAX ((int32_t)(2147483647))
@@ -56,9 +54,6 @@
 
 // Note: must be kept in sync with android/os/Parcel.java's EX_HAS_REPLY_HEADER
 #define EX_HAS_REPLY_HEADER -128
-
-// Maximum size of a blob to transfer in-place.
-static const size_t IN_PLACE_BLOB_LIMIT = 40 * 1024;
 
 // XXX This can be made public if we want to provide
 // support for typed data.
@@ -344,7 +339,7 @@ void Parcel::setDataPosition(size_t pos) const
 
 status_t Parcel::setDataCapacity(size_t size)
 {
-    if (size > mDataCapacity) return continueWrite(size);
+    if (size > mDataSize) return continueWrite(size);
     return NO_ERROR;
 }
 
@@ -359,12 +354,12 @@ status_t Parcel::setData(const uint8_t* buffer, size_t len)
     return err;
 }
 
-status_t Parcel::appendFrom(const Parcel *parcel, size_t offset, size_t len)
+status_t Parcel::appendFrom(Parcel *parcel, size_t offset, size_t len)
 {
     const sp<ProcessState> proc(ProcessState::self());
     status_t err;
-    const uint8_t *data = parcel->mData;
-    const size_t *objects = parcel->mObjects;
+    uint8_t *data = parcel->mData;
+    size_t *objects = parcel->mObjects;
     size_t size = parcel->mObjectsSize;
     int startPos = mDataPos;
     int firstIndex = -1, lastIndex = -2;
@@ -392,20 +387,16 @@ status_t Parcel::appendFrom(const Parcel *parcel, size_t offset, size_t len)
     }
     int numObjects = lastIndex - firstIndex + 1;
 
-    if ((mDataSize+len) > mDataCapacity) {
-        // grow data
-        err = growData(len);
-        if (err != NO_ERROR) {
-            return err;
-        }
+    // grow data
+    err = growData(len);
+    if (err != NO_ERROR) {
+        return err;
     }
 
     // append data
     memcpy(mData + mDataPos, data + offset, len);
     mDataPos += len;
     mDataSize += len;
-
-    err = NO_ERROR;
 
     if (numObjects > 0) {
         // grow objects
@@ -438,34 +429,11 @@ status_t Parcel::appendFrom(const Parcel *parcel, size_t offset, size_t len)
                 flat->handle = dup(flat->handle);
                 flat->cookie = (void*)1;
                 mHasFds = mFdsKnown = true;
-                if (!mAllowFds) {
-                    err = FDS_NOT_ALLOWED;
-                }
             }
         }
     }
 
-    return err;
-}
-
-extern "C" Parcel *_ZN7android6Parcel10appendFromEPKS0_jj(Parcel *This, const Parcel *parcel, size_t offset, size_t len);
-extern "C" Parcel *_ZN7android6Parcel10appendFromEPS0_jj(Parcel *This, Parcel *parcel, size_t offset, size_t len)
-{
-    return _ZN7android6Parcel10appendFromEPKS0_jj(This, parcel, offset, len);
-}
-
-bool Parcel::pushAllowFds(bool allowFds)
-{
-    const bool origValue = mAllowFds;
-    if (!allowFds) {
-        mAllowFds = false;
-    }
-    return origValue;
-}
-
-void Parcel::restoreAllowFds(bool lastValue)
-{
-    mAllowFds = lastValue;
+    return NO_ERROR;
 }
 
 bool Parcel::hasFileDescriptors() const
@@ -489,6 +457,7 @@ bool Parcel::enforceInterface(const String16& interface) const
 {
 	return enforceInterface(interface,NULL);
 }
+
 
 bool Parcel::checkInterface(IBinder* binder) const
 {
@@ -722,67 +691,24 @@ status_t Parcel::writeNativeHandle(const native_handle* handle)
     return err;
 }
 
-status_t Parcel::writeFileDescriptor(int fd, bool takeOwnership)
+status_t Parcel::writeFileDescriptor(int fd)
 {
     flat_binder_object obj;
     obj.type = BINDER_TYPE_FD;
     obj.flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS;
     obj.handle = fd;
-    obj.cookie = (void*) (takeOwnership ? 1 : 0);
+    obj.cookie = (void*)0;
     return writeObject(obj, true);
 }
 
 status_t Parcel::writeDupFileDescriptor(int fd)
 {
-    return writeFileDescriptor(dup(fd), true /*takeOwnership*/);
-}
-
-status_t Parcel::writeBlob(size_t len, WritableBlob* outBlob)
-{
-    status_t status;
-
-    if (!mAllowFds || len <= IN_PLACE_BLOB_LIMIT) {
-        LOGV("writeBlob: write in place");
-        status = writeInt32(0);
-        if (status) return status;
-
-        void* ptr = writeInplace(len);
-        if (!ptr) return NO_MEMORY;
-
-        outBlob->init(false /*mapped*/, ptr, len);
-        return NO_ERROR;
-    }
-
-    LOGV("writeBlob: write to ashmem");
-    int fd = ashmem_create_region("Parcel Blob", len);
-    if (fd < 0) return NO_MEMORY;
-
-    int result = ashmem_set_prot_region(fd, PROT_READ | PROT_WRITE);
-    if (result < 0) {
-        status = result;
-    } else {
-        void* ptr = ::mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        if (ptr == MAP_FAILED) {
-            status = -errno;
-        } else {
-            result = ashmem_set_prot_region(fd, PROT_READ);
-            if (result < 0) {
-                status = result;
-            } else {
-                status = writeInt32(1);
-                if (!status) {
-                    status = writeFileDescriptor(fd, true /*takeOwnership*/);
-                    if (!status) {
-                        outBlob->init(true /*mapped*/, ptr, len);
-                        return NO_ERROR;
-                    }
-                }
-            }
-        }
-        ::munmap(ptr, len);
-    }
-    ::close(fd);
-    return status;
+    flat_binder_object obj;
+    obj.type = BINDER_TYPE_FD;
+    obj.flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS;
+    obj.handle = dup(fd);
+    obj.cookie = (void*)1;
+    return writeObject(obj, true);
 }
 
 status_t Parcel::write(const Flattenable& val)
@@ -838,9 +764,6 @@ restart_write:
         
         // remember if it's a file descriptor
         if (val.type == BINDER_TYPE_FD) {
-            if (!mAllowFds) {
-                return FDS_NOT_ALLOWED;
-            }
             mHasFds = mFdsKnown = true;
         }
 
@@ -1059,11 +982,10 @@ int32_t Parcel::readExceptionCode() const
 {
   int32_t exception_code = readAligned<int32_t>();
   if (exception_code == EX_HAS_REPLY_HEADER) {
-    int32_t header_start = dataPosition();
     int32_t header_size = readAligned<int32_t>();
     // Skip over fat responses headers.  Not used (or propagated) in
     // native code
-    setDataPosition(header_start + header_size);
+    setDataPosition(dataPosition() + header_size);
     // And fat response headers are currently only used when there are no
     // exceptions, so return no error:
     return 0;
@@ -1106,32 +1028,6 @@ int Parcel::readFileDescriptor() const
         }        
     }
     return BAD_TYPE;
-}
-
-status_t Parcel::readBlob(size_t len, ReadableBlob* outBlob) const
-{
-    int32_t useAshmem;
-    status_t status = readInt32(&useAshmem);
-    if (status) return status;
-
-    if (!useAshmem) {
-        LOGV("readBlob: read in place");
-        const void* ptr = readInplace(len);
-        if (!ptr) return BAD_VALUE;
-
-        outBlob->init(false /*mapped*/, const_cast<void*>(ptr), len);
-        return NO_ERROR;
-    }
-
-    LOGV("readBlob: read from ashmem");
-    int fd = readFileDescriptor();
-    if (fd == int(BAD_TYPE)) return BAD_VALUE;
-
-    void* ptr = ::mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0);
-    if (!ptr) return NO_MEMORY;
-
-    outBlob->init(true /*mapped*/, ptr, len);
-    return NO_ERROR;
 }
 
 status_t Parcel::read(Flattenable& val) const
@@ -1392,7 +1288,6 @@ status_t Parcel::restartWrite(size_t desired)
     mNextObjectHint = 0;
     mHasFds = false;
     mFdsKnown = true;
-    mAllowFds = true;
     
     return NO_ERROR;
 }
@@ -1496,10 +1391,8 @@ status_t Parcel::continueWrite(size_t desired)
                 return NO_MEMORY;
             }
         } else {
-            if (mDataSize > desired) {
-                mDataSize = desired;
-                LOGV("continueWrite Setting data size of %p to %d\n", this, mDataSize);
-            }
+            mDataSize = desired;
+            LOGV("continueWrite Setting data size of %p to %d\n", this, mDataSize);
             if (mDataPos > desired) {
                 mDataPos = desired;
                 LOGV("continueWrite Setting data pos of %p to %d\n", this, mDataPos);
@@ -1544,7 +1437,6 @@ void Parcel::initState()
     mNextObjectHint = 0;
     mHasFds = false;
     mFdsKnown = true;
-    mAllowFds = true;
     mOwner = NULL;
 }
 
@@ -1561,35 +1453,6 @@ void Parcel::scanForFds() const
     }
     mHasFds = hasFds;
     mFdsKnown = true;
-}
-
-// --- Parcel::Blob ---
-
-Parcel::Blob::Blob() :
-        mMapped(false), mData(NULL), mSize(0) {
-}
-
-Parcel::Blob::~Blob() {
-    release();
-}
-
-void Parcel::Blob::release() {
-    if (mMapped && mData) {
-        ::munmap(mData, mSize);
-    }
-    clear();
-}
-
-void Parcel::Blob::init(bool mapped, void* data, size_t size) {
-    mMapped = mapped;
-    mData = data;
-    mSize = size;
-}
-
-void Parcel::Blob::clear() {
-    mMapped = false;
-    mData = NULL;
-    mSize = 0;
 }
 
 }; // namespace android

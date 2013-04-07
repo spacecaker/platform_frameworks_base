@@ -16,17 +16,10 @@
 
 package android.graphics;
 
-/**
- * Shader used to draw a bitmap as a texture. The bitmap can be repeated or
- * mirrored by setting the tiling mode.
- */
 public class BitmapShader extends Shader {
-    /**
-     * Prevent garbage collection.
-     * @hide
-     */
-    @SuppressWarnings({"FieldCanBeLocal", "UnusedDeclaration"})
-    public final Bitmap mBitmap;
+
+    // we hold on just for the GC, since our native counterpart is using it
+    private Bitmap mBitmap;
 
     /**
      * Call this to create a new shader that will draw with a bitmap.
@@ -37,13 +30,12 @@ public class BitmapShader extends Shader {
      */
     public BitmapShader(Bitmap bitmap, TileMode tileX, TileMode tileY) {
         mBitmap = bitmap;
-        final int b = bitmap.ni();
-        native_instance = nativeCreate(b, tileX.nativeInt, tileY.nativeInt);
-        native_shader = nativePostCreate(native_instance, b, tileX.nativeInt, tileY.nativeInt);
+        native_instance = nativeCreate(bitmap.ni(),
+                                       tileX.nativeInt, tileY.nativeInt);
     }
 
-    private static native int nativeCreate(int native_bitmap, int shaderTileModeX,
-            int shaderTileModeY);
-    private static native int nativePostCreate(int native_shader, int native_bitmap,
-            int shaderTileModeX, int shaderTileModeY);
+    private static native int nativeCreate(int native_bitmap,
+                                           int shaderTileModeX,
+                                           int shaderTileModeY);    
 }
+

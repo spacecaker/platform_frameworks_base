@@ -62,11 +62,11 @@ class RandomBlock {
         return retval;
     }
 
-    void toFile(String filename, boolean sync) throws IOException {
+    void toFile(String filename) throws IOException {
         if (DEBUG) Slog.v(TAG, "writing to file " + filename);
         RandomAccessFile out = null;
         try {
-            out = new RandomAccessFile(filename, sync ? "rws" : "rw");
+            out = new RandomAccessFile(filename, "rws");
             toDataOut(out);
             truncateIfPossible(out);
         } finally {

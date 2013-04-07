@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2008, The Android Open Source Project
+** Copyright (C) 2010, Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -29,7 +30,7 @@ namespace android {
 
 class CameraHardwareStub : public CameraHardwareInterface {
 public:
-    virtual status_t setPreviewWindow(const sp<ANativeWindow>& buf);
+    virtual sp<IMemoryHeap> getPreviewHeap() const;
     virtual sp<IMemoryHeap> getRawHeap() const;
 
     virtual void        setCallbacks(notify_callback notify_cb,
@@ -57,10 +58,16 @@ public:
     virtual status_t    dump(int fd, const Vector<String16>& args) const;
     virtual status_t    setParameters(const CameraParameters& params);
     virtual CameraParameters  getParameters() const;
+#ifdef MOTO_CUSTOM_PARAMETERS
+    virtual status_t    setCustomParameters(const CameraParameters& params);
+    virtual CameraParameters  getCustomParameters() const;
+#endif
     virtual status_t    sendCommand(int32_t command, int32_t arg1,
                                     int32_t arg2);
     virtual void release();
-
+#ifdef USE_GETBUFFERINFO
+    virtual status_t getBufferInfo( sp<IMemory>& Frame, size_t *alignedSize);
+#endif
     static sp<CameraHardwareInterface> createInstance();
 
 private:
@@ -73,7 +80,14 @@ private:
         CameraHardwareStub* mHardware;
     public:
         PreviewThread(CameraHardwareStub* hw) :
-                Thread(false), mHardware(hw) { }
+#ifdef SINGLE_PROCESS
+            // In single process mode this thread needs to be a java thread,
+            // since we won't be calling through the binder.
+            Thread(true),
+#else
+            Thread(false),
+#endif
+              mHardware(hw) { }
         virtual void onFirstRef() {
             run("CameraPreviewThread", PRIORITY_URGENT_DISPLAY);
         }

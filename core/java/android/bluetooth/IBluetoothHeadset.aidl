@@ -19,36 +19,26 @@ package android.bluetooth;
 import android.bluetooth.BluetoothDevice;
 
 /**
- * API for Bluetooth Headset service
+ * System private API for Bluetooth Headset service
  *
  * {@hide}
  */
 interface IBluetoothHeadset {
-    // Public API
-    boolean connect(in BluetoothDevice device);
-    boolean disconnect(in BluetoothDevice device);
-    List<BluetoothDevice> getConnectedDevices();
-    List<BluetoothDevice> getDevicesMatchingConnectionStates(in int[] states);
-    int getConnectionState(in BluetoothDevice device);
+    int getState(in BluetoothDevice device);
+    BluetoothDevice getCurrentHeadset();
+    boolean connectHeadset(in BluetoothDevice device);
+    void disconnectHeadset(in BluetoothDevice device);
+    boolean isConnected(in BluetoothDevice device);
+    boolean startVoiceRecognition();
+    boolean stopVoiceRecognition();
     boolean setPriority(in BluetoothDevice device, int priority);
     int getPriority(in BluetoothDevice device);
-    boolean startVoiceRecognition(in BluetoothDevice device);
-    boolean stopVoiceRecognition(in BluetoothDevice device);
-    boolean isAudioConnected(in BluetoothDevice device);
+    int getBatteryUsageHint();
 
-    // APIs that can be made public in future
-    int getBatteryUsageHint(in BluetoothDevice device);
-
-    // Internal functions, not be made public
     boolean createIncomingConnect(in BluetoothDevice device);
     boolean acceptIncomingConnect(in BluetoothDevice device);
     boolean rejectIncomingConnect(in BluetoothDevice device);
     boolean cancelConnectThread();
     boolean connectHeadsetInternal(in BluetoothDevice device);
     boolean disconnectHeadsetInternal(in BluetoothDevice device);
-    boolean setAudioState(in BluetoothDevice device, int state);
-    int getAudioState(in BluetoothDevice device);
-
-    boolean startScoUsingVirtualVoiceCall(in BluetoothDevice device);
-    boolean stopScoUsingVirtualVoiceCall(in BluetoothDevice device);
 }

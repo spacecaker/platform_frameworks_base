@@ -16,18 +16,21 @@
 
 package com.android.server;
 
-import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.Message;
+import android.net.LocalSocket;
+import android.os.Environment;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.util.Slog;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Socket;
+
+import java.util.List;
 import java.util.ArrayList;
+import java.util.ListIterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -36,7 +39,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  * daemon which uses the libsysutils FrameworkListener
  * protocol.
  */
-final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdog.Monitor {
+final class NativeDaemonConnector implements Runnable {
     private static final boolean LOCAL_LOGD = false;
 
     private BlockingQueue<String> mResponseQueue;
@@ -44,10 +47,6 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
     private String                TAG = "NativeDaemonConnector";
     private String                mSocket;
     private INativeDaemonConnectorCallbacks mCallbacks;
-    private Handler               mCallbackHandler;
-
-    /** Lock held whenever communicating with native daemon. */
-    private Object mDaemonLock = new Object();
 
     private final int BUFFER_SIZE = 4096;
 
@@ -77,11 +76,7 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
         mResponseQueue = new LinkedBlockingQueue<String>(responseQueueSize);
     }
 
-    @Override
     public void run() {
-        HandlerThread thread = new HandlerThread(TAG + ".CallbackHandler");
-        thread.start();
-        mCallbackHandler = new Handler(thread.getLooper(), this);
 
         while (true) {
             try {
@@ -91,21 +86,6 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
                 SystemClock.sleep(5000);
             }
         }
-    }
-
-    @Override
-    public boolean handleMessage(Message msg) {
-        String event = (String) msg.obj;
-        try {
-            if (!mCallbacks.onEvent(msg.what, event, event.split(" "))) {
-                Slog.w(TAG, String.format(
-                        "Unhandled event '%s'", event));
-            }
-        } catch (Exception e) {
-            Slog.e(TAG, String.format(
-                    "Error handling '%s'", event), e);
-        }
-        return true;
     }
 
     private void listenToSocket() throws IOException {
@@ -118,10 +98,10 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
 
             socket.connect(address);
 
-            InputStream inputStream = socket.getInputStream();
             mOutputStream = socket.getOutputStream();
-
             mCallbacks.onDaemonConnected();
+
+            InputStream inputStream = socket.getInputStream();
 
             byte[] buffer = new byte[BUFFER_SIZE];
             int start = 0;
@@ -139,13 +119,20 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
                         String event = new String(buffer, start, i - start);
                         if (LOCAL_LOGD) Slog.d(TAG, String.format("RCV <- {%s}", event));
 
-                        String[] tokens = event.split(" ", 2);
+                        String[] tokens = event.split(" ");
                         try {
                             int code = Integer.parseInt(tokens[0]);
 
                             if (code >= ResponseCode.UnsolicitedInformational) {
-                                mCallbackHandler.sendMessage(
-                                        mCallbackHandler.obtainMessage(code, event));
+                                try {
+                                    if (!mCallbacks.onEvent(code, event, tokens)) {
+                                        Slog.w(TAG, String.format(
+                                                "Unhandled event (%s)", event));
+                                    }
+                                } catch (Exception ex) {
+                                    Slog.e(TAG, String.format(
+                                            "Error handling '%s'", event), ex);
+                                }
                             } else {
                                 try {
                                     mResponseQueue.put(event);
@@ -174,7 +161,7 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
             Slog.e(TAG, "Communications error", ex);
             throw ex;
         } finally {
-            synchronized (mDaemonLock) {
+            synchronized (this) {
                 if (mOutputStream != null) {
                     try {
                         mOutputStream.close();
@@ -195,8 +182,9 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
         }
     }
 
-    private void sendCommandLocked(String command) throws NativeDaemonConnectorException {
-        sendCommandLocked(command, null);
+    private void sendCommand(String command)
+            throws NativeDaemonConnectorException  {
+        sendCommand(command, null);
     }
 
     /**
@@ -205,30 +193,25 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
      * @param command  The command to send to the daemon
      * @param argument The argument to send with the command (or null)
      */
-    private void sendCommandLocked(String command, String argument)
-            throws NativeDaemonConnectorException {
-        if (command != null && command.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("unexpected command: " + command);
-        }
-        if (argument != null && argument.indexOf('\0') >= 0) {
-            throw new IllegalArgumentException("unexpected argument: " + argument);
-        }
+    private void sendCommand(String command, String argument)
+            throws NativeDaemonConnectorException  {
+        synchronized (this) {
+            if (LOCAL_LOGD) Slog.d(TAG, String.format("SND -> {%s} {%s}", command, argument));
+            if (mOutputStream == null) {
+                Slog.e(TAG, "No connection to daemon", new IllegalStateException());
+                throw new NativeDaemonConnectorException("No output stream!");
+            } else {
+                StringBuilder builder = new StringBuilder(command);
+                if (argument != null) {
+                    builder.append(argument);
+                }
+                builder.append('\0');
 
-        if (LOCAL_LOGD) Slog.d(TAG, String.format("SND -> {%s} {%s}", command, argument));
-        if (mOutputStream == null) {
-            Slog.e(TAG, "No connection to daemon", new IllegalStateException());
-            throw new NativeDaemonConnectorException("No output stream!");
-        } else {
-            StringBuilder builder = new StringBuilder(command);
-            if (argument != null) {
-                builder.append(argument);
-            }
-            builder.append('\0');
-
-            try {
-                mOutputStream.write(builder.toString().getBytes());
-            } catch (IOException ex) {
-                Slog.e(TAG, "IOException in sendCommand", ex);
+                try {
+                    mOutputStream.write(builder.toString().getBytes());
+                } catch (IOException ex) {
+                    Slog.e(TAG, "IOException in sendCommand", ex);
+                }
             }
         }
     }
@@ -236,15 +219,10 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
     /**
      * Issue a command to the native daemon and return the responses
      */
-    public ArrayList<String> doCommand(String cmd) throws NativeDaemonConnectorException {
-        synchronized (mDaemonLock) {
-            return doCommandLocked(cmd);
-        }
-    }
-
-    private ArrayList<String> doCommandLocked(String cmd) throws NativeDaemonConnectorException {
+    public synchronized ArrayList<String> doCommand(String cmd)
+            throws NativeDaemonConnectorException  {
         mResponseQueue.clear();
-        sendCommandLocked(cmd);
+        sendCommand(cmd);
 
         ArrayList<String> response = new ArrayList<String>();
         boolean complete = false;
@@ -284,7 +262,7 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
         return response;
     }
 
-    /**
+    /*
      * Issues a list command and returns the cooked list
      */
     public String[] doListCommand(String cmd, int expectedResponseCode)
@@ -322,10 +300,5 @@ final class NativeDaemonConnector implements Runnable, Handler.Callback, Watchdo
             }
         }
         throw new NativeDaemonConnectorException("Got an empty response");
-    }
-
-    /** {@inheritDoc} */
-    public void monitor() {
-        synchronized (mDaemonLock) { }
     }
 }

@@ -92,8 +92,7 @@ void MediaMetadataRetriever::disconnect()
     }
 }
 
-status_t MediaMetadataRetriever::setDataSource(
-        const char *srcUrl, const KeyedVector<String8, String8> *headers)
+status_t MediaMetadataRetriever::setDataSource(const char* srcUrl)
 {
     LOGV("setDataSource");
     Mutex::Autolock _l(mLock);
@@ -106,7 +105,7 @@ status_t MediaMetadataRetriever::setDataSource(
         return UNKNOWN_ERROR;
     }
     LOGV("data source (%s)", srcUrl);
-    return mRetriever->setDataSource(srcUrl, headers);
+    return mRetriever->setDataSource(srcUrl);
 }
 
 status_t MediaMetadataRetriever::setDataSource(int fd, int64_t offset, int64_t length)

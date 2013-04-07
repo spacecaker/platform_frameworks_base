@@ -18,11 +18,9 @@ package android.graphics;
 
 import com.android.internal.util.ArrayUtils;
 
-/**
- * @hide
- */
-public class TemporaryBuffer {
-    public static char[] obtain(int len) {
+/* package */ class TemporaryBuffer
+{
+    /* package */ static char[] obtain(int len) {
         char[] buf;
 
         synchronized (TemporaryBuffer.class) {
@@ -30,15 +28,15 @@ public class TemporaryBuffer {
             sTemp = null;
         }
 
-        if (buf == null || buf.length < len) {
+        if (buf == null || buf.length < len)
             buf = new char[ArrayUtils.idealCharArraySize(len)];
-        }
 
         return buf;
     }
 
-    public static void recycle(char[] temp) {
-        if (temp.length > 1000) return;
+    /* package */ static void recycle(char[] temp) {
+        if (temp.length > 1000)
+            return;
 
         synchronized (TemporaryBuffer.class) {
             sTemp = temp;

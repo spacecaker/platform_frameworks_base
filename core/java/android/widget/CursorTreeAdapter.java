@@ -22,6 +22,7 @@ import android.database.ContentObserver;
 import android.database.Cursor;
 import android.database.DataSetObserver;
 import android.os.Handler;
+import android.util.Config;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
@@ -498,7 +499,7 @@ public abstract class CursorTreeAdapter extends BaseExpandableListAdapter implem
             @Override
             public void onChange(boolean selfChange) {
                 if (mAutoRequery && mCursor != null) {
-                    if (false) Log.v("Cursor", "Auto requerying " + mCursor +
+                    if (Config.LOGV) Log.v("Cursor", "Auto requerying " + mCursor +
                             " due to update");
                     mDataValid = mCursor.requery();
                 }

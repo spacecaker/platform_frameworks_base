@@ -15,9 +15,9 @@
  */
 
 #define LOG_TAG "wifi"
+//#define LOG_NDEBUG 0
 
 #include "jni.h"
-#include <ScopedUtfChars.h>
 #include <utils/misc.h>
 #include <android_runtime/AndroidRuntime.h>
 #include <utils/Log.h>
@@ -26,289 +26,264 @@
 #include "wifi.h"
 
 #define WIFI_PKG_NAME "android/net/wifi/WifiNative"
-#define BUF_SIZE 256
-
-//TODO: This file can be refactored to push a lot of the functionality to java
-//with just a few JNI calls - doBoolean/doInt/doString
 
 namespace android {
 
 static jboolean sScanModeActive = false;
 
+/*
+ * The following remembers the jfieldID's of the fields
+ * of the DhcpInfo Java object, so that we don't have
+ * to look them up every time.
+ */
+static struct fieldIds {
+    jclass dhcpInfoClass;
+    jmethodID constructorId;
+    jfieldID ipaddress;
+    jfieldID gateway;
+    jfieldID netmask;
+    jfieldID dns1;
+    jfieldID dns2;
+    jfieldID serverAddress;
+    jfieldID leaseDuration;
+} dhcpInfoFieldIds;
+
 static int doCommand(const char *cmd, char *replybuf, int replybuflen)
 {
+    int err=0;
     size_t reply_len = replybuflen - 1;
 
-    if (::wifi_command(cmd, replybuf, &reply_len) != 0)
+    LOGV(LOG_TAG " doCommand: ->[[%s], buflen=%d", cmd, replybuflen);
+
+    if ((err = ::wifi_command(cmd, replybuf, &reply_len)) != 0) {
+
+        LOGD(LOG_TAG " doCommand: ret=%d", err);
         return -1;
-    else {
+
+    } else {
+
         // Strip off trailing newline
         if (reply_len > 0 && replybuf[reply_len-1] == '\n')
             replybuf[reply_len-1] = '\0';
         else
             replybuf[reply_len] = '\0';
+
+        LOGV(LOG_TAG " doCommand: <--[%s]], reply len=%d", replybuf, reply_len);
         return 0;
     }
 }
 
-static jint doIntCommand(const char* fmt, ...)
+static jint doIntCommand(const char *cmd)
 {
-    char buf[BUF_SIZE];
-    va_list args;
-    va_start(args, fmt);
-    int byteCount = vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    if (byteCount < 0 || byteCount >= BUF_SIZE) {
-        return -1;
+    char reply[256];
+
+    if (doCommand(cmd, reply, sizeof(reply)) != 0) {
+        return (jint)-1;
+    } else {
+        return (jint)atoi(reply);
     }
-    char reply[BUF_SIZE];
-    if (doCommand(buf, reply, sizeof(reply)) != 0) {
-        return -1;
-    }
-    return static_cast<jint>(atoi(reply));
 }
 
-static jboolean doBooleanCommand(const char* expect, const char* fmt, ...)
+static jboolean doBooleanCommand(const char *cmd, const char *expect)
 {
-    char buf[BUF_SIZE];
-    va_list args;
-    va_start(args, fmt);
-    int byteCount = vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    if (byteCount < 0 || byteCount >= BUF_SIZE) {
-        return JNI_FALSE;
+    char reply[256];
+
+    if (doCommand(cmd, reply, sizeof(reply)) != 0) {
+        return (jboolean)JNI_FALSE;
+    } else {
+        return (jboolean)(strcmp(reply, expect) == 0);
     }
-    char reply[BUF_SIZE];
-    if (doCommand(buf, reply, sizeof(reply)) != 0) {
-        return JNI_FALSE;
-    }
-    return (strcmp(reply, expect) == 0);
 }
 
 // Send a command to the supplicant, and return the reply as a String
-static jstring doStringCommand(JNIEnv* env, const char* fmt, ...) {
-    char buf[BUF_SIZE];
-    va_list args;
-    va_start(args, fmt);
-    int byteCount = vsnprintf(buf, sizeof(buf), fmt, args);
-    va_end(args);
-    if (byteCount < 0 || byteCount >= BUF_SIZE) {
-        return NULL;
-    }
-    char reply[4096];
-    if (doCommand(buf, reply, sizeof(reply)) != 0) {
-        return NULL;
-    }
-    // TODO: why not just NewStringUTF?
-    String16 str((char *)reply);
-    return env->NewString((const jchar *)str.string(), str.size());
-}
-
-static jboolean android_net_wifi_isDriverLoaded(JNIEnv* env, jobject)
+static jstring doStringCommand(JNIEnv *env, const char *cmd)
 {
-    return (jboolean)(::is_wifi_driver_loaded() == 1);
+    char reply[4096];
+
+    if (doCommand(cmd, reply, sizeof(reply)) != 0) {
+        return env->NewStringUTF(NULL);
+    } else {
+        String16 str((char *)reply);
+        return env->NewString((const jchar *)str.string(), str.size());
+    }
 }
 
-static jboolean android_net_wifi_loadDriver(JNIEnv* env, jobject)
+static jboolean android_net_wifi_loadDriver(JNIEnv* env, jobject clazz)
 {
     return (jboolean)(::wifi_load_driver() == 0);
 }
 
-static jboolean android_net_wifi_unloadDriver(JNIEnv* env, jobject)
+static jboolean android_net_wifi_unloadDriver(JNIEnv* env, jobject clazz)
 {
     return (jboolean)(::wifi_unload_driver() == 0);
 }
 
-static jboolean android_net_wifi_isHotspotDriverLoaded(JNIEnv* env, jobject)
+static jboolean android_net_hotspot_loadDriver(JNIEnv* env, jobject clazz)
 {
-    return (jboolean)(::is_wifi_hotspot_driver_loaded() == 1);
+    return (jboolean)(::hotspot_load_driver() == 0);
 }
 
-static jboolean android_net_wifi_loadHotspotDriver(JNIEnv* env, jobject)
+static jboolean android_net_hotspot_unloadDriver(JNIEnv* env, jobject clazz)
 {
-    return (jboolean)(::wifi_load_hotspot_driver() == 0);
+    return (jboolean)(::hotspot_unload_driver() == 0);
 }
 
-static jboolean android_net_wifi_unloadHotspotDriver(JNIEnv* env, jobject)
-{
-    return (jboolean)(::wifi_unload_hotspot_driver() == 0);
-}
-
-static jboolean android_net_wifi_startSupplicant(JNIEnv* env, jobject)
+static jboolean android_net_wifi_startSupplicant(JNIEnv* env, jobject clazz)
 {
     return (jboolean)(::wifi_start_supplicant() == 0);
 }
 
-static jboolean android_net_wifi_startP2pSupplicant(JNIEnv* env, jobject)
-{
-    return (jboolean)(::wifi_start_p2p_supplicant() == 0);
-}
-
-static jboolean android_net_wifi_stopSupplicant(JNIEnv* env, jobject)
-{
-    return doBooleanCommand("OK", "TERMINATE");
-}
-
-static jboolean android_net_wifi_killSupplicant(JNIEnv* env, jobject)
+static jboolean android_net_wifi_stopSupplicant(JNIEnv* env, jobject clazz)
 {
     return (jboolean)(::wifi_stop_supplicant() == 0);
 }
 
-static jboolean android_net_wifi_connectToSupplicant(JNIEnv* env, jobject)
+static jboolean android_net_wifi_connectToSupplicant(JNIEnv* env, jobject clazz)
 {
     return (jboolean)(::wifi_connect_to_supplicant() == 0);
 }
 
-static void android_net_wifi_closeSupplicantConnection(JNIEnv* env, jobject)
+static void android_net_wifi_closeSupplicantConnection(JNIEnv* env, jobject clazz)
 {
     ::wifi_close_supplicant_connection();
 }
 
-static jstring android_net_wifi_waitForEvent(JNIEnv* env, jobject)
+static jstring android_net_wifi_waitForEvent(JNIEnv* env, jobject clazz)
 {
-    char buf[BUF_SIZE];
+    char buf[256];
 
     int nread = ::wifi_wait_for_event(buf, sizeof buf);
     if (nread > 0) {
         return env->NewStringUTF(buf);
     } else {
-        return NULL;
+        return  env->NewStringUTF(NULL);
     }
 }
 
-static jstring android_net_wifi_listNetworksCommand(JNIEnv* env, jobject)
+static jstring android_net_wifi_listNetworksCommand(JNIEnv* env, jobject clazz)
 {
     return doStringCommand(env, "LIST_NETWORKS");
 }
 
-static jint android_net_wifi_addNetworkCommand(JNIEnv* env, jobject)
+static jint android_net_wifi_addNetworkCommand(JNIEnv* env, jobject clazz)
 {
     return doIntCommand("ADD_NETWORK");
 }
 
-static jboolean android_net_wifi_wpsPbcCommand(JNIEnv* env, jobject, jstring javaBssid)
-{
-    ScopedUtfChars bssid(env, javaBssid);
-    if (bssid.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    return doBooleanCommand("OK", "WPS_PBC %s", bssid.c_str());
-}
-
-static jboolean android_net_wifi_wpsPinFromAccessPointCommand(JNIEnv* env, jobject,
-        jstring javaBssid, jstring javaApPin)
-{
-    ScopedUtfChars bssid(env, javaBssid);
-    if (bssid.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    ScopedUtfChars apPin(env, javaApPin);
-    if (apPin.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    return doBooleanCommand("OK", "WPS_REG %s %s", bssid.c_str(), apPin.c_str());
-}
-
-static jstring android_net_wifi_wpsPinFromDeviceCommand(JNIEnv* env, jobject, jstring javaBssid)
-{
-    ScopedUtfChars bssid(env, javaBssid);
-    if (bssid.c_str() == NULL) {
-        return NULL;
-    }
-    return doStringCommand(env, "WPS_PIN %s", bssid.c_str());
-}
-
-static jboolean android_net_wifi_setCountryCodeCommand(JNIEnv* env, jobject, jstring javaCountry)
-{
-    ScopedUtfChars country(env, javaCountry);
-    if (country.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    return doBooleanCommand("OK", "DRIVER COUNTRY %s", country.c_str());
-}
-
 static jboolean android_net_wifi_setNetworkVariableCommand(JNIEnv* env,
-                                                           jobject,
+                                                           jobject clazz,
                                                            jint netId,
-                                                           jstring javaName,
-                                                           jstring javaValue)
+                                                           jstring name,
+                                                           jstring value)
 {
-    ScopedUtfChars name(env, javaName);
-    if (name.c_str() == NULL) {
+    char cmdstr[256];
+    jboolean isCopy;
+
+    const char *nameStr = env->GetStringUTFChars(name, &isCopy);
+    const char *valueStr = env->GetStringUTFChars(value, &isCopy);
+
+    if (nameStr == NULL || valueStr == NULL)
         return JNI_FALSE;
-    }
-    ScopedUtfChars value(env, javaValue);
-    if (value.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    return doBooleanCommand("OK", "SET_NETWORK %d %s %s", netId, name.c_str(), value.c_str());
+
+    int cmdTooLong = snprintf(cmdstr, sizeof(cmdstr), "SET_NETWORK %d %s %s",
+                 netId, nameStr, valueStr) >= (int)sizeof(cmdstr);
+
+    env->ReleaseStringUTFChars(name, nameStr);
+    env->ReleaseStringUTFChars(value, valueStr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
 }
 
 static jstring android_net_wifi_getNetworkVariableCommand(JNIEnv* env,
-                                                          jobject,
+                                                          jobject clazz,
                                                           jint netId,
-                                                          jstring javaName)
+                                                          jstring name)
 {
-    ScopedUtfChars name(env, javaName);
-    if (name.c_str() == NULL) {
-        return NULL;
-    }
-    return doStringCommand(env, "GET_NETWORK %d %s", netId, name.c_str());
+    char cmdstr[256];
+    jboolean isCopy;
+
+    const char *nameStr = env->GetStringUTFChars(name, &isCopy);
+
+    if (nameStr == NULL)
+        return env->NewStringUTF(NULL);
+
+    int cmdTooLong = snprintf(cmdstr, sizeof(cmdstr), "GET_NETWORK %d %s",
+                             netId, nameStr) >= (int)sizeof(cmdstr);
+
+    env->ReleaseStringUTFChars(name, nameStr);
+
+    return cmdTooLong ? env->NewStringUTF(NULL) : doStringCommand(env, cmdstr);
 }
 
-static jboolean android_net_wifi_removeNetworkCommand(JNIEnv* env, jobject, jint netId)
+static jboolean android_net_wifi_removeNetworkCommand(JNIEnv* env, jobject clazz, jint netId)
 {
-    return doBooleanCommand("OK", "REMOVE_NETWORK %d", netId);
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "REMOVE_NETWORK %d", netId);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
 }
 
 static jboolean android_net_wifi_enableNetworkCommand(JNIEnv* env,
-                                                  jobject,
+                                                  jobject clazz,
                                                   jint netId,
                                                   jboolean disableOthers)
 {
-    return doBooleanCommand("OK", "%s_NETWORK %d", disableOthers ? "SELECT" : "ENABLE", netId);
+    char cmdstr[256];
+    const char *cmd = disableOthers ? "SELECT_NETWORK" : "ENABLE_NETWORK";
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "%s %d", cmd, netId);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
 }
 
-static jboolean android_net_wifi_disableNetworkCommand(JNIEnv* env, jobject, jint netId)
+static jboolean android_net_wifi_disableNetworkCommand(JNIEnv* env, jobject clazz, jint netId)
 {
-    return doBooleanCommand("OK", "DISABLE_NETWORK %d", netId);
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "DISABLE_NETWORK %d", netId);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
 }
 
-static jstring android_net_wifi_statusCommand(JNIEnv* env, jobject)
+static jstring android_net_wifi_statusCommand(JNIEnv* env, jobject clazz)
 {
     return doStringCommand(env, "STATUS");
 }
 
-static jboolean android_net_wifi_pingCommand(JNIEnv* env, jobject)
+static jboolean android_net_wifi_pingCommand(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("PONG", "PING");
+    return doBooleanCommand("PING", "PONG");
 }
 
-static jstring android_net_wifi_scanResultsCommand(JNIEnv* env, jobject)
+static jstring android_net_wifi_scanResultsCommand(JNIEnv* env, jobject clazz)
 {
     return doStringCommand(env, "SCAN_RESULTS");
 }
 
-static jboolean android_net_wifi_disconnectCommand(JNIEnv* env, jobject)
+static jboolean android_net_wifi_disconnectCommand(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "DISCONNECT");
+    return doBooleanCommand("DISCONNECT", "OK");
 }
 
-static jboolean android_net_wifi_reconnectCommand(JNIEnv* env, jobject)
+static jboolean android_net_wifi_reconnectCommand(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "RECONNECT");
+    return doBooleanCommand("RECONNECT", "OK");
 }
-static jboolean android_net_wifi_reassociateCommand(JNIEnv* env, jobject)
+static jboolean android_net_wifi_reassociateCommand(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "REASSOCIATE");
+    return doBooleanCommand("REASSOCIATE", "OK");
 }
 
 static jboolean doSetScanMode(jboolean setActive)
 {
-    return doBooleanCommand("OK", (setActive ? "DRIVER SCAN-ACTIVE" : "DRIVER SCAN-PASSIVE"));
+    return doBooleanCommand((setActive ? "DRIVER SCAN-ACTIVE" : "DRIVER SCAN-PASSIVE"), "OK");
 }
 
-static jboolean android_net_wifi_scanCommand(JNIEnv* env, jobject, jboolean forceActive)
+static jboolean android_net_wifi_scanCommand(JNIEnv* env, jobject clazz, jboolean forceActive)
 {
     jboolean result;
 
@@ -316,81 +291,51 @@ static jboolean android_net_wifi_scanCommand(JNIEnv* env, jobject, jboolean forc
     // The scan will still work.
     if (forceActive && !sScanModeActive)
         doSetScanMode(true);
-    result = doBooleanCommand("OK", "SCAN");
+    result = doBooleanCommand("SCAN", "OK");
     if (forceActive && !sScanModeActive)
         doSetScanMode(sScanModeActive);
     return result;
 }
 
-static jboolean android_net_wifi_setScanModeCommand(JNIEnv* env, jobject, jboolean setActive)
+static jboolean android_net_wifi_setScanModeCommand(JNIEnv* env, jobject clazz, jboolean setActive)
 {
     sScanModeActive = setActive;
     return doSetScanMode(setActive);
 }
 
-static jboolean android_net_wifi_startDriverCommand(JNIEnv* env, jobject)
+static jboolean android_net_wifi_startDriverCommand(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "DRIVER START");
+    return doBooleanCommand("DRIVER START", "OK");
 }
 
-static jboolean android_net_wifi_stopDriverCommand(JNIEnv* env, jobject)
+static jboolean android_net_wifi_stopDriverCommand(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "DRIVER STOP");
+    return doBooleanCommand("DRIVER STOP", "OK");
 }
 
-/*
-    Multicast filtering rules work as follows:
-
-    The driver can filter multicast (v4 and/or v6) and broadcast packets when in
-    a power optimized mode (typically when screen goes off).
-
-    In order to prevent the driver from filtering the multicast/broadcast packets, we have to
-    add a DRIVER RXFILTER-ADD rule followed by DRIVER RXFILTER-START to make the rule effective
-
-    DRIVER RXFILTER-ADD Num
-        where Num = 0 - Unicast, 1 - Broadcast, 2 - Mutil4 or 3 - Multi6
-
-    and DRIVER RXFILTER-START
-
-    In order to stop the usage of these rules, we do
-
-    DRIVER RXFILTER-STOP
-    DRIVER RXFILTER-REMOVE Num
-        where Num is as described for RXFILTER-ADD
-
-    The  SETSUSPENDOPT driver command overrides the filtering rules
-*/
-
-static jboolean android_net_wifi_startMultiV4Filtering(JNIEnv* env, jobject)
+static jboolean android_net_wifi_startPacketFiltering(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "DRIVER RXFILTER-STOP")
-            && doBooleanCommand("OK", "DRIVER RXFILTER-REMOVE 2")
-            && doBooleanCommand("OK", "DRIVER RXFILTER-START");
+    return doBooleanCommand("DRIVER RXFILTER-ADD 0", "OK")
+	&& doBooleanCommand("DRIVER RXFILTER-ADD 1", "OK")
+	&& doBooleanCommand("DRIVER RXFILTER-ADD 3", "OK")
+	&& doBooleanCommand("DRIVER RXFILTER-START", "OK");
 }
 
-static jboolean android_net_wifi_stopMultiV4Filtering(JNIEnv* env, jobject)
+static jboolean android_net_wifi_stopPacketFiltering(JNIEnv* env, jobject clazz)
 {
-    return doBooleanCommand("OK", "DRIVER RXFILTER-ADD 2")
-            && doBooleanCommand("OK", "DRIVER RXFILTER-START");
-}
+    jboolean result = doBooleanCommand("DRIVER RXFILTER-STOP", "OK");
+    if (result) {
+	(void)doBooleanCommand("DRIVER RXFILTER-REMOVE 3", "OK");
+	(void)doBooleanCommand("DRIVER RXFILTER-REMOVE 1", "OK");
+	(void)doBooleanCommand("DRIVER RXFILTER-REMOVE 0", "OK");
+    }
 
-static jboolean android_net_wifi_startMultiV6Filtering(JNIEnv* env, jobject)
-{
-    return doBooleanCommand("OK", "DRIVER RXFILTER-STOP")
-            && doBooleanCommand("OK", "DRIVER RXFILTER-REMOVE 3")
-            && doBooleanCommand("OK", "DRIVER RXFILTER-START");
+    return result;
 }
-
-static jboolean android_net_wifi_stopMultiV6Filtering(JNIEnv* env, jobject)
-{
-    return doBooleanCommand("OK", "DRIVER RXFILTER-ADD 3")
-        && doBooleanCommand("OK", "DRIVER RXFILTER-START");
-}
-
 
 static jint android_net_wifi_getRssiHelper(const char *cmd)
 {
-    char reply[BUF_SIZE];
+    char reply[256];
     int rssi = -200;
 
     if (doCommand(cmd, reply, sizeof(reply)) != 0) {
@@ -410,37 +355,66 @@ static jint android_net_wifi_getRssiHelper(const char *cmd)
 
         char* lastSpace = strrchr(reply, ' ');
         // lastSpace should be preceded by "rssi" and followed by the value
-        if (lastSpace && !strncasecmp(lastSpace - 4, "rssi", 4)) {
+        if (lastSpace && !strncmp(lastSpace - 4, "rssi", 4)) {
             sscanf(lastSpace + 1, "%d", &rssi);
         }
     }
     return (jint)rssi;
 }
 
-static jstring android_net_wifi_getMacAddressCommand(JNIEnv* env, jobject)
+static jint android_net_wifi_getRssiCommand(JNIEnv* env, jobject clazz)
 {
-    char reply[BUF_SIZE];
-    char buf[BUF_SIZE];
+    return android_net_wifi_getRssiHelper("DRIVER RSSI");
+}
+
+static jint android_net_wifi_getRssiApproxCommand(JNIEnv* env, jobject clazz)
+{
+    return android_net_wifi_getRssiHelper("DRIVER RSSI-APPROX");
+}
+
+static jint android_net_wifi_getLinkSpeedCommand(JNIEnv* env, jobject clazz)
+{
+    char reply[256];
+    int linkspeed;
+
+    if (doCommand("DRIVER LINKSPEED", reply, sizeof(reply)) != 0) {
+        return (jint)-1;
+    }
+    // reply comes back in the form "LinkSpeed XX" where XX is the
+    // number we're interested in.
+    sscanf(reply, "%*s %u", &linkspeed);
+    return (jint)linkspeed;
+}
+
+static jstring android_net_wifi_getMacAddressCommand(JNIEnv* env, jobject clazz)
+{
+    char reply[256];
+    char buf[256];
 
     if (doCommand("DRIVER MACADDR", reply, sizeof(reply)) != 0) {
-        return NULL;
+        return env->NewStringUTF(NULL);
     }
     // reply comes back in the form "Macaddr = XX.XX.XX.XX.XX.XX" where XX
     // is the part of the string we're interested in.
-    if (sscanf(reply, "%*s = %255s", buf) == 1) {
+    if (sscanf(reply, "%*s = %255s", buf) == 1)
         return env->NewStringUTF(buf);
-    }
-    return NULL;
+    else
+        return env->NewStringUTF(NULL);
 }
 
-static jboolean android_net_wifi_setPowerModeCommand(JNIEnv* env, jobject, jint mode)
+static jboolean android_net_wifi_setPowerModeCommand(JNIEnv* env, jobject clazz, jint mode)
 {
-    return doBooleanCommand("OK", "DRIVER POWERMODE %d", mode);
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "DRIVER POWERMODE %d", mode);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
 }
 
-static jint android_net_wifi_getPowerModeCommand(JNIEnv* env, jobject)
+static jint android_net_wifi_getPowerModeCommand(JNIEnv* env, jobject clazz)
 {
-    char reply[BUF_SIZE];
+    char reply[256];
     int power;
 
     if (doCommand("DRIVER GETPOWER", reply, sizeof(reply)) != 0) {
@@ -454,116 +428,121 @@ static jint android_net_wifi_getPowerModeCommand(JNIEnv* env, jobject)
     return (jint)power;
 }
 
-static jboolean android_net_wifi_setBandCommand(JNIEnv* env, jobject, jint band)
+static jboolean android_net_wifi_setNumAllowedChannelsCommand(JNIEnv* env, jobject clazz, jint numChannels)
 {
-    return doBooleanCommand("OK", "DRIVER SETBAND %d", band);
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "DRIVER SCAN-CHANNELS %u", numChannels);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
 }
 
-static jint android_net_wifi_getBandCommand(JNIEnv* env, jobject)
+static jint android_net_wifi_getNumAllowedChannelsCommand(JNIEnv* env, jobject clazz)
 {
-    char reply[25];
-    int band;
+    char reply[256];
+    int numChannels;
 
-    if (doCommand("DRIVER GETBAND", reply, sizeof(reply)) != 0) {
-        return (jint)-1;
-    }
-    // reply comes back in the form "Band X" where X is the
-    // number we're interested in.
-    sscanf(reply, "%*s %u", &band);
-    return (jint)band;
-}
-
-static jboolean android_net_wifi_setBluetoothCoexistenceModeCommand(JNIEnv* env, jobject, jint mode)
-{
-    return doBooleanCommand("OK", "DRIVER BTCOEXMODE %d", mode);
-}
-
-static jboolean android_net_wifi_setBluetoothCoexistenceScanModeCommand(JNIEnv* env, jobject, jboolean setCoexScanMode)
-{
-    return doBooleanCommand("OK", "DRIVER BTCOEXSCAN-%s", setCoexScanMode ? "START" : "STOP");
-}
-
-static jboolean android_net_wifi_saveConfigCommand(JNIEnv* env, jobject)
-{
-    // Make sure we never write out a value for AP_SCAN other than 1
-    (void)doBooleanCommand("OK", "AP_SCAN 1");
-    return doBooleanCommand("OK", "SAVE_CONFIG");
-}
-
-static jboolean android_net_wifi_reloadConfigCommand(JNIEnv* env, jobject)
-{
-    return doBooleanCommand("OK", "RECONFIGURE");
-}
-
-static jboolean android_net_wifi_setScanResultHandlingCommand(JNIEnv* env, jobject, jint mode)
-{
-    return doBooleanCommand("OK", "AP_SCAN %d", mode);
-}
-
-static jboolean android_net_wifi_addToBlacklistCommand(JNIEnv* env, jobject, jstring javaBssid)
-{
-    ScopedUtfChars bssid(env, javaBssid);
-    if (bssid.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    return doBooleanCommand("OK", "BLACKLIST %s", bssid.c_str());
-}
-
-static jboolean android_net_wifi_clearBlacklistCommand(JNIEnv* env, jobject)
-{
-    return doBooleanCommand("OK", "BLACKLIST clear");
-}
-
-static jboolean android_net_wifi_setSuspendOptimizationsCommand(JNIEnv* env, jobject, jboolean enabled)
-{
-    return doBooleanCommand("OK", "DRIVER SETSUSPENDOPT %d", enabled ? 0 : 1);
-}
-
-static void android_net_wifi_enableBackgroundScanCommand(JNIEnv* env, jobject, jboolean enable)
-{
-    //Note: BGSCAN-START and BGSCAN-STOP are documented in core/res/res/values/config.xml
-    //and will need an update if the names are changed
-    if (enable) {
-        doBooleanCommand("OK", "DRIVER BGSCAN-START");
-    } else {
-        doBooleanCommand("OK", "DRIVER BGSCAN-STOP");
-    }
-}
-
-static void android_net_wifi_setScanIntervalCommand(JNIEnv* env, jobject, jint scanInterval)
-{
-    doBooleanCommand("OK", "SCAN_INTERVAL %d", scanInterval);
-}
-
-
-static jboolean android_net_wifi_doBooleanCommand(JNIEnv* env, jobject, jstring javaCommand)
-{
-    ScopedUtfChars command(env, javaCommand);
-    if (command.c_str() == NULL) {
-        return JNI_FALSE;
-    }
-    return doBooleanCommand("OK", "%s", command.c_str());
-}
-
-static jint android_net_wifi_doIntCommand(JNIEnv* env, jobject, jstring javaCommand)
-{
-    ScopedUtfChars command(env, javaCommand);
-    if (command.c_str() == NULL) {
+    if (doCommand("DRIVER SCAN-CHANNELS", reply, sizeof(reply)) != 0) {
         return -1;
     }
-    return doIntCommand("%s", command.c_str());
+    // reply comes back in the form "Scan-Channels = X" where X is the
+    // number of channels
+    if (sscanf(reply, "%*s = %u", &numChannels) == 1)
+        return numChannels;
+    else
+        return -1;
 }
 
-static jstring android_net_wifi_doStringCommand(JNIEnv* env, jobject, jstring javaCommand)
+static jboolean android_net_wifi_setBluetoothCoexistenceModeCommand(JNIEnv* env, jobject clazz, jint mode)
 {
-    ScopedUtfChars command(env, javaCommand);
-    if (command.c_str() == NULL) {
-        return NULL;
-    }
-    return doStringCommand(env, "%s", command.c_str());
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "DRIVER BTCOEXMODE %d", mode);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
+}
+
+static jboolean android_net_wifi_setBluetoothCoexistenceScanModeCommand(JNIEnv* env, jobject clazz, jboolean setCoexScanMode)
+{
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "DRIVER BTCOEXSCAN-%s", setCoexScanMode ? "START" : "STOP");
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
+}
+
+static jboolean android_net_wifi_saveConfigCommand(JNIEnv* env, jobject clazz)
+{
+    return doBooleanCommand("SAVE_CONFIG", "OK");
+}
+
+static jboolean android_net_wifi_reloadConfigCommand(JNIEnv* env, jobject clazz)
+{
+    return doBooleanCommand("RECONFIGURE", "OK");
+}
+
+static jboolean android_net_wifi_setScanResultHandlingCommand(JNIEnv* env, jobject clazz, jint mode)
+{
+    char cmdstr[256];
+
+    int numWritten = snprintf(cmdstr, sizeof(cmdstr), "AP_SCAN %d", mode);
+    int cmdTooLong = numWritten >= (int)sizeof(cmdstr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
+}
+
+static jboolean android_net_wifi_addToBlacklistCommand(JNIEnv* env, jobject clazz, jstring bssid)
+{
+    char cmdstr[256];
+    jboolean isCopy;
+
+    const char *bssidStr = env->GetStringUTFChars(bssid, &isCopy);
+
+    int cmdTooLong = snprintf(cmdstr, sizeof(cmdstr), "BLACKLIST %s", bssidStr) >= (int)sizeof(cmdstr);
+
+    env->ReleaseStringUTFChars(bssid, bssidStr);
+
+    return (jboolean)!cmdTooLong && doBooleanCommand(cmdstr, "OK");
+}
+
+static jboolean android_net_wifi_clearBlacklistCommand(JNIEnv* env, jobject clazz)
+{
+    return doBooleanCommand("BLACKLIST clear", "OK");
+}
+
+static jboolean android_net_wifi_setSuspendOptimizationsCommand(JNIEnv* env, jobject clazz, jboolean enabled)
+{
+    char cmdstr[25];
+
+    snprintf(cmdstr, sizeof(cmdstr), "DRIVER SETSUSPENDOPT %d", enabled ? 0 : 1);
+    return doBooleanCommand(cmdstr, "OK");
 }
 
 
+static jboolean android_net_wifi_doDhcpRequest(JNIEnv* env, jobject clazz, jobject info)
+{
+    jint ipaddr, gateway, mask, dns1, dns2, server, lease;
+    jboolean succeeded = ((jboolean)::do_dhcp_request(&ipaddr, &gateway, &mask,
+                                        &dns1, &dns2, &server, &lease) == 0);
+    if (succeeded && dhcpInfoFieldIds.dhcpInfoClass != NULL) {
+        env->SetIntField(info, dhcpInfoFieldIds.ipaddress, ipaddr);
+        env->SetIntField(info, dhcpInfoFieldIds.gateway, gateway);
+        env->SetIntField(info, dhcpInfoFieldIds.netmask, mask);
+        env->SetIntField(info, dhcpInfoFieldIds.dns1, dns1);
+        env->SetIntField(info, dhcpInfoFieldIds.dns2, dns2);
+        env->SetIntField(info, dhcpInfoFieldIds.serverAddress, server);
+        env->SetIntField(info, dhcpInfoFieldIds.leaseDuration, lease);
+    }
+    return succeeded;
+}
+
+static jstring android_net_wifi_getDhcpError(JNIEnv* env, jobject clazz)
+{
+    return env->NewStringUTF(::get_dhcp_error_string());
+}
 
 // ----------------------------------------------------------------------------
 
@@ -574,15 +553,11 @@ static JNINativeMethod gWifiMethods[] = {
     /* name, signature, funcPtr */
 
     { "loadDriver", "()Z",  (void *)android_net_wifi_loadDriver },
-    { "isDriverLoaded", "()Z",  (void *)android_net_wifi_isDriverLoaded},
     { "unloadDriver", "()Z",  (void *)android_net_wifi_unloadDriver },
-    { "loadHotspotDriver", "()Z",  (void *)android_net_wifi_loadHotspotDriver },
-    { "isHotspotDriverLoaded", "()Z",  (void *)android_net_wifi_isHotspotDriverLoaded},
-    { "unloadHotspotDriver", "()Z",  (void *)android_net_wifi_unloadHotspotDriver },
+    { "loadHotspotDriver", "()Z",  (void *)android_net_hotspot_loadDriver },
+    { "unloadHotspotDriver", "()Z",  (void *)android_net_hotspot_unloadDriver },
     { "startSupplicant", "()Z",  (void *)android_net_wifi_startSupplicant },
-    { "startP2pSupplicant", "()Z",  (void *)android_net_wifi_startP2pSupplicant },
-    { "stopSupplicant", "()Z", (void*) android_net_wifi_stopSupplicant },
-    { "killSupplicant", "()Z",  (void *)android_net_wifi_killSupplicant },
+    { "stopSupplicant", "()Z",  (void *)android_net_wifi_stopSupplicant },
     { "connectToSupplicant", "()Z",  (void *)android_net_wifi_connectToSupplicant },
     { "closeSupplicantConnection", "()V",  (void *)android_net_wifi_closeSupplicantConnection },
 
@@ -607,42 +582,49 @@ static JNINativeMethod gWifiMethods[] = {
     { "setScanModeCommand", "(Z)Z", (void*) android_net_wifi_setScanModeCommand },
     { "startDriverCommand", "()Z", (void*) android_net_wifi_startDriverCommand },
     { "stopDriverCommand", "()Z", (void*) android_net_wifi_stopDriverCommand },
-    { "startFilteringMulticastV4Packets", "()Z", (void*) android_net_wifi_startMultiV4Filtering},
-    { "stopFilteringMulticastV4Packets", "()Z", (void*) android_net_wifi_stopMultiV4Filtering},
-    { "startFilteringMulticastV6Packets", "()Z", (void*) android_net_wifi_startMultiV6Filtering},
-    { "stopFilteringMulticastV6Packets", "()Z", (void*) android_net_wifi_stopMultiV6Filtering},
+    { "startPacketFiltering", "()Z", (void*) android_net_wifi_startPacketFiltering },
+    { "stopPacketFiltering", "()Z", (void*) android_net_wifi_stopPacketFiltering },
     { "setPowerModeCommand", "(I)Z", (void*) android_net_wifi_setPowerModeCommand },
     { "getPowerModeCommand", "()I", (void*) android_net_wifi_getPowerModeCommand },
-    { "setBandCommand", "(I)Z", (void*) android_net_wifi_setBandCommand},
-    { "getBandCommand", "()I", (void*) android_net_wifi_getBandCommand},
+    { "setNumAllowedChannelsCommand", "(I)Z", (void*) android_net_wifi_setNumAllowedChannelsCommand },
+    { "getNumAllowedChannelsCommand", "()I", (void*) android_net_wifi_getNumAllowedChannelsCommand },
     { "setBluetoothCoexistenceModeCommand", "(I)Z",
     		(void*) android_net_wifi_setBluetoothCoexistenceModeCommand },
     { "setBluetoothCoexistenceScanModeCommand", "(Z)Z",
     		(void*) android_net_wifi_setBluetoothCoexistenceScanModeCommand },
+    { "getRssiCommand", "()I", (void*) android_net_wifi_getRssiCommand },
+    { "getRssiApproxCommand", "()I",
+            (void*) android_net_wifi_getRssiApproxCommand},
+    { "getLinkSpeedCommand", "()I", (void*) android_net_wifi_getLinkSpeedCommand },
     { "getMacAddressCommand", "()Ljava/lang/String;", (void*) android_net_wifi_getMacAddressCommand },
     { "saveConfigCommand", "()Z", (void*) android_net_wifi_saveConfigCommand },
     { "reloadConfigCommand", "()Z", (void*) android_net_wifi_reloadConfigCommand },
     { "setScanResultHandlingCommand", "(I)Z", (void*) android_net_wifi_setScanResultHandlingCommand },
     { "addToBlacklistCommand", "(Ljava/lang/String;)Z", (void*) android_net_wifi_addToBlacklistCommand },
     { "clearBlacklistCommand", "()Z", (void*) android_net_wifi_clearBlacklistCommand },
-    { "startWpsPbcCommand", "(Ljava/lang/String;)Z", (void*) android_net_wifi_wpsPbcCommand },
-    { "startWpsWithPinFromAccessPointCommand", "(Ljava/lang/String;Ljava/lang/String;)Z",
-        (void*) android_net_wifi_wpsPinFromAccessPointCommand },
-    { "startWpsWithPinFromDeviceCommand", "(Ljava/lang/String;)Ljava/lang/String;",
-        (void*) android_net_wifi_wpsPinFromDeviceCommand },
-    { "setSuspendOptimizationsCommand", "(Z)Z",
-        (void*) android_net_wifi_setSuspendOptimizationsCommand},
-    { "setCountryCodeCommand", "(Ljava/lang/String;)Z",
-        (void*) android_net_wifi_setCountryCodeCommand},
-    { "enableBackgroundScanCommand", "(Z)V", (void*) android_net_wifi_enableBackgroundScanCommand},
-    { "setScanIntervalCommand", "(I)V", (void*) android_net_wifi_setScanIntervalCommand},
-    { "doBooleanCommand", "(Ljava/lang/String;)Z", (void*) android_net_wifi_doBooleanCommand},
-    { "doIntCommand", "(Ljava/lang/String;)I", (void*) android_net_wifi_doIntCommand},
-    { "doStringCommand", "(Ljava/lang/String;)Ljava/lang/String;", (void*) android_net_wifi_doStringCommand},
+    { "setSuspendOptimizationsCommand", "(Z)Z", (void*) android_net_wifi_setSuspendOptimizationsCommand},
+
+    { "doDhcpRequest", "(Landroid/net/DhcpInfo;)Z", (void*) android_net_wifi_doDhcpRequest },
+    { "getDhcpError", "()Ljava/lang/String;", (void*) android_net_wifi_getDhcpError },
 };
 
 int register_android_net_wifi_WifiManager(JNIEnv* env)
 {
+    jclass wifi = env->FindClass(WIFI_PKG_NAME);
+    LOG_FATAL_IF(wifi == NULL, "Unable to find class " WIFI_PKG_NAME);
+
+    dhcpInfoFieldIds.dhcpInfoClass = env->FindClass("android/net/DhcpInfo");
+    if (dhcpInfoFieldIds.dhcpInfoClass != NULL) {
+        dhcpInfoFieldIds.constructorId = env->GetMethodID(dhcpInfoFieldIds.dhcpInfoClass, "<init>", "()V");
+        dhcpInfoFieldIds.ipaddress = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "ipAddress", "I");
+        dhcpInfoFieldIds.gateway = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "gateway", "I");
+        dhcpInfoFieldIds.netmask = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "netmask", "I");
+        dhcpInfoFieldIds.dns1 = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "dns1", "I");
+        dhcpInfoFieldIds.dns2 = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "dns2", "I");
+        dhcpInfoFieldIds.serverAddress = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "serverAddress", "I");
+        dhcpInfoFieldIds.leaseDuration = env->GetFieldID(dhcpInfoFieldIds.dhcpInfoClass, "leaseDuration", "I");
+    }
+
     return AndroidRuntime::registerNativeMethods(env,
             WIFI_PKG_NAME, gWifiMethods, NELEM(gWifiMethods));
 }

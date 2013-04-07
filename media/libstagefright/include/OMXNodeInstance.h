@@ -13,9 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*--------------------------------------------------------------------------
-Copyright (c) 2011, Code Aurora Forum. All rights reserved.
---------------------------------------------------------------------------*/
 
 #ifndef OMX_NODE_INSTANCE_H_
 
@@ -52,20 +49,14 @@ struct OMXNodeInstance {
     status_t getConfig(OMX_INDEXTYPE index, void *params, size_t size);
     status_t setConfig(OMX_INDEXTYPE index, const void *params, size_t size);
 
-    status_t getState(OMX_STATETYPE* state);
-
-    status_t enableGraphicBuffers(OMX_U32 portIndex, OMX_BOOL enable);
-
-    status_t getGraphicBufferUsage(OMX_U32 portIndex, OMX_U32* usage);
-
-    status_t storeMetaDataInBuffers(OMX_U32 portIndex, OMX_BOOL enable);
+#if defined(OMAP_ENHANCEMENT) && defined(TARGET_OMAP4)
+    status_t useBuffer(
+            OMX_U32 portIndex, const sp<IMemory> &params,
+            OMX::buffer_id *buffer, size_t size);
+#endif
 
     status_t useBuffer(
             OMX_U32 portIndex, const sp<IMemory> &params,
-            OMX::buffer_id *buffer);
-
-    status_t useGraphicBuffer(
-            OMX_U32 portIndex, const sp<GraphicBuffer> &graphicBuffer,
             OMX::buffer_id *buffer);
 
     status_t allocateBuffer(
@@ -97,11 +88,14 @@ struct OMXNodeInstance {
 private:
     Mutex mLock;
 
+    bool pmem_registered_with_client;
+
     OMX *mOwner;
     OMX::node_id mNodeID;
     OMX_HANDLETYPE mHandle;
     sp<IOMXObserver> mObserver;
     bool mDying;
+    OMX_U8* mBase;
 
     struct ActiveBuffer {
         OMX_U32 mPortIndex;
@@ -114,9 +108,7 @@ private:
     void addActiveBuffer(OMX_U32 portIndex, OMX::buffer_id id);
     void removeActiveBuffer(OMX_U32 portIndex, OMX::buffer_id id);
     void freeActiveBuffers();
-    status_t useGraphicBuffer2_l(
-            OMX_U32 portIndex, const sp<GraphicBuffer> &graphicBuffer,
-            OMX::buffer_id *buffer);
+
     static OMX_ERRORTYPE OnEvent(
             OMX_IN OMX_HANDLETYPE hComponent,
             OMX_IN OMX_PTR pAppData,
@@ -142,3 +134,4 @@ private:
 }  // namespace android
 
 #endif  // OMX_NODE_INSTANCE_H_
+

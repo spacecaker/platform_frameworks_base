@@ -29,7 +29,7 @@ import android.provider.Settings;
 import android.text.format.DateFormat;
 import android.util.AttributeSet;
 import android.view.View;
-import android.widget.RelativeLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
@@ -39,18 +39,14 @@ import java.util.Calendar;
 /**
  * Displays the time
  */
-public class DigitalClock extends RelativeLayout {
+public class DigitalClock extends LinearLayout {
 
-    private static final String SYSTEM = "/system/fonts/";
-    private static final String SYSTEM_FONT_TIME_BACKGROUND = SYSTEM + "AndroidClock.ttf";
-    private static final String SYSTEM_FONT_TIME_FOREGROUND = SYSTEM + "AndroidClock_Highlight.ttf";
     private final static String M12 = "h:mm";
     private final static String M24 = "kk:mm";
 
     private Calendar mCalendar;
     private String mFormat;
-    private TextView mTimeDisplayBackground;
-    private TextView mTimeDisplayForeground;
+    private TextView mTimeDisplay;
     private AmPm mAmPm;
     private ContentObserver mFormatChangeObserver;
     private int mAttached = 0; // for debugging - tells us whether attach/detach is unbalanced
@@ -58,14 +54,6 @@ public class DigitalClock extends RelativeLayout {
     /* called by system on minute ticks */
     private final Handler mHandler = new Handler();
     private BroadcastReceiver mIntentReceiver;
-
-    private static final Typeface sBackgroundFont;
-    private static final Typeface sForegroundFont;
-
-    static {
-        sBackgroundFont = Typeface.createFromFile(SYSTEM_FONT_TIME_BACKGROUND);
-        sForegroundFont = Typeface.createFromFile(SYSTEM_FONT_TIME_FOREGROUND);
-    }
 
     private static class TimeChangedReceiver extends BroadcastReceiver {
         private WeakReference<DigitalClock> mClock;
@@ -102,14 +90,13 @@ public class DigitalClock extends RelativeLayout {
     };
 
     static class AmPm {
-        private TextView mAmPmTextView;
+        private TextView mAmPm;
         private String mAmString, mPmString;
 
         AmPm(View parent, Typeface tf) {
-            // No longer used, uncomment if we decide to use AM/PM indicator again
-            // mAmPmTextView = (TextView) parent.findViewById(R.id.am_pm);
-            if (mAmPmTextView != null && tf != null) {
-                mAmPmTextView.setTypeface(tf);
+            mAmPm = (TextView) parent.findViewById(R.id.am_pm);
+            if (tf != null) {
+                mAmPm.setTypeface(tf);
             }
 
             String[] ampm = new DateFormatSymbols().getAmPmStrings();
@@ -118,15 +105,11 @@ public class DigitalClock extends RelativeLayout {
         }
 
         void setShowAmPm(boolean show) {
-            if (mAmPmTextView != null) {
-                mAmPmTextView.setVisibility(show ? View.VISIBLE : View.GONE);
-            }
+            mAmPm.setVisibility(show ? View.VISIBLE : View.GONE);
         }
 
         void setIsMorning(boolean isMorning) {
-            if (mAmPmTextView != null) {
-                mAmPmTextView.setText(isMorning ? mAmString : mPmString);
-            }
+            mAmPm.setText(isMorning ? mAmString : mPmString);
         }
     }
 
@@ -166,14 +149,9 @@ public class DigitalClock extends RelativeLayout {
     protected void onFinishInflate() {
         super.onFinishInflate();
 
-        /* The time display consists of two tones. That's why we have two overlapping text views. */
-        mTimeDisplayBackground = (TextView) findViewById(R.id.timeDisplayBackground);
-        mTimeDisplayBackground.setTypeface(sBackgroundFont);
-        mTimeDisplayBackground.setVisibility(View.INVISIBLE);
-
-        mTimeDisplayForeground = (TextView) findViewById(R.id.timeDisplayForeground);
-        mTimeDisplayForeground.setTypeface(sForegroundFont);
-        mAmPm = new AmPm(this, null);
+        mTimeDisplay = (TextView) findViewById(R.id.timeDisplay);
+        mTimeDisplay.setTypeface(Typeface.createFromFile("/system/fonts/Clockopia.ttf"));
+        mAmPm = new AmPm(this, Typeface.createFromFile("/system/fonts/DroidSans-Bold.ttf"));
         mCalendar = Calendar.getInstance();
 
         setDateFormat();
@@ -232,8 +210,7 @@ public class DigitalClock extends RelativeLayout {
         mCalendar.setTimeInMillis(System.currentTimeMillis());
 
         CharSequence newTime = DateFormat.format(mFormat, mCalendar);
-        mTimeDisplayBackground.setText(newTime);
-        mTimeDisplayForeground.setText(newTime);
+        mTimeDisplay.setText(newTime);
         mAmPm.setIsMorning(mCalendar.get(Calendar.AM_PM) == 0);
     }
 

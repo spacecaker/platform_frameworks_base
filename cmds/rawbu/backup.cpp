@@ -14,7 +14,6 @@
 #include <utime.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <stdint.h>
 
 #include <cutils/properties.h>
 

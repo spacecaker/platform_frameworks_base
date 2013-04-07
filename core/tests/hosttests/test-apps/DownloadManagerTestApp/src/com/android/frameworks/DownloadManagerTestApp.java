@@ -18,6 +18,7 @@ package com.android.frameworks.downloadmanagertests;
 import android.app.DownloadManager;
 import android.app.DownloadManager.Query;
 import android.app.DownloadManager.Request;
+import android.app.DownloadManagerBaseTest;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
@@ -208,7 +209,7 @@ public class DownloadManagerTestApp extends DownloadManagerBaseTest {
 
             // Wait until the download finishes; don't wait for a notification b/c
             // the download may well have been completed before the last reboot.
-            waitForDownloadOrTimeout_skipNotification(dlRequest);
+            waitForDownloadOrTimeout(dlRequest);
 
             Log.i(LOG_TAG, "Verifying download information...");
             // Verify specific info about the file (size, name, etc)...

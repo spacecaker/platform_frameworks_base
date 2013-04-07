@@ -1,5 +1,6 @@
 //
 // Copyright 2006 The Android Open Source Project
+// This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
 //
 // Build resource files from raw assets.
 //
@@ -7,7 +8,7 @@
 #include "ResourceTable.h"
 
 #include "XMLNode.h"
-#include "ResourceFilter.h"
+#include "ResourceIdCache.h"
 
 #include <utils/ByteOrder.h>
 #include <utils/ResourceTypes.h>
@@ -696,7 +697,7 @@ status_t parseAndAddEntry(Bundle* bundle,
             if (isInProductList(product, String16(bundleProduct))) {
                 ;
             } else if (strcmp16(String16("default").string(), product.string()) == 0 &&
-                       !outTable->hasBagOrEntry(myPackage, curType, ident, config)) {
+                       !outTable->hasBagOrEntry(myPackage, curType, ident)) {
                 ;
             } else {
                 return NO_ERROR;
@@ -1824,37 +1825,6 @@ bool ResourceTable::hasBagOrEntry(const String16& package,
     return false;
 }
 
-bool ResourceTable::hasBagOrEntry(const String16& package,
-                                  const String16& type,
-                                  const String16& name,
-                                  const ResTable_config& config) const
-{
-    // First look for this in the included resources...
-    uint32_t rid = mAssets->getIncludedResources()
-        .identifierForName(name.string(), name.size(),
-                           type.string(), type.size(),
-                           package.string(), package.size());
-    if (rid != 0) {
-        return true;
-    }
-
-    sp<Package> p = mPackages.valueFor(package);
-    if (p != NULL) {
-        sp<Type> t = p->getTypes().valueFor(type);
-        if (t != NULL) {
-            sp<ConfigList> c =  t->getConfigs().valueFor(name);
-            if (c != NULL) {
-                sp<Entry> e = c->getEntries().valueFor(config);
-                if (e != NULL) {
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
 bool ResourceTable::hasBagOrEntry(const String16& ref,
                                   const String16* defType,
                                   const String16* defPackage)
@@ -1995,11 +1965,10 @@ uint32_t ResourceTable::getResId(const String16& ref,
                                  bool onlyPublic) const
 {
     String16 package, type, name;
-    bool refOnlyPublic = true;
     if (!ResTable::expandResourceRef(
         ref.string(), ref.size(), &package, &type, &name,
         defType, defPackage ? defPackage:&mAssetsPackage,
-        outErrorMsg, &refOnlyPublic)) {
+        outErrorMsg)) {
         NOISY(printf("Expanding resource: ref=%s\n",
                      String8(ref).string()));
         NOISY(printf("Expanding resource: defType=%s\n",
@@ -2012,7 +1981,11 @@ uint32_t ResourceTable::getResId(const String16& ref,
                      String8(name).string()));
         return 0;
     }
-    uint32_t res = getResId(package, type, name, onlyPublic && refOnlyPublic);
+    uint32_t res = ResourceIdCache::lookup(package, type, name, onlyPublic);
+    if (res == 0) {
+        res = getResId(package, type, name, onlyPublic);
+        ResourceIdCache::store(package, type, name, onlyPublic, res);
+    }
     NOISY(printf("Expanded resource: p=%s, t=%s, n=%s, res=%d\n",
                  String8(package).string(), String8(type).string(),
                  String8(name).string(), res));
@@ -2477,7 +2450,7 @@ ResourceTable::validateLocalizations(void)
         if (configSet.count(defaultLocale) == 0) {
             fprintf(stdout, "aapt: warning: string '%s' has no default translation in %s; found:",
                     String8(nameIter->first).string(), mBundle->getResourceSourceDirs()[0]);
-            for (set<String8>::const_iterator locales = configSet.begin();
+            for (set<String8>::iterator locales = configSet.begin();
                  locales != configSet.end();
                  locales++) {
                 fprintf(stdout, " %s", (*locales).string());
@@ -2529,6 +2502,123 @@ ResourceTable::validateLocalizations(void)
     return err;
 }
 
+
+status_t
+ResourceFilter::parse(const char* arg)
+{
+    if (arg == NULL) {
+        return 0;
+    }
+
+    const char* p = arg;
+    const char* q;
+
+    while (true) {
+        q = strchr(p, ',');
+        if (q == NULL) {
+            q = p + strlen(p);
+        }
+
+        String8 part(p, q-p);
+
+        if (part == "zz_ZZ") {
+            mContainsPseudo = true;
+        }
+        int axis;
+        uint32_t value;
+        if (AaptGroupEntry::parseNamePart(part, &axis, &value)) {
+            fprintf(stderr, "Invalid configuration: %s\n", arg);
+            fprintf(stderr, "                       ");
+            for (int i=0; i<p-arg; i++) {
+                fprintf(stderr, " ");
+            }
+            for (int i=0; i<q-p; i++) {
+                fprintf(stderr, "^");
+            }
+            fprintf(stderr, "\n");
+            return 1;
+        }
+
+        ssize_t index = mData.indexOfKey(axis);
+        if (index < 0) {
+            mData.add(axis, SortedVector<uint32_t>());
+        }
+        SortedVector<uint32_t>& sv = mData.editValueFor(axis);
+        sv.add(value);
+        // if it's a locale with a region, also match an unmodified locale of the
+        // same language
+        if (axis == AXIS_LANGUAGE) {
+            if (value & 0xffff0000) {
+                sv.add(value & 0x0000ffff);
+            }
+        }
+        p = q;
+        if (!*p) break;
+        p++;
+    }
+
+    return NO_ERROR;
+}
+
+bool
+ResourceFilter::match(int axis, uint32_t value)
+{
+    if (value == 0) {
+        // they didn't specify anything so take everything
+        return true;
+    }
+    ssize_t index = mData.indexOfKey(axis);
+    if (index < 0) {
+        // we didn't request anything on this axis so take everything
+        return true;
+    }
+    const SortedVector<uint32_t>& sv = mData.valueAt(index);
+    return sv.indexOf(value) >= 0;
+}
+
+bool
+ResourceFilter::match(const ResTable_config& config)
+{
+    if (config.locale) {
+        uint32_t locale = (config.country[1] << 24) | (config.country[0] << 16)
+                | (config.language[1] << 8) | (config.language[0]);
+        if (!match(AXIS_LANGUAGE, locale)) {
+            return false;
+        }
+    }
+    if (!match(AXIS_ORIENTATION, config.orientation)) {
+        return false;
+    }
+    if (!match(AXIS_UIMODETYPE, (config.uiMode&ResTable_config::MASK_UI_MODE_TYPE))) {
+        return false;
+    }
+    if (!match(AXIS_UIMODENIGHT, (config.uiMode&ResTable_config::MASK_UI_MODE_NIGHT))) {
+        return false;
+    }
+    if (!match(AXIS_DENSITY, config.density)) {
+        return false;
+    }
+    if (!match(AXIS_TOUCHSCREEN, config.touchscreen)) {
+        return false;
+    }
+    if (!match(AXIS_KEYSHIDDEN, config.inputFlags)) {
+        return false;
+    }
+    if (!match(AXIS_KEYBOARD, config.keyboard)) {
+        return false;
+    }
+    if (!match(AXIS_NAVIGATION, config.navigation)) {
+        return false;
+    }
+    if (!match(AXIS_SCREENSIZE, config.screenSize)) {
+        return false;
+    }
+    if (!match(AXIS_VERSION, config.version)) {
+        return false;
+    }
+    return true;
+}
+
 status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
 {
     ResourceFilter filter;
@@ -2539,8 +2629,6 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
 
     const size_t N = mOrderedPackages.size();
     size_t pi;
-
-    const static String16 mipmap16("mipmap");
 
     bool useUTF8 = !bundle->getWantUTF16() && bundle->isMinSdkAtLeast(SDK_FROYO);
 
@@ -2564,10 +2652,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                 typeStrings.add(String16("<empty>"), false);
                 continue;
             }
-            const String16 typeName(t->getName());
-            typeStrings.add(typeName, false);
-
-            const bool filterable = (typeName != mipmap16);
+            typeStrings.add(t->getName(), false);
 
             const size_t N = t->getOrderedConfigs().size();
             for (size_t ci=0; ci<N; ci++) {
@@ -2578,7 +2663,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                 const size_t N = c->getEntries().size();
                 for (size_t ei=0; ei<N; ei++) {
                     ConfigDescription config = c->getEntries().keyAt(ei);
-                    if (filterable && !filter.match(config)) {
+                    if (!filter.match(config)) {
                         continue;
                     }
                     sp<Entry> e = c->getEntries().valueAt(ei);
@@ -2658,8 +2743,6 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                                 "Type name %s not found",
                                 String8(typeName).string());
 
-            const bool filterable = (typeName != mipmap16);
-
             const size_t N = t != NULL ? t->getOrderedConfigs().size() : 0;
             
             // First write the typeSpec chunk, containing information about
@@ -2684,7 +2767,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                     (((uint8_t*)data->editData())
                         + typeSpecStart + sizeof(ResTable_typeSpec));
                 memset(typeSpecFlags, 0, sizeof(uint32_t)*N);
-
+                        
                 for (size_t ei=0; ei<N; ei++) {
                     sp<ConfigList> cl = t->getOrderedConfigs().itemAt(ei);
                     if (cl->getPublic()) {
@@ -2692,11 +2775,11 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                     }
                     const size_t CN = cl->getEntries().size();
                     for (size_t ci=0; ci<CN; ci++) {
-                        if (filterable && !filter.match(cl->getEntries().keyAt(ci))) {
+                        if (!filter.match(cl->getEntries().keyAt(ci))) {
                             continue;
                         }
                         for (size_t cj=ci+1; cj<CN; cj++) {
-                            if (filterable && !filter.match(cl->getEntries().keyAt(cj))) {
+                            if (!filter.match(cl->getEntries().keyAt(cj))) {
                                 continue;
                             }
                             typeSpecFlags[ei] |= htodl(
@@ -2716,8 +2799,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                 ConfigDescription config = t->getUniqueConfigs().itemAt(ci);
 
                 NOISY(printf("Writing config %d config: imsi:%d/%d lang:%c%c cnt:%c%c "
-                     "orien:%d ui:%d touch:%d density:%d key:%d inp:%d nav:%d sz:%dx%d "
-                     "sw%ddp w%ddp h%ddp\n",
+                     "orien:%d ui:%d touch:%d density:%d key:%d inp:%d nav:%d w:%d h:%d\n",
                       ti+1,
                       config.mcc, config.mnc,
                       config.language[0] ? config.language[0] : '-',
@@ -2732,12 +2814,9 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                       config.inputFlags,
                       config.navigation,
                       config.screenWidth,
-                      config.screenHeight,
-                      config.smallestScreenWidthDp,
-                      config.screenWidthDp,
-                      config.screenHeightDp));
+                      config.screenHeight));
                       
-                if (filterable && !filter.match(config)) {
+                if (!filter.match(config)) {
                     continue;
                 }
                 
@@ -2758,8 +2837,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                 tHeader->entriesStart = htodl(typeSize);
                 tHeader->config = config;
                 NOISY(printf("Writing type %d config: imsi:%d/%d lang:%c%c cnt:%c%c "
-                     "orien:%d ui:%d touch:%d density:%d key:%d inp:%d nav:%d sz:%dx%d "
-                     "sw%ddp w%ddp h%ddp\n",
+                     "orien:%d ui:%d touch:%d density:%d key:%d inp:%d nav:%d w:%d h:%d\n",
                       ti+1,
                       tHeader->config.mcc, tHeader->config.mnc,
                       tHeader->config.language[0] ? tHeader->config.language[0] : '-',
@@ -2774,10 +2852,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<AaptFile>& dest)
                       tHeader->config.inputFlags,
                       tHeader->config.navigation,
                       tHeader->config.screenWidth,
-                      tHeader->config.screenHeight,
-                      tHeader->config.smallestScreenWidthDp,
-                      tHeader->config.screenWidthDp,
-                      tHeader->config.screenHeightDp));
+                      tHeader->config.screenHeight));
                 tHeader->config.swapHtoD();
 
                 // Build the entries inside of this type.
@@ -3359,8 +3434,7 @@ sp<ResourceTable::Entry> ResourceTable::Type::getEntry(const String16& entry,
     if (e == NULL) {
         if (config != NULL) {
             NOISY(printf("New entry at %s:%d: imsi:%d/%d lang:%c%c cnt:%c%c "
-                    "orien:%d touch:%d density:%d key:%d inp:%d nav:%d sz:%dx%d "
-                    "sw%ddp w%ddp h%ddp\n",
+                    "orien:%d touch:%d density:%d key:%d inp:%d nav:%d w:%d h:%d\n",
                       sourcePos.file.string(), sourcePos.line,
                       config->mcc, config->mnc,
                       config->language[0] ? config->language[0] : '-',
@@ -3374,10 +3448,7 @@ sp<ResourceTable::Entry> ResourceTable::Type::getEntry(const String16& entry,
                       config->inputFlags,
                       config->navigation,
                       config->screenWidth,
-                      config->screenHeight,
-                      config->smallestScreenWidthDp,
-                      config->screenWidthDp,
-                      config->screenHeightDp));
+                      config->screenHeight));
         } else {
             NOISY(printf("New entry at %s:%d: NULL config\n",
                       sourcePos.file.string(), sourcePos.line));
@@ -3609,9 +3680,7 @@ sp<ResourceTable::Package> ResourceTable::getPackage(const String16& package)
 {
     sp<Package> p = mPackages.valueFor(package);
     if (p == NULL) {
-        if (mBundle->getIsOverlayPackage()) {
-            p = new Package(package, 0x00);
-        } else if (mIsAppPackage) {
+        if (mIsAppPackage) {
             if (mHaveAppPackage) {
                 fprintf(stderr, "Adding multiple application package resources; only one is allowed.\n"
                                 "Use -x to create extended resources.\n");
@@ -3620,7 +3689,16 @@ sp<ResourceTable::Package> ResourceTable::getPackage(const String16& package)
             mHaveAppPackage = true;
             p = new Package(package, 127);
         } else {
-            p = new Package(package, mNextPackageId);
+            int extendedPackageId = mBundle->getExtendedPackageId();
+            if (extendedPackageId != 0) {
+                if ((uint32_t)extendedPackageId < mNextPackageId) {
+                    fprintf(stderr, "Package ID %d already in use!\n", mNextPackageId);
+                    return NULL;
+                }
+                p = new Package(package, extendedPackageId);
+            } else {
+                p = new Package(package, mNextPackageId);
+            }
         }
         //printf("*** NEW PACKAGE: \"%s\" id=%d\n",
         //       String8(package).string(), p->getAssignedId());

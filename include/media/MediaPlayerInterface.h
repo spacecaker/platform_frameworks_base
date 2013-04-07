@@ -32,20 +32,20 @@
 namespace android {
 
 class Parcel;
-class Surface;
-class ISurfaceTexture;
+class ISurface;
 
 template<typename T> class SortedVector;
 
 enum player_type {
     PV_PLAYER = 1,
     SONIVOX_PLAYER = 2,
-    STAGEFRIGHT_PLAYER = 3,
-    NU_PLAYER = 4,
+    STAGEFRIGHT_PLAYER = 4,
     // Test players are available only in the 'test' and 'eng' builds.
     // The shared library with the test player is passed passed as an
     // argument to the 'test:' url in the setDataSource call.
     TEST_PLAYER = 5,
+    FLAC_PLAYER = 6,
+    BOARD_HW_PLAYER = 7,
 };
 
 
@@ -55,8 +55,7 @@ enum player_type {
 
 
 // callback mechanism for passing messages to MediaPlayer object
-typedef void (*notify_callback_f)(void* cookie,
-        int msg, int ext1, int ext2, const Parcel *obj);
+typedef void (*notify_callback_f)(void* cookie, int msg, int ext1, int ext2);
 
 // abstract base class - use MediaPlayerInterface
 class MediaPlayerBase : public RefBase
@@ -85,31 +84,17 @@ public:
         // audio data.
         virtual status_t    open(
                 uint32_t sampleRate, int channelCount,
-                int format=AUDIO_FORMAT_PCM_16_BIT,
+                int format=AudioSystem::PCM_16_BIT,
                 int bufferCount=DEFAULT_AUDIOSINK_BUFFERCOUNT,
                 AudioCallback cb = NULL,
                 void *cookie = NULL) = 0;
-
-#ifdef WITH_QCOM_LPA
-        // API to open a routing session for tunneled audio playback
-        virtual status_t        openSession(
-                int format, int sessionId, uint32_t sampleRate = 44100, int channels = 2) {return 0;};
-#endif
 
         virtual void        start() = 0;
         virtual ssize_t     write(const void* buffer, size_t size) = 0;
         virtual void        stop() = 0;
         virtual void        flush() = 0;
         virtual void        pause() = 0;
-#ifdef WITH_QCOM_LPA
-        virtual void        pauseSession() {return;};
-        virtual void        resumeSession() {return;};
-#endif
         virtual void        close() = 0;
-#ifdef WITH_QCOM_LPA
-        virtual void        closeSession() {return;};
-        virtual int         getAudioStreamType() {return 0;};
-#endif
     };
 
                         MediaPlayerBase() : mCookie(0), mNotify(0) {}
@@ -117,24 +102,12 @@ public:
     virtual status_t    initCheck() = 0;
     virtual bool        hardwareOutput() = 0;
 
-    virtual status_t    setUID(uid_t uid) {
-        return INVALID_OPERATION;
-    }
-
     virtual status_t    setDataSource(
             const char *url,
             const KeyedVector<String8, String8> *headers = NULL) = 0;
 
     virtual status_t    setDataSource(int fd, int64_t offset, int64_t length) = 0;
-
-    virtual status_t    setDataSource(const sp<IStreamSource> &source) {
-        return INVALID_OPERATION;
-    }
-
-    // pass the buffered ISurfaceTexture to the media player service
-    virtual status_t    setVideoSurfaceTexture(
-                                const sp<ISurfaceTexture>& surfaceTexture) = 0;
-
+    virtual status_t    setVideoSurface(const sp<ISurface>& surface) = 0;
     virtual status_t    prepare() = 0;
     virtual status_t    prepareAsync() = 0;
     virtual status_t    start() = 0;
@@ -147,9 +120,13 @@ public:
     virtual status_t    reset() = 0;
     virtual status_t    setLooping(int loop) = 0;
     virtual player_type playerType() = 0;
-    virtual status_t    setParameter(int key, const Parcel &request) = 0;
-    virtual status_t    getParameter(int key, Parcel *reply) = 0;
-
+    virtual status_t    suspend() { return INVALID_OPERATION; }
+    virtual status_t    resume() { return INVALID_OPERATION; }
+#ifdef OMAP_ENHANCEMENT
+    virtual status_t    requestVideoCloneMode(bool enable) { return INVALID_OPERATION; }
+#endif
+    virtual void        setNotifyCallback(void* cookie, notify_callback_f notifyFunc) {
+                            mCookie = cookie; mNotify = notifyFunc; }
     // Invoke a generic method on the player by using opaque parcels
     // for the request and reply.
     //
@@ -171,26 +148,9 @@ public:
         return INVALID_OPERATION;
     };
 
-    void        setNotifyCallback(
-            void* cookie, notify_callback_f notifyFunc) {
-        Mutex::Autolock autoLock(mNotifyLock);
-        mCookie = cookie; mNotify = notifyFunc;
-    }
+    virtual void        sendEvent(int msg, int ext1=0, int ext2=0) { if (mNotify) mNotify(mCookie, msg, ext1, ext2); }
 
-    void        sendEvent(int msg, int ext1=0, int ext2=0,
-                          const Parcel *obj=NULL) {
-        Mutex::Autolock autoLock(mNotifyLock);
-        if (mNotify) mNotify(mCookie, msg, ext1, ext2, obj);
-    }
-
-    virtual status_t dump(int fd, const Vector<String16> &args) const {
-        return INVALID_OPERATION;
-    }
-
-private:
-    friend class MediaPlayerService;
-
-    Mutex               mNotifyLock;
+protected:
     void*               mCookie;
     notify_callback_f   mNotify;
 };
@@ -206,7 +166,7 @@ protected:
     sp<AudioSink>       mAudioSink;
 };
 
-// Implement this class for media players that output audio directly to hardware
+// Implement this class for media players that output directo to hardware
 class MediaPlayerHWInterface : public MediaPlayerBase
 {
 public:

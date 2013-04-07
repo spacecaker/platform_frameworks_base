@@ -35,6 +35,9 @@ static jmethodID gEventInitID;
 static jclass gIntegerClass;
 static jfieldID gIntegerValueID;
 
+static jclass gListClass;
+static jfieldID gListItemsID;
+
 static jclass gLongClass;
 static jfieldID gLongValueID;
 
@@ -148,7 +151,7 @@ static void android_util_EventLog_readEvents(JNIEnv* env, jobject clazz,
                                              jintArray tags,
                                              jobject out) {
     if (tags == NULL || out == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        jniThrowException(env, "java/lang/NullPointerException", NULL);
         return;
     }
 

@@ -25,6 +25,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.RegistrantList;
 import android.os.Registrant;
+import android.os.SystemProperties;
 import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.util.Log;
@@ -78,6 +79,7 @@ public final class CallManager {
     private static final int EVENT_SUPP_SERVICE_FAILED = 117;
     private static final int EVENT_SERVICE_STATE_CHANGED = 118;
     private static final int EVENT_POST_DIAL_CHARACTER = 119;
+    private static final int EVENT_SUPP_SERVICE_NOTIFY = 120;
 
     // Singleton instance
     private static final CallManager INSTANCE = new CallManager();
@@ -100,6 +102,7 @@ public final class CallManager {
     // default phone as the first phone registered, which is PhoneBase obj
     private Phone mDefaultPhone;
 
+    private boolean acceptingRingingCall;
     // state registrants
     protected final RegistrantList mPreciseCallStateRegistrants
     = new RegistrantList();
@@ -158,6 +161,9 @@ public final class CallManager {
     protected final RegistrantList mSuppServiceFailedRegistrants
     = new RegistrantList();
 
+    protected final RegistrantList mSuppServiceNotificationRegistrants
+    = new RegistrantList();
+
     protected final RegistrantList mServiceStateChangedRegistrants
     = new RegistrantList();
 
@@ -170,6 +176,7 @@ public final class CallManager {
         mBackgroundCalls = new ArrayList<Call>();
         mForegroundCalls = new ArrayList<Call>();
         mDefaultPhone = null;
+        acceptingRingingCall = false;
     }
 
     /**
@@ -288,6 +295,27 @@ public final class CallManager {
      * @return true if register successfully
      */
     public boolean registerPhone(Phone phone) {
+        return this.registerPhoneInternal(phone, false);
+    }
+
+    /**
+     * Register phone to CallManager and force it as the default phone
+     *
+     * @param phone to be registered
+     * @return true if register successfully
+     */
+    public boolean registerPhoneAsDefault(Phone phone) {
+        return this.registerPhoneInternal(phone, true);
+    }
+
+    /**
+     * Internal phone registration function used in two phone registering cases
+     *
+     * @param phone to be registered
+     * @param overrideDefaultPhone is there a need to set this phone to be the default one
+     * @return true if register successfully
+     */
+    private boolean registerPhoneInternal(Phone phone, boolean overrideDefaultPhone) {
         Phone basePhone = getPhoneBase(phone);
 
         if (basePhone != null && !mPhones.contains(basePhone)) {
@@ -297,7 +325,7 @@ public final class CallManager {
                         phone.getPhoneName() + " " + phone + ")");
             }
 
-            if (mPhones.isEmpty()) {
+            if (mPhones.isEmpty() || overrideDefaultPhone) {
                 mDefaultPhone = basePhone;
             }
             mPhones.add(basePhone);
@@ -376,47 +404,40 @@ public final class CallManager {
         int mode = AudioManager.MODE_NORMAL;
         switch (getState()) {
             case RINGING:
-                mode = AudioManager.MODE_RINGTONE;
+                if (acceptingRingingCall) {
+                  mode = AudioManager.MODE_IN_CALL;
+                  acceptingRingingCall = false;
+                } else {
+                  mode = AudioManager.MODE_RINGTONE;
+                }
                 break;
             case OFFHOOK:
-                Phone offhookPhone = getFgPhone();
-                if (getActiveFgCallState() == Call.State.IDLE) {
-                    // There is no active Fg calls, the OFFHOOK state
-                    // is set by the Bg call. So set the phone to bgPhone.
-                    offhookPhone = getBgPhone();
-                }
-
-                if (offhookPhone instanceof SipPhone) {
-                    // enable IN_COMMUNICATION audio mode for sipPhone
-                    mode = AudioManager.MODE_IN_COMMUNICATION;
-                } else {
-                    // enable IN_CALL audio mode for telephony
-                    mode = AudioManager.MODE_IN_CALL;
+                Phone fgPhone = getFgPhone();
+                // While foreground call is in DIALING,
+                // ALERTING, ACTIVE and DISCONNECTING state
+                if (getActiveFgCallState() != Call.State.IDLE
+                        && getActiveFgCallState() != Call.State.DISCONNECTED) {
+                    if (fgPhone instanceof SipPhone) {
+                        // enable IN_COMMUNICATION audio mode for sipPhone
+                        mode = AudioManager.MODE_IN_COMMUNICATION;
+                    } else {
+                        // enable IN_CALL audio mode for telephony
+                        mode = AudioManager.MODE_IN_CALL;
+                    }
                 }
                 break;
         }
 
-        // Set additional audio parameters needed for incall audio
-        String[] audioParams = context.getResources().getStringArray(com.android.internal.R.array.config_telephony_set_audioparameters);
-        String[] aPValues;
+        // Some samsung devices need a special parameter "realcall" set for incall audio
+        boolean mSamsungRealCall = SystemProperties.getBoolean("ro.telephony.samsung.realcall", false);
 
-        for (String parameter : audioParams) {
-            aPValues = parameter.split("=");
-
-            if(aPValues[1] == null || aPValues[1].length() == 0) {
-                aPValues[1] = "on";
-            }
-
-            if(aPValues[2] == null || aPValues[2].length() == 0) {
-                aPValues[2] = "off";
-            }
-
+        if(mSamsungRealCall == true) {
             if (mode == AudioManager.MODE_IN_CALL) {
-                Log.d(LOG_TAG, "setAudioMode(): " + aPValues[0] + "=" + aPValues[1]);
-                audioManager.setParameters(aPValues[0] + "=" + aPValues[1]);
+                Log.d(LOG_TAG, "setAudioMode(): realcall=on");
+                audioManager.setParameters("realcall=on");
             } else if (mode == AudioManager.MODE_NORMAL) {
-                Log.d(LOG_TAG, "setAudioMode(): " + aPValues[0] + "=" + aPValues[2]);
-                audioManager.setParameters(aPValues[0] + "=" + aPValues[2]);
+                Log.d(LOG_TAG, "setAudioMode(): realcall=off");
+                audioManager.setParameters("realcall=off");
             }
         }
 
@@ -447,6 +468,9 @@ public final class CallManager {
         phone.registerForMmiComplete(mHandler, EVENT_MMI_COMPLETE, null);
         phone.registerForSuppServiceFailed(mHandler, EVENT_SUPP_SERVICE_FAILED, null);
         phone.registerForServiceStateChanged(mHandler, EVENT_SERVICE_STATE_CHANGED, null);
+        if (phone.getPhoneType() == Phone.PHONE_TYPE_GSM) {
+            phone.registerForSuppServiceNotification(mHandler, EVENT_SUPP_SERVICE_NOTIFY, null);
+        }
 
         // for events supported only by GSM and CDMA phone
         if (phone.getPhoneType() == Phone.PHONE_TYPE_GSM ||
@@ -479,6 +503,7 @@ public final class CallManager {
         phone.unregisterForMmiInitiate(mHandler);
         phone.unregisterForMmiComplete(mHandler);
         phone.unregisterForSuppServiceFailed(mHandler);
+        phone.unregisterForSuppServiceNotification(mHandler);
         phone.unregisterForServiceStateChanged(mHandler);
 
         // for events supported only by GSM and CDMA phone
@@ -536,6 +561,7 @@ public final class CallManager {
         }
 
         ringingPhone.acceptCall();
+        acceptingRingingCall = true;
 
         if (VDBG) {
             Log.d(LOG_TAG, "End acceptCall(" +ringingCall + ")");
@@ -800,23 +826,13 @@ public final class CallManager {
         boolean allLinesTaken = hasActiveCall && hasHoldingCall;
         Call.State fgCallState = getActiveFgCallState();
 
-        boolean result = (serviceState != ServiceState.STATE_POWER_OFF
+        return (serviceState != ServiceState.STATE_POWER_OFF
                 && !hasRingingCall
                 && !allLinesTaken
                 && ((fgCallState == Call.State.ACTIVE)
                     || (fgCallState == Call.State.IDLE)
                     || (fgCallState == Call.State.DISCONNECTED)));
-
-        if (result == false) {
-            Log.d(LOG_TAG, "canDial serviceState=" + serviceState
-                            + " hasRingingCall=" + hasRingingCall
-                            + " hasActiveCall=" + hasActiveCall
-                            + " hasHoldingCall=" + hasHoldingCall
-                            + " allLinesTaken=" + allLinesTaken
-                            + " fgCallState=" + fgCallState);
-        }
-        return result;
-    }
+            }
 
     /**
      * Whether or not the phone can do explicit call transfer in the current
@@ -1293,6 +1309,27 @@ public final class CallManager {
      */
     public void unregisterForSuppServiceFailed(Handler h){
         mSuppServiceFailedRegistrants.remove(h);
+    }
+
+    /**
+     * Register for supplementary service notifications.
+     * Message.obj will contain an AsyncResult.
+     *
+     * @param h Handler that receives the notification message.
+     * @param what User-defined message code.
+     * @param obj User object.
+     */
+    public void registerForSuppServiceNotification(Handler h, int what, Object obj){
+        mSuppServiceNotificationRegistrants.addUnique(h, what, obj);
+    }
+
+    /**
+     * Unregister for supplementary service notifications.
+     *
+     * @param h Handler to be removed from the registrant list.
+     */
+    public void unregisterForSuppServiceNotification(Handler h){
+        mSuppServiceNotificationRegistrants.remove(h);
     }
 
     /**
@@ -1804,6 +1841,10 @@ public final class CallManager {
                     if (VDBG) Log.d(LOG_TAG, " handleMessage (EVENT_SUPP_SERVICE_FAILED)");
                     mSuppServiceFailedRegistrants.notifyRegistrants((AsyncResult) msg.obj);
                     break;
+                case EVENT_SUPP_SERVICE_NOTIFY:
+                    if (VDBG) Log.d(LOG_TAG, " handleMessage (EVENT_SUPP_SERVICE_NOTIFICATION)");
+                    mSuppServiceNotificationRegistrants.notifyRegistrants((AsyncResult) msg.obj);
+                    break;
                 case EVENT_SERVICE_STATE_CHANGED:
                     if (VDBG) Log.d(LOG_TAG, " handleMessage (EVENT_SERVICE_STATE_CHANGED)");
                     mServiceStateChangedRegistrants.notifyRegistrants((AsyncResult) msg.obj);
@@ -1829,33 +1870,33 @@ public final class CallManager {
         Call call;
         StringBuilder b = new StringBuilder();
 
-        b.append("CallManager {");
-        b.append("\nstate = " + getState());
+        b.append("########### Dump CallManager ############");
+        b.append("\nCallManager state = " + getState());
         call = getActiveFgCall();
-        b.append("\n- Foreground: " + getActiveFgCallState());
+        b.append("\n   - Foreground: " + getActiveFgCallState());
         b.append(" from " + call.getPhone());
-        b.append("\n  Conn: ").append(getFgCallConnections());
+        b.append("\n     Conn: ").append(getFgCallConnections());
         call = getFirstActiveBgCall();
-        b.append("\n- Background: " + call.getState());
+        b.append("\n   - Background: " + call.getState());
         b.append(" from " + call.getPhone());
-        b.append("\n  Conn: ").append(getBgCallConnections());
+        b.append("\n     Conn: ").append(getBgCallConnections());
         call = getFirstActiveRingingCall();
-        b.append("\n- Ringing: " +call.getState());
+        b.append("\n   - Ringing: " +call.getState());
         b.append(" from " + call.getPhone());
 
         for (Phone phone : getAllPhones()) {
             if (phone != null) {
-                b.append("\nPhone: " + phone + ", name = " + phone.getPhoneName()
+                b.append("\n Phone: " + phone + ", name = " + phone.getPhoneName()
                         + ", state = " + phone.getState());
                 call = phone.getForegroundCall();
-                b.append("\n- Foreground: ").append(call);
+                b.append("\n   - Foreground: ").append(call);
                 call = phone.getBackgroundCall();
                 b.append(" Background: ").append(call);
                 call = phone.getRingingCall();
                 b.append(" Ringing: ").append(call);
             }
         }
-        b.append("\n}");
+        b.append("\n########## End Dump CallManager ##########");
         return b.toString();
     }
 }

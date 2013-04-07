@@ -27,6 +27,8 @@ import static android.telephony.TelephonyManager.NETWORK_TYPE_HSUPA;
 import static android.telephony.TelephonyManager.NETWORK_TYPE_HSPA;
 import static android.telephony.TelephonyManager.NETWORK_TYPE_HSPAP;
 
+
+
 /**
  * Represents the neighboring cell information, including
  * Received Signal Strength and Cell ID location.
@@ -107,8 +109,7 @@ public class NeighboringCellInfo implements Parcelable
      * {@link TelephonyManager#NETWORK_TYPE_UMTS TelephonyManager.NETWORK_TYPE_UMTS},
      * {@link TelephonyManager#NETWORK_TYPE_HSDPA TelephonyManager.NETWORK_TYPE_HSDPA},
      * {@link TelephonyManager#NETWORK_TYPE_HSUPA TelephonyManager.NETWORK_TYPE_HSUPA},
-     * {@link TelephonyManager#NETWORK_TYPE_HSPA TelephonyManager.NETWORK_TYPE_HSPA},
-     * and {@link TelephonyManager#NETWORK_TYPE_HSPAP TelephonyManager.NETWORK_TYPE_HSPAP}.
+     * and {@link TelephonyManager#NETWORK_TYPE_HSPA TelephonyManager.NETWORK_TYPE_HSPA}.
      */
     public NeighboringCellInfo(int rssi, String location, int radioType) {
         // set default value
@@ -127,7 +128,7 @@ public class NeighboringCellInfo implements Parcelable
                 location = "0" + location;
             }
         }
-        // TODO - handle LTE and eHRPD (or find they can't be supported)
+
         try {// set LAC/CID or PSC based on radioType
             switch (radioType) {
             case NETWORK_TYPE_GPRS:
@@ -219,8 +220,7 @@ public class NeighboringCellInfo implements Parcelable
      * Return {@link TelephonyManager#NETWORK_TYPE_UMTS TelephonyManager.NETWORK_TYPE_UMTS},
      * {@link TelephonyManager#NETWORK_TYPE_HSDPA TelephonyManager.NETWORK_TYPE_HSDPA},
      * {@link TelephonyManager#NETWORK_TYPE_HSUPA TelephonyManager.NETWORK_TYPE_HSUPA},
-     * {@link TelephonyManager#NETWORK_TYPE_HSPA TelephonyManager.NETWORK_TYPE_HSPA},
-     * or {@link TelephonyManager#NETWORK_TYPE_HSPAP TelephonyManager.NETWORK_TYPE_HSPAP}
+     * or {@link TelephonyManager#NETWORK_TYPE_HSPA TelephonyManager.NETWORK_TYPE_HSPA}
      * means that Neighboring Cell information is stored for UMTS network, in
      * which {@link NeighboringCellInfo#getPsc NeighboringCellInfo.getPsc}
      * should be called to access location.

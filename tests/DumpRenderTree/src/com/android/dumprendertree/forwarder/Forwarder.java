@@ -36,7 +36,6 @@ public class Forwarder {
     private Socket from, to;
 
     private static final String LOGTAG = "Forwarder";
-    private static final int BUFFER_SIZE = 16384;
 
     public Forwarder (Socket from, Socket to, ForwardServer server) {
         this.server = server;
@@ -91,7 +90,7 @@ public class Forwarder {
                 int length;
                 InputStream is = in.getInputStream();
                 OutputStream os = out.getOutputStream();
-                byte[] buffer = new byte[BUFFER_SIZE];
+                byte[] buffer = new byte[4096];
                 while ((length = is.read(buffer)) > 0) {
                     os.write(buffer, 0, length);
                 }

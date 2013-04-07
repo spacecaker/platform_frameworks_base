@@ -116,7 +116,7 @@ public class MultiTapKeyListener extends BaseKeyListener
                     content.replace(selStart, selEnd,
                                     String.valueOf(current).toUpperCase());
                     removeTimeouts(content);
-                    new Timeout(content); // for its side effects
+                    Timeout t = new Timeout(content);
 
                     return true;
                 }
@@ -124,7 +124,7 @@ public class MultiTapKeyListener extends BaseKeyListener
                     content.replace(selStart, selEnd,
                                     String.valueOf(current).toLowerCase());
                     removeTimeouts(content);
-                    new Timeout(content); // for its side effects
+                    Timeout t = new Timeout(content);
 
                     return true;
                 }
@@ -140,7 +140,7 @@ public class MultiTapKeyListener extends BaseKeyListener
 
                     content.replace(selStart, selEnd, val, ix, ix + 1);
                     removeTimeouts(content);
-                    new Timeout(content); // for its side effects
+                    Timeout t = new Timeout(content);
 
                     return true;
                 }
@@ -206,7 +206,7 @@ public class MultiTapKeyListener extends BaseKeyListener
             }
 
             removeTimeouts(content);
-            new Timeout(content); // for its side effects
+            Timeout t = new Timeout(content);
 
             // Set up the callback so we can remove the timeout if the
             // cursor moves.

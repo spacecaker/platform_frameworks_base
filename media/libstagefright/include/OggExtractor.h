@@ -18,7 +18,6 @@
 
 #define OGG_EXTRACTOR_H_
 
-#include <utils/Errors.h>
 #include <media/stagefright/MediaExtractor.h>
 
 namespace android {
@@ -57,9 +56,6 @@ private:
 bool SniffOgg(
         const sp<DataSource> &source, String8 *mimeType, float *confidence,
         sp<AMessage> *);
-
-void parseVorbisComment(
-        const sp<MetaData> &fileMeta, const char *comment, size_t commentLength);
 
 }  // namespace android
 

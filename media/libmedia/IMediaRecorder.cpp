@@ -19,13 +19,11 @@
 #define LOG_TAG "IMediaRecorder"
 #include <utils/Log.h>
 #include <binder/Parcel.h>
-#include <surfaceflinger/Surface.h>
+#include <surfaceflinger/ISurface.h>
 #include <camera/ICamera.h>
 #include <media/IMediaRecorderClient.h>
 #include <media/IMediaRecorder.h>
-#include <gui/ISurfaceTexture.h>
 #include <unistd.h>
-
 
 namespace android {
 
@@ -33,7 +31,6 @@ enum {
     RELEASE = IBinder::FIRST_CALL_TRANSACTION,
     INIT,
     CLOSE,
-    QUERY_SURFACE_MEDIASOURCE,
     RESET,
     STOP,
     START,
@@ -49,6 +46,7 @@ enum {
     SET_VIDEO_SIZE,
     SET_VIDEO_FRAMERATE,
     SET_PARAMETERS,
+    SET_CAMERA_PARAMETERS,
     SET_PREVIEW_SURFACE,
     SET_CAMERA,
     SET_LISTENER
@@ -62,36 +60,22 @@ public:
     {
     }
 
-    status_t setCamera(const sp<ICamera>& camera, const sp<ICameraRecordingProxy>& proxy)
+    status_t setCamera(const sp<ICamera>& camera)
     {
-        LOGV("setCamera(%p,%p)", camera.get(), proxy.get());
+        LOGV("setCamera(%p)", camera.get());
         Parcel data, reply;
         data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
         data.writeStrongBinder(camera->asBinder());
-        data.writeStrongBinder(proxy->asBinder());
         remote()->transact(SET_CAMERA, data, &reply);
         return reply.readInt32();
     }
 
-    sp<ISurfaceTexture> querySurfaceMediaSource()
-    {
-        LOGV("Query SurfaceMediaSource");
-        Parcel data, reply;
-        data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
-        remote()->transact(QUERY_SURFACE_MEDIASOURCE, data, &reply);
-        int returnedNull = reply.readInt32();
-        if (returnedNull) {
-            return NULL;
-        }
-        return interface_cast<ISurfaceTexture>(reply.readStrongBinder());
-    }
-
-    status_t setPreviewSurface(const sp<Surface>& surface)
+    status_t setPreviewSurface(const sp<ISurface>& surface)
     {
         LOGV("setPreviewSurface(%p)", surface.get());
         Parcel data, reply;
         data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
-        Surface::writeToParcel(surface, &data);
+        data.writeStrongBinder(surface->asBinder());
         remote()->transact(SET_PREVIEW_SURFACE, data, &reply);
         return reply.readInt32();
     }
@@ -204,6 +188,16 @@ public:
         data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
         data.writeString8(params);
         remote()->transact(SET_PARAMETERS, data, &reply);
+        return reply.readInt32();
+    }
+
+    status_t setCameraParameters(const String8& params)
+    {
+        LOGV("setCameraParameter(%s)", params.string());
+        Parcel data, reply;
+        data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
+        data.writeString8(params);
+        remote()->transact(SET_CAMERA_PARAMETERS, data, &reply);
         return reply.readInt32();
     }
 
@@ -415,6 +409,12 @@ status_t BnMediaRecorder::onTransact(
             reply->writeInt32(setParameters(data.readString8()));
             return NO_ERROR;
         } break;
+        case SET_CAMERA_PARAMETERS: {
+            LOGV("SET_CAMERA_PARAMETER");
+            CHECK_INTERFACE(IMediaRecorder, data, reply);
+            reply->writeInt32(setCameraParameters(data.readString8()));
+            return NO_ERROR;
+        } break;
         case SET_LISTENER: {
             LOGV("SET_LISTENER");
             CHECK_INTERFACE(IMediaRecorder, data, reply);
@@ -426,7 +426,7 @@ status_t BnMediaRecorder::onTransact(
         case SET_PREVIEW_SURFACE: {
             LOGV("SET_PREVIEW_SURFACE");
             CHECK_INTERFACE(IMediaRecorder, data, reply);
-            sp<Surface> surface = Surface::readFromParcel(data);
+            sp<ISurface> surface = interface_cast<ISurface>(data.readStrongBinder());
             reply->writeInt32(setPreviewSurface(surface));
             return NO_ERROR;
         } break;
@@ -434,23 +434,7 @@ status_t BnMediaRecorder::onTransact(
             LOGV("SET_CAMERA");
             CHECK_INTERFACE(IMediaRecorder, data, reply);
             sp<ICamera> camera = interface_cast<ICamera>(data.readStrongBinder());
-            sp<ICameraRecordingProxy> proxy =
-                interface_cast<ICameraRecordingProxy>(data.readStrongBinder());
-            reply->writeInt32(setCamera(camera, proxy));
-            return NO_ERROR;
-        } break;
-        case QUERY_SURFACE_MEDIASOURCE: {
-            LOGV("QUERY_SURFACE_MEDIASOURCE");
-            CHECK_INTERFACE(IMediaRecorder, data, reply);
-            // call the mediaserver side to create
-            // a surfacemediasource
-            sp<ISurfaceTexture> surfaceMediaSource = querySurfaceMediaSource();
-            // The mediaserver might have failed to create a source
-            int returnedNull= (surfaceMediaSource == NULL) ? 1 : 0 ;
-            reply->writeInt32(returnedNull);
-            if (!returnedNull) {
-                reply->writeStrongBinder(surfaceMediaSource->asBinder());
-            }
+            reply->writeInt32(setCamera(camera));
             return NO_ERROR;
         } break;
         default:

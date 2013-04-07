@@ -44,7 +44,9 @@ status_t ARTPSession::setup(const sp<ASessionDescription> &desc) {
 
     mDesc = desc;
 
-    mRTPConn = new ARTPConnection(ARTPConnection::kRegularlyRequestFIR);
+    mRTPConn = new ARTPConnection(
+            ARTPConnection::kFakeTimestamps
+                | ARTPConnection::kRegularlyRequestFIR);
 
     looper()->registerHandler(mRTPConn);
 

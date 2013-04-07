@@ -1,5 +1,6 @@
 //
 // Copyright 2006 The Android Open Source Project
+// This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
 //
 // State bundle.  Used to pass around stuff like command-line args.
 //
@@ -25,7 +26,6 @@ typedef enum Command {
     kCommandAdd,
     kCommandRemove,
     kCommandPackage,
-    kCommandCrunch,
 } Command;
 
 /*
@@ -36,21 +36,18 @@ public:
     Bundle(void)
         : mCmd(kCommandUnknown), mVerbose(false), mAndroidList(false),
           mForce(false), mGrayscaleTolerance(0), mMakePackageDirs(false),
-          mUpdate(false), mExtending(false),
+          mUpdate(false), mExtending(false), mExtendedPackageId(0),
           mRequireLocalization(false), mPseudolocalize(false),
           mWantUTF16(false), mValues(false),
           mCompressionMethod(0), mOutputAPKFile(NULL),
           mManifestPackageNameOverride(NULL), mInstrumentationPackageNameOverride(NULL),
-          mIsOverlayPackage(false),
-          mAutoAddOverlay(false), mGenDependencies(false),
-          mAssetSourceDir(NULL), 
-          mCrunchedOutputDir(NULL), mProguardFile(NULL),
+          mAutoAddOverlay(false), mAssetSourceDir(NULL), mProguardFile(NULL),
           mAndroidManifestFile(NULL), mPublicOutputFile(NULL),
           mRClassDir(NULL), mResourceIntermediatesDir(NULL), mManifestMinSdkVersion(NULL),
           mMinSdkVersion(NULL), mTargetSdkVersion(NULL), mMaxSdkVersion(NULL),
-          mVersionCode(NULL), mVersionName(NULL), mCustomPackage(NULL), mExtraPackages(NULL),
+          mVersionCode(NULL), mVersionName(NULL), mCustomPackage(NULL),
           mMaxResVersion(NULL), mDebugMode(false), mNonConstantId(false), mProduct(NULL),
-          mUseCrunchCache(false), mArgc(0), mArgv(NULL)
+          mArgc(0), mArgv(NULL)
         {}
     ~Bundle(void) {}
 
@@ -78,6 +75,8 @@ public:
     void setUpdate(bool val) { mUpdate = val; }
     bool getExtending(void) const { return mExtending; }
     void setExtending(bool val) { mExtending = val; }
+    int getExtendedPackageId(void) const { return mExtendedPackageId; }
+    void setExtendedPackageId(int val) { mExtendedPackageId = val; }
     bool getRequireLocalization(void) const { return mRequireLocalization; }
     void setRequireLocalization(bool val) { mRequireLocalization = val; }
     bool getPseudolocalize(void) const { return mPseudolocalize; }
@@ -96,20 +95,14 @@ public:
     void setManifestPackageNameOverride(const char * val) { mManifestPackageNameOverride = val; }
     const char* getInstrumentationPackageNameOverride() const { return mInstrumentationPackageNameOverride; }
     void setInstrumentationPackageNameOverride(const char * val) { mInstrumentationPackageNameOverride = val; }
-    bool getIsOverlayPackage() const { return mIsOverlayPackage; }
-    void setIsOverlayPackage(bool val) { mIsOverlayPackage = val; }
     bool getAutoAddOverlay() { return mAutoAddOverlay; }
     void setAutoAddOverlay(bool val) { mAutoAddOverlay = val; }
-    bool getGenDependencies() { return mGenDependencies; }
-    void setGenDependencies(bool val) { mGenDependencies = val; }
 
     /*
      * Input options.
      */
     const char* getAssetSourceDir() const { return mAssetSourceDir; }
     void setAssetSourceDir(const char* dir) { mAssetSourceDir = dir; }
-    const char* getCrunchedOutputDir() const { return mCrunchedOutputDir; }
-    void setCrunchedOutputDir(const char* dir) { mCrunchedOutputDir = dir; }
     const char* getProguardFile() const { return mProguardFile; }
     void setProguardFile(const char* file) { mProguardFile = file; }
     const android::Vector<const char*>& getResourceSourceDirs() const { return mResourceSourceDirs; }
@@ -122,8 +115,6 @@ public:
     void setRClassDir(const char* dir) { mRClassDir = dir; }
     const char* getConfigurations() const { return mConfigurations.size() > 0 ? mConfigurations.string() : NULL; }
     void addConfigurations(const char* val) { if (mConfigurations.size() > 0) { mConfigurations.append(","); mConfigurations.append(val); } else { mConfigurations = val; } }
-    const char* getPreferredConfigurations() const { return mPreferredConfigurations.size() > 0 ? mPreferredConfigurations.string() : NULL; }
-    void addPreferredConfigurations(const char* val) { if (mPreferredConfigurations.size() > 0) { mPreferredConfigurations.append(","); mPreferredConfigurations.append(val); } else { mPreferredConfigurations = val; } }
     const char* getResourceIntermediatesDir() const { return mResourceIntermediatesDir; }
     void setResourceIntermediatesDir(const char* dir) { mResourceIntermediatesDir = dir; }
     const android::Vector<const char*>& getPackageIncludes() const { return mPackageIncludes; }
@@ -147,8 +138,6 @@ public:
     void setVersionName(const char* val) { mVersionName = val; }
     const char* getCustomPackage() const { return mCustomPackage; }
     void setCustomPackage(const char* val) { mCustomPackage = val; }
-    const char* getExtraPackages() const { return mExtraPackages; }
-    void setExtraPackages(const char* val) { mExtraPackages = val; }
     const char* getMaxResVersion() const { return mMaxResVersion; }
     void setMaxResVersion(const char * val) { mMaxResVersion = val; }
     bool getDebugMode() { return mDebugMode; }
@@ -157,8 +146,6 @@ public:
     void setNonConstantId(bool val) { mNonConstantId = val; }
     const char* getProduct() const { return mProduct; }
     void setProduct(const char * val) { mProduct = val; }
-    void setUseCrunchCache(bool val) { mUseCrunchCache = val; }
-    bool getUseCrunchCache() { return mUseCrunchCache; }
 
     /*
      * Set and get the file specification.
@@ -226,6 +213,7 @@ private:
     bool        mMakePackageDirs;
     bool        mUpdate;
     bool        mExtending;
+    int         mExtendedPackageId;
     bool        mRequireLocalization;
     bool        mPseudolocalize;
     bool        mWantUTF16;
@@ -235,18 +223,14 @@ private:
     const char* mOutputAPKFile;
     const char* mManifestPackageNameOverride;
     const char* mInstrumentationPackageNameOverride;
-    bool        mIsOverlayPackage;
     bool        mAutoAddOverlay;
-    bool        mGenDependencies;
     const char* mAssetSourceDir;
-    const char* mCrunchedOutputDir;
     const char* mProguardFile;
     const char* mAndroidManifestFile;
     const char* mPublicOutputFile;
     const char* mRClassDir;
     const char* mResourceIntermediatesDir;
     android::String8 mConfigurations;
-    android::String8 mPreferredConfigurations;
     android::Vector<const char*> mPackageIncludes;
     android::Vector<const char*> mJarFiles;
     android::Vector<const char*> mNoCompressExtensions;
@@ -259,12 +243,10 @@ private:
     const char* mVersionCode;
     const char* mVersionName;
     const char* mCustomPackage;
-    const char* mExtraPackages;
     const char* mMaxResVersion;
     bool        mDebugMode;
     bool        mNonConstantId;
     const char* mProduct;
-    bool        mUseCrunchCache;
 
     /* file specification */
     int         mArgc;

@@ -179,7 +179,7 @@ status_t SampleIterator::findChunkRange(uint32_t sampleIndex) {
     return OK;
 }
 
-status_t SampleIterator::getChunkOffset(uint32_t chunk, off64_t *offset) {
+status_t SampleIterator::getChunkOffset(uint32_t chunk, off_t *offset) {
     *offset = 0;
 
     if (chunk >= mTable->mNumChunkOffsets) {
@@ -306,8 +306,6 @@ status_t SampleIterator::findSampleTime(
     }
 
     *time = mTTSSampleTime + mTTSDuration * (sampleIndex - mTTSSampleIndex);
-
-    *time = (int64_t)(*time) + (int32_t)mTable->getCompositionTimeOffset(sampleIndex);
 
     return OK;
 }

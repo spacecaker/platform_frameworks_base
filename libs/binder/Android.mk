@@ -16,7 +16,6 @@
 sources := \
     Binder.cpp \
     BpBinder.cpp \
-    CursorWindow.cpp \
     IInterface.cpp \
     IMemory.cpp \
     IPCThreadState.cpp \
@@ -27,16 +26,11 @@ sources := \
     MemoryHeapBase.cpp \
     MemoryHeapPmem.cpp \
     Parcel.cpp \
-    PermissionCache.cpp \
+    Permission.cpp \
     ProcessState.cpp \
     Static.cpp
 
 LOCAL_PATH:= $(call my-dir)
-
-# Just an info!
-# Note about gingerbread compatibility : Require a global cflag,
-# several projects use binder's IMemory.h and MemoryHeapBase.h
-# COMMON_GLOBAL_CFLAGS += -DBINDER_COMPAT
 
 include $(CLEAR_VARS)
 LOCAL_LDLIBS += -lpthread

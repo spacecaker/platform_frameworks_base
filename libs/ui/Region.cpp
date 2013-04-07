@@ -56,9 +56,6 @@ Region::Region()
 Region::Region(const Region& rhs)
     : mBounds(rhs.mBounds), mStorage(rhs.mStorage)
 {
-#if VALIDATE_REGIONS
-    validate(rhs, "rhs copy-ctor");
-#endif
 }
 
 Region::Region(const Rect& rhs)
@@ -79,8 +76,7 @@ Region::~Region()
 Region& Region::operator = (const Region& rhs)
 {
 #if VALIDATE_REGIONS
-    validate(*this, "this->operator=");
-    validate(rhs, "rhs.operator=");
+    validate(rhs, "operator=");
 #endif
     mBounds = rhs.mBounds;
     mStorage = rhs.mStorage;
@@ -370,12 +366,6 @@ void Region::boolean_operation(int op, Region& dst,
         const Region& lhs,
         const Region& rhs, int dx, int dy)
 {
-#if VALIDATE_REGIONS
-    validate(lhs, "boolean_operation (before): lhs");
-    validate(rhs, "boolean_operation (before): rhs");
-    validate(dst, "boolean_operation (before): dst");
-#endif
-
     size_t lhs_count;
     Rect const * const lhs_rects = lhs.getArray(&lhs_count);
 
@@ -479,12 +469,6 @@ void Region::boolean_operation(int op, Region& dst,
         const Region& lhs,
         const Rect& rhs, int dx, int dy)
 {
-    if (!rhs.isValid()) {
-        LOGE("Region::boolean_operation(op=%d) invalid Rect={%d,%d,%d,%d}",
-                op, rhs.left, rhs.top, rhs.right, rhs.bottom);
-        return;
-    }
-
 #if VALIDATE_WITH_CORECG || VALIDATE_REGIONS
     boolean_operation(op, dst, lhs, Region(rhs), dx, dy);
 #else

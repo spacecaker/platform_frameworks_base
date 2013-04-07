@@ -74,12 +74,6 @@ public class SyncStateContract {
                 Account account) throws RemoteException {
             Cursor c = provider.query(uri, DATA_PROJECTION, SELECT_BY_ACCOUNT,
                     new String[]{account.name, account.type}, null);
-
-            // Unable to query the provider
-            if (c == null) {
-                throw new RemoteException();
-            }
-
             try {
                 if (c.moveToNext()) {
                     return c.getBlob(c.getColumnIndexOrThrow(Columns.DATA));
@@ -129,11 +123,6 @@ public class SyncStateContract {
                 Account account) throws RemoteException {
             Cursor c = provider.query(uri, DATA_PROJECTION, SELECT_BY_ACCOUNT,
                     new String[]{account.name, account.type}, null);
-
-            if (c == null) {
-                throw new RemoteException();
-            }
-
             try {
                 if (c.moveToNext()) {
                     long rowId = c.getLong(1);

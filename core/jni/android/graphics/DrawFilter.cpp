@@ -34,7 +34,7 @@ class SkDrawFilterGlue {
 public:
 
     static void finalizer(JNIEnv* env, jobject clazz, SkDrawFilter* obj) {
-        SkSafeUnref(obj);
+        obj->safeUnref();
     }
 
     static SkDrawFilter* CreatePaintFlagsDF(JNIEnv* env, jobject clazz,

@@ -16,45 +16,33 @@
 
 package com.android.dumprendertree;
 
-import com.android.dumprendertree.forwarder.AdbUtils;
-import com.android.dumprendertree.forwarder.ForwardServer;
+import dalvik.system.VMRuntime;
 
 import android.app.Instrumentation;
-import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Debug;
-import android.os.Environment;
 import android.os.Process;
 import android.test.ActivityInstrumentationTestCase2;
 import android.util.Log;
 
-import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class LoadTestsAutoTest extends ActivityInstrumentationTestCase2<TestShellActivity> {
 
     private final static String LOGTAG = "LoadTest";
-    private final static String LOAD_TEST_RESULT =
-        Environment.getExternalStorageDirectory() + "/load_test_result.txt";
-    private final static int MAX_GC_WAIT_SEC = 10;
-    private final static int LOCAL_PORT = 17171;
+    private final static String LOAD_TEST_RESULT = "/sdcard/load_test_result.txt";
     private boolean mFinished;
     static final String LOAD_TEST_RUNNER_FILES[] = {
         "run_page_cycler.py"
     };
-    private ForwardServer mForwardServer;
 
     public LoadTestsAutoTest() {
-        super(TestShellActivity.class);
+        super("com.android.dumprendertree", TestShellActivity.class);
     }
 
     // This function writes the result of the layout test to
@@ -66,41 +54,17 @@ public class LoadTestsAutoTest extends ActivityInstrumentationTestCase2<TestShel
         inst.sendStatus(0, bundle);
     }
 
-    private String setUpForwarding(String forwardInfo, String suite, String iteration) throws IOException {
-        // read forwarding information first
-        Pattern forwardPattern = Pattern.compile("(.*):(\\d+)/(.*)/");
-        Matcher matcher = forwardPattern.matcher(forwardInfo);
-        if (!matcher.matches()) {
-            throw new RuntimeException("Invalid forward information");
-        }
-        String host = matcher.group(1);
-        int port = Integer.parseInt(matcher.group(2));
-        mForwardServer = new ForwardServer(LOCAL_PORT, AdbUtils.resolve(host), port);
-        mForwardServer.start();
-        return String.format("http://127.0.0.1:%d/%s/%s/start.html?auto=1&iterations=%s",
-                LOCAL_PORT, matcher.group(3), suite, iteration);
-    }
-
     // Invokes running of layout tests
     // and waits till it has finished running.
-    public void runPageCyclerTest() throws IOException {
+    public void runPageCyclerTest() {
         LayoutTestsAutoRunner runner = (LayoutTestsAutoRunner) getInstrumentation();
 
-        if (runner.mPageCyclerSuite != null) {
-            // start forwarder to use page cycler suites hosted on external web server
-            if (runner.mPageCyclerForwardHost == null) {
-                throw new RuntimeException("no forwarder information provided");
-            }
-            runner.mTestPath = setUpForwarding(runner.mPageCyclerForwardHost,
-                    runner.mPageCyclerSuite, runner.mPageCyclerIteration);
-            Log.d(LOGTAG, "using path: " + runner.mTestPath);
-        }
-
         if (runner.mTestPath == null) {
-            throw new RuntimeException("No test specified");
+            Log.e(LOGTAG, "No test specified");
+            return;
         }
 
-        final TestShellActivity activity = (TestShellActivity) getActivity();
+        TestShellActivity activity = (TestShellActivity) getActivity();
 
         Log.v(LOGTAG, "About to run tests, calling gc first...");
         freeMem();
@@ -109,17 +73,7 @@ public class LoadTestsAutoTest extends ActivityInstrumentationTestCase2<TestShel
         runTestAndWaitUntilDone(activity, runner.mTestPath, runner.mTimeoutInMillis,
                 runner.mGetDrawTime, runner.mSaveImagePath);
 
-        getInstrumentation().runOnMainSync(new Runnable() {
-
-            @Override
-            public void run() {
-                activity.clearCache();
-            }
-        });
-        if (mForwardServer != null) {
-            mForwardServer.stop();
-            mForwardServer = null;
-        }
+        activity.clearCache();
         try {
             Thread.sleep(5000);
         } catch (InterruptedException e) {
@@ -131,26 +85,19 @@ public class LoadTestsAutoTest extends ActivityInstrumentationTestCase2<TestShel
     }
 
     private void freeMem() {
-        Log.v(LOGTAG, "freeMem: calling gc...");
-        final CountDownLatch latch = new CountDownLatch(1);
-        @SuppressWarnings("unused")
-        Object dummy = new Object() {
-            // this object instance is used to track gc
-            @Override
-            protected void finalize() throws Throwable {
-                latch.countDown();
-                super.finalize();
-            }
-        };
-        dummy = null;
-        System.gc();
-        try {
-            if (!latch.await(MAX_GC_WAIT_SEC, TimeUnit.SECONDS)) {
-                Log.w(LOGTAG, "gc did not happen in 10s");
-            }
-        } catch (InterruptedException e) {
-            //ignore
-        }
+        Log.v(LOGTAG, "freeMem: calling gc/finalization...");
+        final VMRuntime runtime = VMRuntime.getRuntime();
+
+        runtime.gcSoftReferences();
+        runtime.runFinalizationSync();
+        runtime.gcSoftReferences();
+        runtime.runFinalizationSync();
+        runtime.gcSoftReferences();
+        runtime.runFinalizationSync();
+        Runtime.getRuntime().runFinalization();
+        Runtime.getRuntime().gc();
+        Runtime.getRuntime().gc();
+
     }
 
     private void printRow(PrintStream ps, String format, Object...objs) {
@@ -253,14 +200,14 @@ public class LoadTestsAutoTest extends ActivityInstrumentationTestCase2<TestShel
 
     public void copyRunnerAssetsToCache() {
         try {
-            Context targetContext = getInstrumentation().getTargetContext();
-            File cacheDir = targetContext.getCacheDir();
+            String out_dir = getActivity().getApplicationContext()
+                .getCacheDir().getPath() + "/";
 
             for( int i=0; i< LOAD_TEST_RUNNER_FILES.length; i++) {
-                InputStream in = targetContext.getAssets().open(
+                InputStream in = getActivity().getAssets().open(
                         LOAD_TEST_RUNNER_FILES[i]);
                 OutputStream out = new FileOutputStream(
-                        new File(cacheDir, LOAD_TEST_RUNNER_FILES[i]));
+                        out_dir + LOAD_TEST_RUNNER_FILES[i]);
 
                 byte[] buf = new byte[2048];
                 int len;

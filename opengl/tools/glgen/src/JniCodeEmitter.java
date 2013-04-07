@@ -58,7 +58,7 @@ public class JniCodeEmitter {
         } else if (baseType.equals("void")) {
             // nothing.
         } else {
-            throw new RuntimeException("Unknown primitive basetype " + baseType);
+            throw new RuntimeException("Uknown primitive basetype " + baseType);
         }
         return jniName;
     }
@@ -200,9 +200,15 @@ public class JniCodeEmitter {
                 if (emitExceptionCheck) {
                     out.println(iii + indent + "_exception = 1;");
                 }
-                out.println(iii + indent + "jniThrowException(_env, " +
-                        "\"java/lang/IllegalArgumentException\", " +
-                        "\"" + (isBuffer ? "remaining()" : "length - " + offset) + " < needed\");");
+                out.println(iii + indent +
+                            (mUseCPlusPlus ? "_env" : "(*_env)") +
+                            "->ThrowNew(" +
+                            (mUseCPlusPlus ? "" : "_env, ") +
+                            "IAEClass, " +
+                            "\"" +
+                            (isBuffer ?
+                             "remaining()" : "length - " + offset) +
+                            " < needed\");");
                 out.println(iii + indent + "goto exit;");
                 needsExit = true;
                 out.println(iii + "}");
@@ -296,7 +302,7 @@ public class JniCodeEmitter {
         }
         return false;
     }
-
+    
     String isRequiresFunc(CFunc cfunc) {
         String[] checks = mChecker.getChecks(cfunc.getName());
         int index = 1;
@@ -323,94 +329,109 @@ public class JniCodeEmitter {
         }
         return null;
     }
-
+    
     void emitNativeBoundsChecks(CFunc cfunc, String cname, PrintStream out,
             boolean isBuffer, boolean emitExceptionCheck, String offset, String remaining, String iii) {
 
-        String[] checks = mChecker.getChecks(cfunc.getName());
+                String[] checks = mChecker.getChecks(cfunc.getName());
 
-        boolean lastWasIfcheck = false;
+                boolean lastWasIfcheck = false;
 
-        int index = 1;
-        if (checks != null) {
-            while (index < checks.length) {
-                if (checks[index].startsWith("check")) {
-                    if (lastWasIfcheck) {
-                        printIfcheckPostamble(out, isBuffer, emitExceptionCheck,
-                                offset, remaining, iii);
-                    }
-                    lastWasIfcheck = false;
-                    if (cname != null && !cname.equals(checks[index + 1])) {
-                        index += 3;
-                        continue;
-                    }
-                    out.println(iii + "if (" + remaining + " < " + checks[index + 2] + ") {");
-                    if (emitExceptionCheck) {
-                        out.println(iii + indent + "_exception = 1;");
-                    }
-                    String exceptionClassName = "java/lang/IllegalArgumentException";
+                int index = 1;
+                if (checks != null) {
+                    while (index < checks.length) {
+                        if (checks[index].startsWith("check")) {
+                            if (lastWasIfcheck) {
+                                printIfcheckPostamble(out, isBuffer, emitExceptionCheck,
+                                                      offset, remaining, iii);
+                            }
+                            lastWasIfcheck = false;
+                            if (cname != null && !cname.equals(checks[index + 1])) {
+                                index += 3;
+                                continue;
+                            }
+                            out.println(iii + "if (" + remaining + " < " +
+                                        checks[index + 2] +
+                                        ") {");
+                            if (emitExceptionCheck) {
+                                out.println(iii + indent + "_exception = 1;");
+                            }
+                    String exceptionClassName = "IAEClass";
                     // If the "check" keyword was of the form
                     // "check_<class name>", use the class name in the
                     // exception to be thrown
                     int underscore = checks[index].indexOf('_');
                     if (underscore >= 0) {
-                        String abbr = checks[index].substring(underscore + 1);
-                        if (abbr.equals("AIOOBE")) {
-                            exceptionClassName = "java/lang/ArrayIndexOutOfBoundsException";
+                    exceptionClassName = checks[index].substring(underscore + 1) + "Class";
+                    }
+                            out.println(iii + indent +
+                                        (mUseCPlusPlus ? "_env" : "(*_env)") +
+                                        "->ThrowNew(" +
+                                        (mUseCPlusPlus ? "" : "_env, ") +
+                        exceptionClassName + ", " +
+                                        "\"" +
+                                        (isBuffer ?
+                                         "remaining()" : "length - " + offset) +
+                                        " < " + checks[index + 2] +
+                                        "\");");
+
+                            out.println(iii + indent + "goto exit;");
+                            needsExit = true;
+                            out.println(iii + "}");
+
+                            index += 3;
+                        } else if (checks[index].equals("ifcheck")) {
+                            String[] matches = checks[index + 4].split(",");
+
+                            if (!lastWasIfcheck) {
+                                out.println(iii + "int _needed;");
+                                out.println(iii +
+                                            "switch (" +
+                                            checks[index + 3] +
+                                            ") {");
+                            }
+
+                            for (int i = 0; i < matches.length; i++) {
+                                out.println("#if defined(" + matches[i] + ")");
+                                out.println(iii +
+                                            "    case " +
+                                            matches[i] +
+                                            ":");
+                                out.println("#endif // defined(" + matches[i] + ")");
+                            }
+                            out.println(iii +
+                                        "        _needed = " +
+                                        checks[index + 2] +
+                                        ";");
+                            out.println(iii +
+                                        "        break;");
+
+                            lastWasIfcheck = true;
+                            index += 5;
+                        } else if (checks[index].equals("return")) {
+                            // ignore
+                            index += 2;
+                        } else if (checks[index].equals("unsupported")) {
+                            // ignore
+                            index += 1;
+                        } else if (checks[index].equals("requires")) {
+                            // ignore
+                            index += 2;
+                        } else if (checks[index].equals("nullAllowed")) {
+                            // ignore
+                            index += 1;
                         } else {
-                            throw new RuntimeException("unknown exception abbreviation: " + abbr);
+                            System.out.println("Error: unknown keyword \"" +
+                                               checks[index] + "\"");
+                            System.exit(0);
                         }
                     }
-                    out.println(iii + indent + "jniThrowException(_env, " +
-                            "\"" + exceptionClassName + "\", " +
-                            "\"" + (isBuffer ? "remaining()" : "length - " + offset) + " < " + checks[index + 2] + "\");");
+                }
 
-                    out.println(iii + indent + "goto exit;");
-                    needsExit = true;
-                    out.println(iii + "}");
-
-                    index += 3;
-                } else if (checks[index].equals("ifcheck")) {
-                    String[] matches = checks[index + 4].split(",");
-
-                    if (!lastWasIfcheck) {
-                        out.println(iii + "int _needed;");
-                        out.println(iii + "switch (" + checks[index + 3] + ") {");
-                    }
-
-                    for (int i = 0; i < matches.length; i++) {
-                        out.println("#if defined(" + matches[i] + ")");
-                        out.println(iii + "    case " + matches[i] + ":");
-                        out.println("#endif // defined(" + matches[i] + ")");
-                    }
-                    out.println(iii + "        _needed = " + checks[index + 2] + ";");
-                    out.println(iii + "        break;");
-
-                    lastWasIfcheck = true;
-                    index += 5;
-                } else if (checks[index].equals("return")) {
-                    // ignore
-                    index += 2;
-                } else if (checks[index].equals("unsupported")) {
-                    // ignore
-                    index += 1;
-                } else if (checks[index].equals("requires")) {
-                    // ignore
-                    index += 2;
-                } else if (checks[index].equals("nullAllowed")) {
-                    // ignore
-                    index += 1;
-                } else {
-                    System.out.println("Error: unknown keyword \"" + checks[index] + "\"");
-                    System.exit(0);
+                if (lastWasIfcheck) {
+                    printIfcheckPostamble(out, isBuffer, emitExceptionCheck, iii);
                 }
             }
-        }
-
-        if (lastWasIfcheck) {
-            printIfcheckPostamble(out, isBuffer, emitExceptionCheck, iii);
-        }
-    }
 
     boolean hasNonConstArg(JFunc jfunc, CFunc cfunc, List<Integer> nonPrimitiveArgs) {
         if (nonPrimitiveArgs.size() > 0) {
@@ -796,7 +817,7 @@ public class JniCodeEmitter {
         boolean isUnsupported = isUnsupportedFunc(cfunc);
         if (isUnsupported) {
             out.println(indent +
-                        "jniThrowException(_env, \"java/lang/UnsupportedOperationException\",");
+                        "_env->ThrowNew(UOEClass,");
             out.println(indent +
                         "    \"" + cfunc.getName() + "\");");
             if (!isVoid) {
@@ -807,13 +828,13 @@ public class JniCodeEmitter {
             out.println();
             return;
         }
-
+        
         String requiresExtension = isRequiresFunc(cfunc);
         if (requiresExtension != null) {
             out.println(indent +
                         "if (! supportsExtension(_env, _this, have_" + requiresExtension + "ID)) {");
             out.println(indent + indent +
-                        "jniThrowException(_env, \"java/lang/UnsupportedOperationException\",");
+                        "_env->ThrowNew(UOEClass,");
             out.println(indent + indent +
                         "    \"" + cfunc.getName() + "\");");
             if (isVoid) {
@@ -924,8 +945,7 @@ public class JniCodeEmitter {
                 CType type = cfunc.getArgType(jfunc.getArgCIndex(idx));
                 String decl = type.getDeclaration();
                 out.println(indent + "if (!" + cname + ") {");
-                out.println(indent + "    jniThrowException(_env, " +
-                        "\"java/lang/IllegalArgumentException\", \"" + cname + " == null\");");
+                out.println(indent + "    _env->ThrowNew(IAEClass, \"" + cname + " == null\");");
                 out.println(indent + "    goto exit;");
                 needsExit = true;
                 out.println(indent + "}");
@@ -958,9 +978,13 @@ public class JniCodeEmitter {
                     if (emitExceptionCheck) {
                         out.println(indent + indent + "_exception = 1;");
                     }
-                    out.println(indent + "    jniThrowException(_env, " +
-                            "\"java/lang/IllegalArgumentException\", " +
-                            "\"" + cname + " == null\");");
+                    out.println(indent + "    " +
+                                (mUseCPlusPlus ? "_env" : "(*_env)") +
+                                "->ThrowNew(" +
+                                (mUseCPlusPlus ? "" : "_env, ") +
+                                "IAEClass, " +
+                                "\"" + cname +
+                                " == null\");");
                     out.println(indent + "    goto exit;");
                     needsExit = true;
                     out.println(indent + "}");
@@ -969,8 +993,12 @@ public class JniCodeEmitter {
                     if (emitExceptionCheck) {
                         out.println(indent + indent + "_exception = 1;");
                     }
-                    out.println(indent + "    jniThrowException(_env, " +
-                            "\"java/lang/IllegalArgumentException\", \"" + offset + " < 0\");");
+                    out.println(indent + "    " +
+                                (mUseCPlusPlus ? "_env" : "(*_env)") +
+                                "->ThrowNew(" +
+                                (mUseCPlusPlus ? "" : "_env, ") +
+                                "IAEClass, " +
+                                "\"" + offset + " < 0\");");
                     out.println(indent + "    goto exit;");
                     needsExit = true;
                     out.println(indent + "}");

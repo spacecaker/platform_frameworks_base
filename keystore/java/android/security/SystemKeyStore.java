@@ -20,6 +20,8 @@ import android.os.Environment;
 import android.os.FileUtils;
 import android.os.Process;
 
+import org.apache.harmony.luni.util.InputStreamHelper;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -29,8 +31,6 @@ import java.security.SecureRandom;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
-
-import libcore.io.IoUtils;
 
 /**
  *@hide
@@ -117,10 +117,13 @@ public class SystemKeyStore {
 
     public byte[] retrieveKey(String keyName) throws IOException {
         File keyFile = getKeyFile(keyName);
+
         if (!keyFile.exists()) {
             return null;
         }
-        return IoUtils.readFileAsByteArray(keyFile.toString());
+
+        FileInputStream fis = new FileInputStream(keyFile);
+        return InputStreamHelper.readFullyAndClose(fis);
     }
 
     public void deleteKey(String keyName) {

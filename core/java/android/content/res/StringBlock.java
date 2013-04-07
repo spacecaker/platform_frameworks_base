@@ -18,6 +18,7 @@ package android.content.res;
 
 import android.text.*;
 import android.text.style.*;
+import android.util.Config;
 import android.util.Log;
 import android.util.SparseArray;
 import android.graphics.Paint;
@@ -33,7 +34,7 @@ import com.android.internal.util.XmlUtils;
  */
 final class StringBlock {
     private static final String TAG = "AssetManager";
-    private static final boolean localLOGV = false || false;
+    private static final boolean localLOGV = Config.LOGV || false;
 
     private final int mNative;
     private final boolean mUseSparse;

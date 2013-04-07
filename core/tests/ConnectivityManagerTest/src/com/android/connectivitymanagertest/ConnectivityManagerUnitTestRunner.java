@@ -20,7 +20,6 @@ import android.os.Bundle;
 import android.test.InstrumentationTestRunner;
 import android.test.InstrumentationTestSuite;
 import android.util.Log;
-import com.android.connectivitymanagertest.unit.WifiClientTest;
 import com.android.connectivitymanagertest.unit.WifiSoftAPTest;
 
 import junit.framework.TestSuite;
@@ -36,7 +35,6 @@ public class ConnectivityManagerUnitTestRunner extends InstrumentationTestRunner
     @Override
     public TestSuite getAllTests() {
         TestSuite suite = new InstrumentationTestSuite(this);
-        suite.addTestSuite(WifiClientTest.class);
         suite.addTestSuite(WifiSoftAPTest.class);
         return suite;
     }

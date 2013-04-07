@@ -24,7 +24,6 @@ import android.content.res.TypedArray;
 import android.graphics.*;
 import android.view.Gravity;
 import android.util.AttributeSet;
-import android.view.View;
 
 import java.io.IOException;
 
@@ -96,8 +95,6 @@ public class ScaleDrawable extends Drawable implements Drawable.Callback {
         float sw = getPercent(a, com.android.internal.R.styleable.ScaleDrawable_scaleWidth);
         float sh = getPercent(a, com.android.internal.R.styleable.ScaleDrawable_scaleHeight);
         int g = a.getInt(com.android.internal.R.styleable.ScaleDrawable_scaleGravity, Gravity.LEFT);
-        boolean min = a.getBoolean(
-                com.android.internal.R.styleable.ScaleDrawable_useIntrinsicSizeAsMinimum, false);
         Drawable dr = a.getDrawable(com.android.internal.R.styleable.ScaleDrawable_drawable);
 
         a.recycle();
@@ -119,7 +116,6 @@ public class ScaleDrawable extends Drawable implements Drawable.Callback {
         mScaleState.mScaleWidth = sw;
         mScaleState.mScaleHeight = sh;
         mScaleState.mGravity = g;
-        mScaleState.mUseIntrinsicSizeAsMin = min;
         if (dr != null) {
             dr.setCallback(this);
         }
@@ -128,20 +124,20 @@ public class ScaleDrawable extends Drawable implements Drawable.Callback {
     // overrides from Drawable.Callback
 
     public void invalidateDrawable(Drawable who) {
-        if (getCallback() != null) {
-            getCallback().invalidateDrawable(this);
+        if (mCallback != null) {
+            mCallback.invalidateDrawable(this);
         }
     }
 
     public void scheduleDrawable(Drawable who, Runnable what, long when) {
-        if (getCallback() != null) {
-            getCallback().scheduleDrawable(this, what, when);
+        if (mCallback != null) {
+            mCallback.scheduleDrawable(this, what, when);
         }
     }
 
     public void unscheduleDrawable(Drawable who, Runnable what) {
-        if (getCallback() != null) {
-            getCallback().unscheduleDrawable(this, what);
+        if (mCallback != null) {
+            mCallback.unscheduleDrawable(this, what);
         }
     }
 
@@ -210,20 +206,18 @@ public class ScaleDrawable extends Drawable implements Drawable.Callback {
     @Override
     protected void onBoundsChange(Rect bounds) {
         final Rect r = mTmpRect;
-        final boolean min = mScaleState.mUseIntrinsicSizeAsMin;
         int level = getLevel();
         int w = bounds.width();
+        final int iw = 0; //mScaleState.mDrawable.getIntrinsicWidth();
         if (mScaleState.mScaleWidth > 0) {
-            final int iw = min ? mScaleState.mDrawable.getIntrinsicWidth() : 0;
             w -= (int) ((w - iw) * (10000 - level) * mScaleState.mScaleWidth / 10000);
         }
         int h = bounds.height();
+        final int ih = 0; //mScaleState.mDrawable.getIntrinsicHeight();
         if (mScaleState.mScaleHeight > 0) {
-            final int ih = min ? mScaleState.mDrawable.getIntrinsicHeight() : 0;
             h -= (int) ((h - ih) * (10000 - level) * mScaleState.mScaleHeight / 10000);
         }
-        final int layoutDirection = getResolvedLayoutDirectionSelf();
-        Gravity.apply(mScaleState.mGravity, w, h, bounds, r, layoutDirection);
+        Gravity.apply(mScaleState.mGravity, w, h, bounds, r);
 
         if (w > 0 && h > 0) {
             mScaleState.mDrawable.setBounds(r.left, r.top, r.right, r.bottom);
@@ -264,7 +258,6 @@ public class ScaleDrawable extends Drawable implements Drawable.Callback {
         float mScaleWidth;
         float mScaleHeight;
         int mGravity;
-        boolean mUseIntrinsicSizeAsMin;
 
         private boolean mCheckedConstantState;
         private boolean mCanConstantState;
@@ -280,7 +273,6 @@ public class ScaleDrawable extends Drawable implements Drawable.Callback {
                 mScaleWidth = orig.mScaleWidth;
                 mScaleHeight = orig.mScaleHeight;
                 mGravity = orig.mGravity;
-                mUseIntrinsicSizeAsMin = orig.mUseIntrinsicSizeAsMin;
                 mCheckedConstantState = mCanConstantState = true;
             }
         }

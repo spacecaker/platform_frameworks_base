@@ -19,7 +19,6 @@ package android.os;
 /** {@hide} */
 interface IVibratorService
 {
-    boolean hasVibrator();
     void vibrate(long milliseconds, IBinder token);
     void vibratePattern(in long[] pattern, int repeat, IBinder token);
     void cancelVibrate(IBinder token);

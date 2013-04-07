@@ -39,8 +39,6 @@ public class PackageHelper {
     public static final int RECOMMEND_FAILED_INVALID_LOCATION = -3;
     public static final int RECOMMEND_FAILED_ALREADY_EXISTS = -4;
     public static final int RECOMMEND_MEDIA_UNAVAILABLE = -5;
-    public static final int RECOMMEND_FAILED_INVALID_URI = -6;
-
     private static final boolean localLOGV = true;
     private static final String TAG = "PackageHelper";
     // App installation location settings values
@@ -58,13 +56,18 @@ public class PackageHelper {
         return null;
     }
 
-    public static String createSdDir(int sizeMb, String cid,
+    public static String createSdDir(long sizeBytes, String cid,
             String sdEncKey, int uid) {
         // Create mount point via MountService
         IMountService mountService = getMountService();
-
+        int sizeMb = (int) (sizeBytes >> 20);
+        if ((sizeBytes - (sizeMb * 1024 * 1024)) > 0) {
+            sizeMb++;
+        }
+        // Add buffer size
+        sizeMb++;
         if (localLOGV)
-            Log.i(TAG, "Size of container " + sizeMb + " MB");
+            Log.i(TAG, "Size of container " + sizeMb + " MB " + sizeBytes + " bytes");
 
         try {
             int rc = mountService.createSecureContainer(
@@ -130,16 +133,6 @@ public class PackageHelper {
    public static String getSdDir(String cid) {
        try {
             return getMountService().getSecureContainerPath(cid);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Failed to get container path for " + cid +
-                " with exception " + e);
-        }
-        return null;
-   }
-
-   public static String getSdFilesystem(String cid) {
-       try {
-            return getMountService().getSecureContainerFilesystemPath(cid);
         } catch (RemoteException e) {
             Log.e(TAG, "Failed to get container path for " + cid +
                 " with exception " + e);

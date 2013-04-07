@@ -22,6 +22,4 @@ package android.util;
 public interface Poolable<T> {
     void setNextPoolable(T element);
     T getNextPoolable();
-    boolean isPooled();
-    void setPooled(boolean isPooled);
 }

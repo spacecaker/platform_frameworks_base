@@ -28,13 +28,9 @@
 #include <ui/PixelFormat.h>
 
 #include <surfaceflinger/ISurfaceComposerClient.h>
-#include <surfaceflinger/IGraphicBufferAlloc.h>
 
 namespace android {
 // ----------------------------------------------------------------------------
-
-class IMemoryHeap;
-class ComposerState;
 
 class ISurfaceComposer : public IInterface
 {
@@ -46,14 +42,11 @@ public:
         eDestroyBackbuffer  = 0x00000020,
         eSecure             = 0x00000080,
         eNonPremultiplied   = 0x00000100,
-        eOpaque             = 0x00000400,
-        eProtectedByApp     = 0x00000800,
-        eProtectedByDRM     = 0x00001000,
+        ePushBuffers        = 0x00000200,
 
         eFXSurfaceNormal    = 0x00000000,
         eFXSurfaceBlur      = 0x00010000,
         eFXSurfaceDim       = 0x00020000,
-        eFXSurfaceScreenshot= 0x00030000,
         eFXSurfaceMask      = 0x000F0000,
     };
 
@@ -81,17 +74,17 @@ public:
         eOrientation90          = 1,
         eOrientation180         = 2,
         eOrientation270         = 3,
-        eOrientationUnchanged   = 4,
         eOrientationSwapMask    = 0x01
     };
-
-    enum {
-        eSynchronous            = 0x01,
-    };
-
+    
     enum {
         eElectronBeamAnimationOn  = 0x01,
         eElectronBeamAnimationOff = 0x10
+    };
+
+    // flags for setOrientation
+    enum {
+        eOrientationAnimationDisable = 0x00000001
     };
 
     /* create connection with surface flinger, requires
@@ -99,16 +92,23 @@ public:
      */
     virtual sp<ISurfaceComposerClient> createConnection() = 0;
 
-    /* create a graphic buffer allocator
+    /* create a client connection with surface flinger
      */
-    virtual sp<IGraphicBufferAlloc> createGraphicBufferAlloc() = 0;
+    virtual sp<ISurfaceComposerClient> createClientConnection() = 0;
 
     /* retrieve the control block */
     virtual sp<IMemoryHeap> getCblk() const = 0;
 
     /* open/close transactions. requires ACCESS_SURFACE_FLINGER permission */
-    virtual void setTransactionState(const Vector<ComposerState>& state,
-            int orientation, uint32_t flags) = 0;
+    virtual void openGlobalTransaction() = 0;
+    virtual void closeGlobalTransaction() = 0;
+
+    /* [un]freeze display. requires ACCESS_SURFACE_FLINGER permission */
+    virtual status_t freezeDisplay(DisplayID dpy, uint32_t flags) = 0;
+    virtual status_t unfreezeDisplay(DisplayID dpy, uint32_t flags) = 0;
+
+    /* Set display orientation. requires ACCESS_SURFACE_FLINGER permission */
+    virtual int setOrientation(DisplayID dpy, int orientation, uint32_t flags) = 0;
 
     /* signal that we're done booting.
      * Requires ACCESS_SURFACE_FLINGER permission
@@ -121,16 +121,15 @@ public:
     virtual status_t captureScreen(DisplayID dpy,
             sp<IMemoryHeap>* heap,
             uint32_t* width, uint32_t* height, PixelFormat* format,
-            uint32_t reqWidth, uint32_t reqHeight,
-            uint32_t minLayerZ, uint32_t maxLayerZ) = 0;
+            uint32_t reqWidth, uint32_t reqHeight) = 0;
 
     virtual status_t turnElectronBeamOff(int32_t mode) = 0;
     virtual status_t turnElectronBeamOn(int32_t mode) = 0;
 
-    /* verify that an ISurfaceTexture was created by SurfaceFlinger.
+    /* Signal surfaceflinger that there might be some work to do
+     * This is an ASYNCHRONOUS call.
      */
-    virtual bool authenticateSurfaceTexture(
-            const sp<ISurfaceTexture>& surface) const = 0;
+    virtual void signal() const = 0;
 };
 
 // ----------------------------------------------------------------------------
@@ -143,14 +142,17 @@ public:
         // Java by ActivityManagerService.
         BOOT_FINISHED = IBinder::FIRST_CALL_TRANSACTION,
         CREATE_CONNECTION,
-        CREATE_GRAPHIC_BUFFER_ALLOC,
+        CREATE_CLIENT_CONNECTION,
         GET_CBLK,
-        SET_TRANSACTION_STATE,
+        OPEN_GLOBAL_TRANSACTION,
+        CLOSE_GLOBAL_TRANSACTION,
         SET_ORIENTATION,
+        FREEZE_DISPLAY,
+        UNFREEZE_DISPLAY,
+        SIGNAL,
         CAPTURE_SCREEN,
         TURN_ELECTRON_BEAM_OFF,
-        TURN_ELECTRON_BEAM_ON,
-        AUTHENTICATE_SURFACE,
+        TURN_ELECTRON_BEAM_ON
     };
 
     virtual status_t    onTransact( uint32_t code,

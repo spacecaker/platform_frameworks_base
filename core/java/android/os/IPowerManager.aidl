@@ -20,15 +20,12 @@ package android.os;
 import android.os.WorkSource;
 
 /** @hide */
-
 interface IPowerManager
 {
-    // WARNING: changes in acquireWakeLock() signature must be reflected in IPowerManager.cpp/h
     void acquireWakeLock(int flags, IBinder lock, String tag, in WorkSource ws);
     void updateWakeLockWorkSource(IBinder lock, in WorkSource ws);
     void goToSleep(long time);
     void goToSleepWithReason(long time, int reason);
-    // WARNING: changes in releaseWakeLock() signature must be reflected in IPowerManager.cpp/h
     void releaseWakeLock(IBinder lock, int flags);
     void userActivity(long when, boolean noChangeLights);
     void userActivityWithForce(long when, boolean noChangeLights, boolean force);
@@ -45,4 +42,13 @@ interface IPowerManager
     // sets the brightness of the backlights (screen, keyboard, button) 0-255
     void setBacklightBrightness(int brightness);
     void setAttentionLight(boolean on, int color);
+
+    // custom backlight things
+    int getLightSensorValue();
+    int getRawLightSensorValue();
+    int getLightSensorScreenBrightness();
+    int getLightSensorButtonBrightness();
+    int getLightSensorKeyboardBrightness();
+
+    void setKeyboardLight(boolean on, int key);
 }

@@ -23,16 +23,12 @@
 #include <utils/threads.h>
 #include <utils/List.h>
 
-#include "ATSParser.h"
-
 namespace android {
 
 struct ABuffer;
 
 struct AnotherPacketSource : public MediaSource {
     AnotherPacketSource(const sp<MetaData> &meta);
-
-    void setFormat(const sp<MetaData> &meta);
 
     virtual status_t start(MetaData *params = NULL);
     virtual status_t stop();
@@ -43,16 +39,11 @@ struct AnotherPacketSource : public MediaSource {
 
     bool hasBufferAvailable(status_t *finalResult);
 
-    status_t nextBufferTime(int64_t *timeUs);
-
     void queueAccessUnit(const sp<ABuffer> &buffer);
-
-    void queueDiscontinuity(
-            ATSParser::DiscontinuityType type, const sp<AMessage> &extra);
-
+    void queueDiscontinuity();
     void signalEOS(status_t result);
 
-    status_t dequeueAccessUnit(sp<ABuffer> *buffer);
+    void clear();
 
 protected:
     virtual ~AnotherPacketSource();
@@ -61,12 +52,9 @@ private:
     Mutex mLock;
     Condition mCondition;
 
-    bool mIsAudio;
     sp<MetaData> mFormat;
     List<sp<ABuffer> > mBuffers;
     status_t mEOSResult;
-
-    bool wasFormatChange(int32_t discontinuityType) const;
 
     DISALLOW_EVIL_CONSTRUCTORS(AnotherPacketSource);
 };

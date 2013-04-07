@@ -16,16 +16,10 @@
 
 package android.net;
 
-import static com.android.internal.util.Preconditions.checkNotNull;
-
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
 import android.os.Binder;
-import android.os.Build.VERSION_CODES;
 import android.os.RemoteException;
-import android.provider.Settings;
-
-import java.net.InetAddress;
 
 /**
  * Class that answers queries about the state of network connectivity. It also
@@ -43,9 +37,8 @@ import java.net.InetAddress;
  * state of the available networks</li>
  * </ol>
  */
-public class ConnectivityManager {
-    private static final String TAG = "ConnectivityManager";
-
+public class ConnectivityManager
+{
     /**
      * A change in network connectivity has occurred. A connection has either
      * been established or lost. The NetworkInfo for the affected network is
@@ -70,28 +63,11 @@ public class ConnectivityManager {
      * is set to {@code true} if there are no connected networks at all.
      */
     public static final String CONNECTIVITY_ACTION = "android.net.conn.CONNECTIVITY_CHANGE";
-
-    /**
-     * Identical to {@link #CONNECTIVITY_ACTION} broadcast, but sent without any
-     * applicable {@link Settings.Secure#CONNECTIVITY_CHANGE_DELAY}.
-     *
-     * @hide
-     */
-    public static final String CONNECTIVITY_ACTION_IMMEDIATE =
-            "android.net.conn.CONNECTIVITY_CHANGE_IMMEDIATE";
-
     /**
      * The lookup key for a {@link NetworkInfo} object. Retrieve with
      * {@link android.content.Intent#getParcelableExtra(String)}.
-     *
-     * @deprecated Since {@link NetworkInfo} can vary based on UID, applications
-     *             should always obtain network information through
-     *             {@link #getActiveNetworkInfo()} or
-     *             {@link #getAllNetworkInfo()}.
      */
-    @Deprecated
     public static final String EXTRA_NETWORK_INFO = "networkInfo";
-
     /**
      * The lookup key for a boolean that indicates whether a connect event
      * is for a network to which the connectivity manager was failing over
@@ -130,7 +106,7 @@ public class ConnectivityManager {
      * The lookup key for an int that provides information about
      * our connection to the internet at large.  0 indicates no connection,
      * 100 indicates a great connection.  Retrieve it with
-     * {@link android.content.Intent#getIntExtra(String, int)}.
+     * {@link android.content.Intent@getIntExtra(String)}.
      * {@hide}
      */
     public static final String EXTRA_INET_CONDITION = "inetCondition";
@@ -141,11 +117,12 @@ public class ConnectivityManager {
      * <p>
      * If an application uses the network in the background, it should listen
      * for this broadcast and stop using the background data if the value is
-     * {@code false}.
+     * false.
      */
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_BACKGROUND_DATA_SETTING_CHANGED =
             "android.net.conn.BACKGROUND_DATA_SETTING_CHANGED";
+
 
     /**
      * Broadcast Action: The network connection may not be good
@@ -184,19 +161,15 @@ public class ConnectivityManager {
     public static final String EXTRA_ERRORED_TETHER = "erroredArray";
 
     /**
-     * The absence of APN..
-     * @hide
-     */
-    public static final int TYPE_NONE        = -1;
-
-    /**
      * The Default Mobile data connection.  When active, all data traffic
-     * will use this connection by default.
+     * will use this connection by default.  Should not coexist with other
+     * default connections.
      */
     public static final int TYPE_MOBILE      = 0;
     /**
      * The Default WIFI data connection.  When active, all data traffic
-     * will use this connection by default.
+     * will use this connection by default.  Should not coexist with other
+     * default connections.
      */
     public static final int TYPE_WIFI        = 1;
     /**
@@ -232,117 +205,31 @@ public class ConnectivityManager {
     public static final int TYPE_MOBILE_HIPRI = 5;
     /**
      * The Default WiMAX data connection.  When active, all data traffic
-     * will use this connection by default.
+     * will use this connection by default.  Should not coexist with other
+     * default connections.
      */
     public static final int TYPE_WIMAX       = 6;
-
     /**
-     * The Default Bluetooth data connection. When active, all data traffic
-     * will use this connection by default.
+     * Bluetooth data connection.
+     * @hide
      */
     public static final int TYPE_BLUETOOTH   = 7;
-
-    /**
-     * Dummy data connection.  This should not be used on shipping devices.
-     */
+    /** {@hide} */
     public static final int TYPE_DUMMY       = 8;
-
-    /**
-     * The Default Ethernet data connection.  When active, all data traffic
-     * will use this connection by default.
-     */
+    /** {@hide} */
     public static final int TYPE_ETHERNET    = 9;
-
-    /**
-     * Over the air Adminstration.
-     * {@hide}
-     */
-    public static final int TYPE_MOBILE_FOTA = 10;
-
-    /**
-     * IP Multimedia Subsystem
-     * {@hide}
-     */
-    public static final int TYPE_MOBILE_IMS  = 11;
-
-    /**
-     * Carrier Branded Services
-     * {@hide}
-     */
-    public static final int TYPE_MOBILE_CBS  = 12;
-
-    /**
-     * A Wi-Fi p2p connection. Only requesting processes will have access to
-     * the peers connected.
-     * {@hide}
-     */
-    public static final int TYPE_WIFI_P2P    = 13;
-
-    /** {@hide} */
-    public static final int MAX_RADIO_TYPE   = TYPE_WIFI_P2P;
-
-    /** {@hide} */
-    public static final int MAX_NETWORK_TYPE = TYPE_WIFI_P2P;
+    /** {@hide} TODO: Need to adjust this for WiMAX. */
+    public static final int MAX_RADIO_TYPE   = TYPE_ETHERNET;
+    /** {@hide} TODO: Need to adjust this for WiMAX. */
+    public static final int MAX_NETWORK_TYPE = TYPE_ETHERNET;
 
     public static final int DEFAULT_NETWORK_PREFERENCE = TYPE_WIFI;
 
-    private final IConnectivityManager mService;
+    private IConnectivityManager mService;
 
-    public static boolean isNetworkTypeValid(int networkType) {
-        return networkType >= 0 && networkType <= MAX_NETWORK_TYPE;
-    }
-
-    /** {@hide} */
-    public static String getNetworkTypeName(int type) {
-        switch (type) {
-            case TYPE_MOBILE:
-                return "MOBILE";
-            case TYPE_WIFI:
-                return "WIFI";
-            case TYPE_MOBILE_MMS:
-                return "MOBILE_MMS";
-            case TYPE_MOBILE_SUPL:
-                return "MOBILE_SUPL";
-            case TYPE_MOBILE_DUN:
-                return "MOBILE_DUN";
-            case TYPE_MOBILE_HIPRI:
-                return "MOBILE_HIPRI";
-            case TYPE_WIMAX:
-                return "WIMAX";
-            case TYPE_BLUETOOTH:
-                return "BLUETOOTH";
-            case TYPE_DUMMY:
-                return "DUMMY";
-            case TYPE_ETHERNET:
-                return "ETHERNET";
-            case TYPE_MOBILE_FOTA:
-                return "MOBILE_FOTA";
-            case TYPE_MOBILE_IMS:
-                return "MOBILE_IMS";
-            case TYPE_MOBILE_CBS:
-                return "MOBILE_CBS";
-            case TYPE_WIFI_P2P:
-                return "WIFI_P2P";
-            default:
-                return Integer.toString(type);
-        }
-    }
-
-    /** {@hide} */
-    public static boolean isNetworkTypeMobile(int networkType) {
-        switch (networkType) {
-            case TYPE_MOBILE:
-            case TYPE_MOBILE_MMS:
-            case TYPE_MOBILE_SUPL:
-            case TYPE_MOBILE_DUN:
-            case TYPE_MOBILE_HIPRI:
-            case TYPE_MOBILE_FOTA:
-            case TYPE_MOBILE_IMS:
-            case TYPE_MOBILE_CBS:
-                return true;
-            default:
-                return false;
-        }
+    static public boolean isNetworkTypeValid(int networkType) {
+	// HACK! Accept TYPE_WIMAX even though we don't support it yet
+        return TYPE_WIMAX == networkType || (networkType >= 0 && networkType <= MAX_NETWORK_TYPE);
     }
 
     public void setNetworkPreference(int preference) {
@@ -368,15 +255,6 @@ public class ConnectivityManager {
         }
     }
 
-    /** {@hide} */
-    public NetworkInfo getActiveNetworkInfoForUid(int uid) {
-        try {
-            return mService.getActiveNetworkInfoForUid(uid);
-        } catch (RemoteException e) {
-            return null;
-        }
-    }
-
     public NetworkInfo getNetworkInfo(int networkType) {
         try {
             return mService.getNetworkInfo(networkType);
@@ -388,24 +266,6 @@ public class ConnectivityManager {
     public NetworkInfo[] getAllNetworkInfo() {
         try {
             return mService.getAllNetworkInfo();
-        } catch (RemoteException e) {
-            return null;
-        }
-    }
-
-    /** {@hide} */
-    public LinkProperties getActiveLinkProperties() {
-        try {
-            return mService.getActiveLinkProperties();
-        } catch (RemoteException e) {
-            return null;
-        }
-    }
-
-    /** {@hide} */
-    public LinkProperties getLinkProperties(int networkType) {
-        try {
-            return mService.getLinkProperties(networkType);
         } catch (RemoteException e) {
             return null;
         }
@@ -478,29 +338,8 @@ public class ConnectivityManager {
      * @return {@code true} on success, {@code false} on failure
      */
     public boolean requestRouteToHost(int networkType, int hostAddress) {
-        InetAddress inetAddress = NetworkUtils.intToInetAddress(hostAddress);
-
-        if (inetAddress == null) {
-            return false;
-        }
-
-        return requestRouteToHostAddress(networkType, inetAddress);
-    }
-
-    /**
-     * Ensure that a network route exists to deliver traffic to the specified
-     * host via the specified network interface. An attempt to add a route that
-     * already exists is ignored, but treated as successful.
-     * @param networkType the type of the network over which traffic to the specified
-     * host is to be routed
-     * @param hostAddress the IP address of the host to which the route is desired
-     * @return {@code true} on success, {@code false} on failure
-     * @hide
-     */
-    public boolean requestRouteToHostAddress(int networkType, InetAddress hostAddress) {
-        byte[] address = hostAddress.getAddress();
         try {
-            return mService.requestRouteToHostAddress(networkType, address);
+            return mService.requestRouteToHost(networkType, hostAddress);
         } catch (RemoteException e) {
             return false;
         }
@@ -514,19 +353,16 @@ public class ConnectivityManager {
      * <p>
      * All applications that have background services that use the network
      * should listen to {@link #ACTION_BACKGROUND_DATA_SETTING_CHANGED}.
-     * <p>
-     * @deprecated As of {@link VERSION_CODES#ICE_CREAM_SANDWICH}, availability of
-     * background data depends on several combined factors, and this method will
-     * always return {@code true}. Instead, when background data is unavailable,
-     * {@link #getActiveNetworkInfo()} will now appear disconnected.
-     *
+     * 
      * @return Whether background data usage is allowed.
      */
-    @Deprecated
     public boolean getBackgroundDataSetting() {
-        // assume that background data is allowed; final authority is
-        // NetworkInfo which may be blocked.
-        return true;
+        try {
+            return mService.getBackgroundDataSetting();
+        } catch (RemoteException e) {
+            // Err on the side of safety 
+            return false;
+        }
     }
 
     /**
@@ -539,23 +375,10 @@ public class ConnectivityManager {
      * @see #getBackgroundDataSetting()
      * @hide
      */
-    @Deprecated
     public void setBackgroundDataSetting(boolean allowBackgroundData) {
-        // ignored
-    }
-
-    /**
-     * Return quota status for the current active network, or {@code null} if no
-     * network is active. Quota status can change rapidly, so these values
-     * shouldn't be cached.
-     *
-     * @hide
-     */
-    public NetworkQuotaInfo getActiveNetworkQuotaInfo() {
         try {
-            return mService.getActiveNetworkQuotaInfo();
+            mService.setBackgroundDataSetting(allowBackgroundData);
         } catch (RemoteException e) {
-            return null;
         }
     }
 
@@ -588,10 +411,21 @@ public class ConnectivityManager {
     }
 
     /**
+     * Don't allow use of default constructor.
+     */
+    @SuppressWarnings({"UnusedDeclaration"})
+    private ConnectivityManager() {
+    }
+
+    /**
      * {@hide}
      */
     public ConnectivityManager(IConnectivityManager service) {
-        mService = checkNotNull(service, "missing IConnectivityManager");
+        if (service == null) {
+            throw new IllegalArgumentException(
+                "ConnectivityManager() cannot be constructed with null service");
+        }
+        mService = service;
     }
 
     /**
@@ -684,28 +518,6 @@ public class ConnectivityManager {
         }
     }
 
-    /**
-     * {@hide}
-     */
-    public String[] getTetherableBluetoothRegexs() {
-        try {
-            return mService.getTetherableBluetoothRegexs();
-        } catch (RemoteException e) {
-            return new String[0];
-        }
-    }
-
-    /**
-     * {@hide}
-     */
-    public int setUsbTethering(boolean enable) {
-        try {
-            return mService.setUsbTethering(enable);
-        } catch (RemoteException e) {
-            return TETHER_ERROR_SERVICE_UNAVAIL;
-        }
-    }
-
     /** {@hide} */
     public static final int TETHER_ERROR_NO_ERROR           = 0;
     /** {@hide} */
@@ -744,21 +556,6 @@ public class ConnectivityManager {
     }
 
     /**
-     * Ensure the device stays awake until we connect with the next network
-     * @param forWhome The name of the network going down for logging purposes
-     * @return {@code true} on success, {@code false} on failure
-     * {@hide}
-     */
-    public boolean requestNetworkTransitionWakelock(String forWhom) {
-        try {
-            mService.requestNetworkTransitionWakelock(forWhom);
-            return true;
-        } catch (RemoteException e) {
-            return false;
-        }
-    }
-
-    /**
      * @param networkType The type of network you want to report on
      * @param percentage The quality of the connection 0 is bad, 100 is good
      * {@hide}
@@ -768,70 +565,5 @@ public class ConnectivityManager {
             mService.reportInetCondition(networkType, percentage);
         } catch (RemoteException e) {
         }
-    }
-
-    /**
-     * @param proxyProperties The definition for the new global http proxy
-     * {@hide}
-     */
-    public void setGlobalProxy(ProxyProperties p) {
-        try {
-            mService.setGlobalProxy(p);
-        } catch (RemoteException e) {
-        }
-    }
-
-    /**
-     * @return proxyProperties for the current global proxy
-     * {@hide}
-     */
-    public ProxyProperties getGlobalProxy() {
-        try {
-            return mService.getGlobalProxy();
-        } catch (RemoteException e) {
-            return null;
-        }
-    }
-
-    /**
-     * @return proxyProperties for the current proxy (global if set, network specific if not)
-     * {@hide}
-     */
-    public ProxyProperties getProxy() {
-        try {
-            return mService.getProxy();
-        } catch (RemoteException e) {
-            return null;
-        }
-    }
-
-    /**
-     * @param networkType The network who's dependence has changed
-     * @param met Boolean - true if network use is ok, false if not
-     * {@hide}
-     */
-    public void setDataDependency(int networkType, boolean met) {
-        try {
-            mService.setDataDependency(networkType, met);
-        } catch (RemoteException e) {
-        }
-    }
-
-    /**
-     * Returns true if the hardware supports the given network type
-     * else it returns false.  This doesn't indicate we have coverage
-     * or are authorized onto a network, just whether or not the
-     * hardware supports it.  For example a gsm phone without a sim
-     * should still return true for mobile data, but a wifi only tablet
-     * would return false.
-     * @param networkType The nework type we'd like to check
-     * @return true if supported, else false
-     * @hide
-     */
-    public boolean isNetworkSupported(int networkType) {
-        try {
-            return mService.isNetworkSupported(networkType);
-        } catch (RemoteException e) {}
-        return false;
     }
 }

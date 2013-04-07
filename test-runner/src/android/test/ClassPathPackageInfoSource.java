@@ -16,6 +16,7 @@
 
 package android.test;
 
+import android.util.Config;
 import android.util.Log;
 import com.google.android.collect.Maps;
 import com.google.android.collect.Sets;
@@ -118,12 +119,22 @@ public class ClassPathPackageInfoSource {
                 try {
                     if (entryName.endsWith(".apk")) {
                         findClassesInApk(entryName, packageName, classNames, subpackageNames);
-                    } else {
-                        // scan the directories that contain apk files.
+                    } else if ("true".equals(System.getProperty("android.vm.dexfile", "false"))) {
+                        // If the vm supports dex files then scan the directories that contain
+                        // apk files. 
                         for (String apkPath : apkPaths) {
                             File file = new File(apkPath);
                             scanForApkFiles(file, packageName, classNames, subpackageNames);
                         }
+                    } else if (entryName.endsWith(".jar")) {
+                        findClassesInJar(classPathEntry, pathPrefix,
+                                classNames, subpackageNames);
+                    } else if (classPathEntry.isDirectory()) {
+                        findClassesInDirectory(classPathEntry, packagePrefix, pathPrefix,
+                                classNames, subpackageNames);
+                    } else {
+                        throw new AssertionError("Don't understand classpath entry " +
+                                classPathEntry);
                     }
                 } catch (IOException e) {
                     throw new AssertionError("Can't read classpath entry " +
@@ -228,7 +239,7 @@ public class ClassPathPackageInfoSource {
                 }
             }
         } catch (IOException e) {
-            if (false) {
+            if (Config.LOGV) {
                 Log.w("ClassPathPackageInfoSource",
                         "Error finding classes at apk path: " + apkPath, e);
             }

@@ -17,17 +17,13 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include <cutils/properties.h>
-
 #include <surfaceflinger/SurfaceComposerClient.h>
 #include <ui/PixelFormat.h>
 #include <ui/DisplayInfo.h>
 
 #include "jni.h"
-#include "JNIHelp.h"
 #include <android_runtime/AndroidRuntime.h>
 #include <utils/misc.h>
-#include <utils/Log.h>
 
 // ----------------------------------------------------------------------------
 
@@ -45,6 +41,12 @@ struct offsets_t {
 };
 static offsets_t offsets;
 
+static void doThrow(JNIEnv* env, const char* exc, const char* msg = NULL)
+{
+    jclass npeClazz = env->FindClass(exc);
+    env->ThrowNew(npeClazz, msg);
+}
+
 // ----------------------------------------------------------------------------
 
 static void android_view_Display_init(
@@ -53,7 +55,7 @@ static void android_view_Display_init(
     DisplayInfo info;
     status_t err = SurfaceComposerClient::getDisplayInfo(DisplayID(dpy), &info);
     if (err < 0) {
-        jniThrowException(env, "java/lang/IllegalArgumentException", NULL);
+        doThrow(env, "java/lang/IllegalArgumentException");
         return;
     }
     env->SetIntField(clazz, offsets.pixelFormat,info.pixelFormatInfo.format);
@@ -63,14 +65,14 @@ static void android_view_Display_init(
     env->SetFloatField(clazz, offsets.ydpi,     info.ydpi);
 }
 
-static jint android_view_Display_getRawWidthNative(
+static jint android_view_Display_getWidth(
         JNIEnv* env, jobject clazz)
 {
     DisplayID dpy = env->GetIntField(clazz, offsets.display);
     return SurfaceComposerClient::getDisplayWidth(dpy);
 }
 
-static jint android_view_Display_getRawHeightNative(
+static jint android_view_Display_getHeight(
         JNIEnv* env, jobject clazz)
 {
     DisplayID dpy = env->GetIntField(clazz, offsets.display);
@@ -103,10 +105,10 @@ static JNINativeMethod gMethods[] = {
             (void*)android_view_Display_getDisplayCount },
 	{   "init", "(I)V",
             (void*)android_view_Display_init },
-    {   "getRawWidthNative", "()I",
-            (void*)android_view_Display_getRawWidthNative },
-    {   "getRawHeightNative", "()I",
-            (void*)android_view_Display_getRawHeightNative },
+    {   "getWidth", "()I",
+            (void*)android_view_Display_getWidth },
+    {   "getHeight", "()I",
+            (void*)android_view_Display_getHeight },
     {   "getOrientation", "()I",
             (void*)android_view_Display_getOrientation }
 };
@@ -128,3 +130,4 @@ int register_android_view_Display(JNIEnv* env)
 }
 
 };
+

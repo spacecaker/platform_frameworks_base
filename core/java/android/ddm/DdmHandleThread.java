@@ -20,6 +20,7 @@ import org.apache.harmony.dalvik.ddmc.Chunk;
 import org.apache.harmony.dalvik.ddmc.ChunkHandler;
 import org.apache.harmony.dalvik.ddmc.DdmServer;
 import org.apache.harmony.dalvik.ddmc.DdmVmInternal;
+import android.util.Config;
 import android.util.Log;
 import java.nio.ByteBuffer;
 
@@ -65,7 +66,7 @@ public class DdmHandleThread extends ChunkHandler {
      * Handle a chunk of data.
      */
     public Chunk handleChunk(Chunk request) {
-        if (false)
+        if (Config.LOGV)
             Log.v("ddm-thread", "Handling " + name(request.type) + " chunk");
         int type = request.type;
 

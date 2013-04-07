@@ -23,20 +23,21 @@
 #include <EGL/egl.h>
 
 #include <utils/threads.h>
-#include <utils/String8.h>
 #include <ui/Rect.h>
 
 #include <pixelflinger/pixelflinger.h>
 
 #include <ui/egl/android_natives.h>
 
-#ifdef QCOM_HARDWARE
-#define NUM_FRAMEBUFFERS_MAX  3
-#else
-#define NUM_FRAME_BUFFERS  2
+#ifdef OMAP_ENHANCEMENT
+/* Define number of buffers */
+#define NUM_FRAME_BUFFERS	2
 #endif
 
 extern "C" EGLNativeWindowType android_createDisplaySurface(void);
+#ifdef OMAP_ENHANCEMENT
+extern "C" EGLNativeWindowType android_createDisplaySurfaceOnFB(uint32_t fb_idx);
+#endif
 
 // ---------------------------------------------------------------------------
 namespace android {
@@ -54,16 +55,18 @@ class FramebufferNativeWindow
         LightRefBase<FramebufferNativeWindow> >
 {
 public:
-    FramebufferNativeWindow(); 
+#ifdef OMAP_ENHANCEMENT
+    FramebufferNativeWindow(uint32_t idx);
+#endif
+    FramebufferNativeWindow();
+
 
     framebuffer_device_t const * getDevice() const { return fbDev; } 
 
     bool isUpdateOnDemand() const { return mUpdateOnDemand; }
     status_t setUpdateRectangle(const Rect& updateRect);
     status_t compositionComplete();
-
-    void dump(String8& result);
-
+    
     // for debugging only
     int getCurrentBufferIndex() const;
 
@@ -71,19 +74,19 @@ private:
     friend class LightRefBase<FramebufferNativeWindow>;    
     ~FramebufferNativeWindow(); // this class cannot be overloaded
     static int setSwapInterval(ANativeWindow* window, int interval);
-    static int dequeueBuffer(ANativeWindow* window, ANativeWindowBuffer** buffer);
-    static int lockBuffer(ANativeWindow* window, ANativeWindowBuffer* buffer);
-    static int queueBuffer(ANativeWindow* window, ANativeWindowBuffer* buffer);
-    static int query(const ANativeWindow* window, int what, int* value);
+    static int dequeueBuffer(ANativeWindow* window, android_native_buffer_t** buffer);
+    static int lockBuffer(ANativeWindow* window, android_native_buffer_t* buffer);
+    static int queueBuffer(ANativeWindow* window, android_native_buffer_t* buffer);
+    static int query(ANativeWindow* window, int what, int* value);
     static int perform(ANativeWindow* window, int operation, ...);
     
     framebuffer_device_t* fbDev;
     alloc_device_t* grDev;
 
-#ifdef QCOM_HARDWARE
-    sp<NativeBuffer> buffers[NUM_FRAMEBUFFERS_MAX];
+#ifdef OMAP_ENHANCEMENT
+    sp<NativeBuffer> buffers[NUM_FRAME_BUFFERS];
 #else
-     sp<NativeBuffer> buffers[NUM_FRAME_BUFFERS];
+    sp<NativeBuffer> buffers[2];
 #endif
     sp<NativeBuffer> front;
     
@@ -95,7 +98,7 @@ private:
     int32_t mCurrentBufferIndex;
     bool mUpdateOnDemand;
 };
-    
+
 // ---------------------------------------------------------------------------
 }; // namespace android
 // ---------------------------------------------------------------------------

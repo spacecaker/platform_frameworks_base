@@ -16,8 +16,6 @@
 
 package android.content;
 
-import dalvik.system.CloseGuard;
-
 import android.accounts.Account;
 import android.app.ActivityManagerNative;
 import android.app.ActivityThread;
@@ -26,7 +24,6 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.AssetFileDescriptor;
 import android.content.res.Resources;
 import android.database.ContentObserver;
-import android.database.CrossProcessCursorWrapper;
 import android.database.Cursor;
 import android.database.CursorWrapper;
 import android.database.IContentObserver;
@@ -36,9 +33,9 @@ import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.os.StrictMode;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.util.Config;
 import android.util.EventLog;
 import android.util.Log;
 
@@ -48,19 +45,13 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.ArrayList;
 
 
 /**
  * This class provides applications access to the content model.
- *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For more information about using a ContentResolver with content providers, read the
- * <a href="{@docRoot}guide/topics/providers/content-providers.html">Content Providers</a>
- * developer guide.</p>
  */
 public abstract class ContentResolver {
     /**
@@ -185,6 +176,11 @@ public abstract class ContentResolver {
     }
 
     /** @hide */
+    public final Context getContext() {
+        return mContext;
+    }
+
+    /** @hide */
     protected abstract IContentProvider acquireProvider(Context c, String name);
     /** Providing a default implementation of this, to avoid having to change
      * a lot of other things, but implementations of ContentResolver should
@@ -225,46 +221,10 @@ public abstract class ContentResolver {
             String type = ActivityManagerNative.getDefault().getProviderMimeType(url);
             return type;
         } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
             return null;
         } catch (java.lang.Exception e) {
             Log.w(TAG, "Failed to get type for: " + url + " (" + e.getMessage() + ")");
             return null;
-        }
-    }
-
-    /**
-     * Query for the possible MIME types for the representations the given
-     * content URL can be returned when opened as as stream with
-     * {@link #openTypedAssetFileDescriptor}.  Note that the types here are
-     * not necessarily a superset of the type returned by {@link #getType} --
-     * many content providers can not return a raw stream for the structured
-     * data that they contain.
-     *
-     * @param url A Uri identifying content (either a list or specific type),
-     * using the content:// scheme.
-     * @param mimeTypeFilter The desired MIME type.  This may be a pattern,
-     * such as *\/*, to query for all available MIME types that match the
-     * pattern.
-     * @return Returns an array of MIME type strings for all availablle
-     * data streams that match the given mimeTypeFilter.  If there are none,
-     * null is returned.
-     */
-    public String[] getStreamTypes(Uri url, String mimeTypeFilter) {
-        IContentProvider provider = acquireProvider(url);
-        if (provider == null) {
-            return null;
-        }
-
-        try {
-            return provider.getStreamTypes(url, mimeTypeFilter);
-        } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
-            return null;
-        } finally {
-            releaseProvider(provider);
         }
     }
 
@@ -321,11 +281,8 @@ public abstract class ContentResolver {
             return new CursorWrapperInner(qCursor, provider);
         } catch (RemoteException e) {
             releaseProvider(provider);
-
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
             return null;
-        } catch (RuntimeException e) {
+        } catch(RuntimeException e) {
             releaseProvider(provider);
             throw e;
         }
@@ -417,7 +374,7 @@ public abstract class ContentResolver {
     }
 
     /**
-     * Open a raw file descriptor to access data under a URI.  This
+     * Open a raw file descriptor to access data under a "content:" URI.  This
      * is like {@link #openAssetFileDescriptor(Uri, String)}, but uses the
      * underlying {@link ContentProvider#openFile}
      * ContentProvider.openFile()} method, so will <em>not</em> work with
@@ -467,9 +424,10 @@ public abstract class ContentResolver {
     }
 
     /**
-     * Open a raw file descriptor to access data under a URI.  This
+     * Open a raw file descriptor to access data under a "content:" URI.  This
      * interacts with the underlying {@link ContentProvider#openAssetFile}
-     * method of the provider associated with the given URI, to retrieve any file stored there.
+     * ContentProvider.openAssetFile()} method of the provider associated with the
+     * given URI, to retrieve any file stored there.
      *
      * <h5>Accepts the following URI schemes:</h5>
      * <ul>
@@ -501,11 +459,6 @@ public abstract class ContentResolver {
      * </li>
      * </ul>
      *
-     * <p>Note that if this function is called for read-only input (mode is "r")
-     * on a content: URI, it will instead call {@link #openTypedAssetFileDescriptor}
-     * for you with a MIME type of "*\/*".  This allows such callers to benefit
-     * from any built-in data conversion that a provider implements.
-     *
      * @param uri The desired URI to open.
      * @param mode The file mode to use, as per {@link ContentProvider#openAssetFile
      * ContentProvider.openAssetFile}.
@@ -532,99 +485,29 @@ public abstract class ContentResolver {
                     new File(uri.getPath()), modeToMode(uri, mode));
             return new AssetFileDescriptor(pfd, 0, -1);
         } else {
-            if ("r".equals(mode)) {
-                return openTypedAssetFileDescriptor(uri, "*/*", null);
-            } else {
-                IContentProvider provider = acquireProvider(uri);
-                if (provider == null) {
-                    throw new FileNotFoundException("No content provider: " + uri);
-                }
-                try {
-                    AssetFileDescriptor fd = provider.openAssetFile(uri, mode);
-                    if(fd == null) {
-                        // The provider will be released by the finally{} clause
-                        return null;
-                    }
-                    ParcelFileDescriptor pfd = new ParcelFileDescriptorInner(
-                            fd.getParcelFileDescriptor(), provider);
-
-                    // Success!  Don't release the provider when exiting, let
-                    // ParcelFileDescriptorInner do that when it is closed.
-                    provider = null;
-
-                    return new AssetFileDescriptor(pfd, fd.getStartOffset(),
-                            fd.getDeclaredLength());
-                } catch (RemoteException e) {
-                    // Somewhat pointless, as Activity Manager will kill this
-                    // process shortly anyway if the depdendent ContentProvider dies.
-                    throw new FileNotFoundException("Dead content provider: " + uri);
-                } catch (FileNotFoundException e) {
-                    throw e;
-                } finally {
-                    if (provider != null) {
-                        releaseProvider(provider);
-                    }
-                }
+            IContentProvider provider = acquireProvider(uri);
+            if (provider == null) {
+                throw new FileNotFoundException("No content provider: " + uri);
             }
-        }
-    }
-
-    /**
-     * Open a raw file descriptor to access (potentially type transformed)
-     * data from a "content:" URI.  This interacts with the underlying
-     * {@link ContentProvider#openTypedAssetFile} method of the provider
-     * associated with the given URI, to retrieve retrieve any appropriate
-     * data stream for the data stored there.
-     *
-     * <p>Unlike {@link #openAssetFileDescriptor}, this function only works
-     * with "content:" URIs, because content providers are the only facility
-     * with an associated MIME type to ensure that the returned data stream
-     * is of the desired type.
-     *
-     * <p>All text/* streams are encoded in UTF-8.
-     *
-     * @param uri The desired URI to open.
-     * @param mimeType The desired MIME type of the returned data.  This can
-     * be a pattern such as *\/*, which will allow the content provider to
-     * select a type, though there is no way for you to determine what type
-     * it is returning.
-     * @param opts Additional provider-dependent options.
-     * @return Returns a new ParcelFileDescriptor from which you can read the
-     * data stream from the provider.  Note that this may be a pipe, meaning
-     * you can't seek in it.  The only seek you should do is if the
-     * AssetFileDescriptor contains an offset, to move to that offset before
-     * reading.  You own this descriptor and are responsible for closing it when done.
-     * @throws FileNotFoundException Throws FileNotFoundException of no
-     * data of the desired type exists under the URI.
-     */
-    public final AssetFileDescriptor openTypedAssetFileDescriptor(Uri uri,
-            String mimeType, Bundle opts) throws FileNotFoundException {
-        IContentProvider provider = acquireProvider(uri);
-        if (provider == null) {
-            throw new FileNotFoundException("No content provider: " + uri);
-        }
-        try {
-            AssetFileDescriptor fd = provider.openTypedAssetFile(uri, mimeType, opts);
-            if (fd == null) {
-                // The provider will be released by the finally{} clause
-                return null;
-            }
-            ParcelFileDescriptor pfd = new ParcelFileDescriptorInner(
-                    fd.getParcelFileDescriptor(), provider);
-
-            // Success!  Don't release the provider when exiting, let
-            // ParcelFileDescriptorInner do that when it is closed.
-            provider = null;
-
-            return new AssetFileDescriptor(pfd, fd.getStartOffset(),
-                    fd.getDeclaredLength());
-        } catch (RemoteException e) {
-            throw new FileNotFoundException("Dead content provider: " + uri);
-        } catch (FileNotFoundException e) {
-            throw e;
-        } finally {
-            if (provider != null) {
+            try {
+                AssetFileDescriptor fd = provider.openAssetFile(uri, mode);
+                if(fd == null) {
+                    releaseProvider(provider);
+                    return null;
+                }
+                ParcelFileDescriptor pfd = new ParcelFileDescriptorInner(
+                        fd.getParcelFileDescriptor(), provider);
+                return new AssetFileDescriptor(pfd, fd.getStartOffset(),
+                        fd.getDeclaredLength());
+            } catch (RemoteException e) {
                 releaseProvider(provider);
+                throw new FileNotFoundException("Dead content provider: " + uri);
+            } catch (FileNotFoundException e) {
+                releaseProvider(provider);
+                throw e;
+            } catch (RuntimeException e) {
+                releaseProvider(provider);
+                throw e;
             }
         }
     }
@@ -732,8 +615,6 @@ public abstract class ContentResolver {
             maybeLogUpdateToEventLog(durationMillis, url, "insert", null /* where */);
             return createdRow;
         } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
             return null;
         } finally {
             releaseProvider(provider);
@@ -793,8 +674,6 @@ public abstract class ContentResolver {
             maybeLogUpdateToEventLog(durationMillis, url, "bulkinsert", null /* where */);
             return rowsCreated;
         } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
             return 0;
         } finally {
             releaseProvider(provider);
@@ -824,8 +703,6 @@ public abstract class ContentResolver {
             maybeLogUpdateToEventLog(durationMillis, url, "delete", where);
             return rowsDeleted;
         } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
             return -1;
         } finally {
             releaseProvider(provider);
@@ -842,7 +719,7 @@ public abstract class ContentResolver {
                      A null value will remove an existing field value.
      * @param where A filter to apply to rows before updating, formatted as an SQL WHERE clause
                     (excluding the WHERE itself).
-     * @return the number of rows updated.
+     * @return The number of rows updated.
      * @throws NullPointerException if uri or values are null
      */
     public final int update(Uri uri, ContentValues values, String where,
@@ -858,45 +735,7 @@ public abstract class ContentResolver {
             maybeLogUpdateToEventLog(durationMillis, uri, "update", where);
             return rowsUpdated;
         } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
             return -1;
-        } finally {
-            releaseProvider(provider);
-        }
-    }
-
-    /**
-     * Call an provider-defined method.  This can be used to implement
-     * read or write interfaces which are cheaper than using a Cursor and/or
-     * do not fit into the traditional table model.
-     *
-     * @param method provider-defined method name to call.  Opaque to
-     *   framework, but must be non-null.
-     * @param arg provider-defined String argument.  May be null.
-     * @param extras provider-defined Bundle argument.  May be null.
-     * @return a result Bundle, possibly null.  Will be null if the ContentProvider
-     *   does not implement call.
-     * @throws NullPointerException if uri or method is null
-     * @throws IllegalArgumentException if uri is not known
-     */
-    public final Bundle call(Uri uri, String method, String arg, Bundle extras) {
-        if (uri == null) {
-            throw new NullPointerException("uri == null");
-        }
-        if (method == null) {
-            throw new NullPointerException("method == null");
-        }
-        IContentProvider provider = acquireProvider(uri);
-        if (provider == null) {
-            throw new IllegalArgumentException("Unknown URI " + uri);
-        }
-        try {
-            return provider.call(method, arg, extras);
-        } catch (RemoteException e) {
-            // Arbitrary and not worth documenting, as Activity
-            // Manager will kill this process shortly anyway.
-            return null;
         } finally {
             releaseProvider(provider);
         }
@@ -1385,36 +1224,12 @@ public abstract class ContentResolver {
     }
 
     /**
-     * If a sync is active returns the information about it, otherwise returns null.
-     * <p>
+     * If a sync is active returns the information about it, otherwise returns false.
      * @return the SyncInfo for the currently active sync or null if one is not active.
-     * @deprecated
-     * Since multiple concurrent syncs are now supported you should use
-     * {@link #getCurrentSyncs()} to get the accurate list of current syncs.
-     * This method returns the first item from the list of current syncs
-     * or null if there are none.
      */
-    @Deprecated
     public static SyncInfo getCurrentSync() {
         try {
-            final List<SyncInfo> syncs = getContentService().getCurrentSyncs();
-            if (syncs.isEmpty()) {
-                return null;
-            }
-            return syncs.get(0);
-        } catch (RemoteException e) {
-            throw new RuntimeException("the ContentService should always be reachable", e);
-        }
-    }
-
-    /**
-     * Returns a list with information about all the active syncs. This list will be empty
-     * if there are no active syncs.
-     * @return a List of SyncInfo objects for the currently active syncs.
-     */
-    public static List<SyncInfo> getCurrentSyncs() {
-        try {
-            return getContentService().getCurrentSyncs();
+            return getContentService().getCurrentSync();
         } catch (RemoteException e) {
             throw new RuntimeException("the ContentService should always be reachable", e);
         }
@@ -1569,42 +1384,28 @@ public abstract class ContentResolver {
             samplePercent);
     }
 
-    private final class CursorWrapperInner extends CrossProcessCursorWrapper {
-        private final IContentProvider mContentProvider;
+    private final class CursorWrapperInner extends CursorWrapper {
+        private IContentProvider mContentProvider;
         public static final String TAG="CursorWrapperInner";
-
-        private final CloseGuard mCloseGuard = CloseGuard.get();
-        private boolean mProviderReleased;
+        private boolean mCloseFlag = false;
 
         CursorWrapperInner(Cursor cursor, IContentProvider icp) {
             super(cursor);
             mContentProvider = icp;
-            mCloseGuard.open("close");
         }
 
         @Override
         public void close() {
             super.close();
             ContentResolver.this.releaseProvider(mContentProvider);
-            mProviderReleased = true;
-
-            if (mCloseGuard != null) {
-                mCloseGuard.close();
-            }
+            mCloseFlag = true;
         }
 
         @Override
         protected void finalize() throws Throwable {
             try {
-                if (mCloseGuard != null) {
-                    mCloseGuard.warnIfOpen();
-                }
-
-                if (!mProviderReleased && mContentProvider != null) {
-                    // Even though we are using CloseGuard, log this anyway so that
-                    // application developers always see the message in the log.
-                    Log.w(TAG, "Cursor finalized without prior close()");
-                    ContentResolver.this.releaseProvider(mContentProvider);
+                if(!mCloseFlag) {
+                    this.close();
                 }
             } finally {
                 super.finalize();
@@ -1613,7 +1414,7 @@ public abstract class ContentResolver {
     }
 
     private final class ParcelFileDescriptorInner extends ParcelFileDescriptor {
-        private final IContentProvider mContentProvider;
+        private IContentProvider mContentProvider;
         public static final String TAG="ParcelFileDescriptorInner";
         private boolean mReleaseProviderFlag = false;
 
@@ -1648,9 +1449,9 @@ public abstract class ContentResolver {
             return sContentService;
         }
         IBinder b = ServiceManager.getService(CONTENT_SERVICE_NAME);
-        if (false) Log.v("ContentService", "default service binder = " + b);
+        if (Config.LOGV) Log.v("ContentService", "default service binder = " + b);
         sContentService = IContentService.Stub.asInterface(b);
-        if (false) Log.v("ContentService", "default service = " + sContentService);
+        if (Config.LOGV) Log.v("ContentService", "default service = " + sContentService);
         return sContentService;
     }
 

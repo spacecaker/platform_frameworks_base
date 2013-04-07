@@ -16,7 +16,12 @@
 
 package android.preference;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -28,10 +33,6 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.XmlResourceParser;
 import android.os.Bundle;
 import android.util.Log;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
 
 /**
  * Used to help create {@link Preference} hierarchies
@@ -58,11 +59,6 @@ public class PreferenceManager {
      * @see #getActivity()
      */
     private Activity mActivity;
-
-    /**
-     * Fragment that owns this instance.
-     */
-    private PreferenceFragment mFragment;
 
     /**
      * The context to use. This should always be set.
@@ -162,21 +158,7 @@ public class PreferenceManager {
         
         setSharedPreferencesName(getDefaultSharedPreferencesName(context));
     }
-
-    /**
-     * Sets the owning preference fragment
-     */
-    void setFragment(PreferenceFragment fragment) {
-        mFragment = fragment;
-    }
-
-    /**
-     * Returns the owning preference fragment, if any.
-     */
-    PreferenceFragment getFragment() {
-        return mFragment;
-    }
-
+    
     /**
      * Returns a list of {@link Activity} (indirectly) that match a given
      * {@link Intent}.

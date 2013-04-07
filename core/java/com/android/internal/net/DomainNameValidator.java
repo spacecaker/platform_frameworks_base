@@ -15,10 +15,12 @@
  */
 package com.android.internal.net;
 
-import android.net.NetworkUtils;
+
+import android.util.Config;
 import android.util.Log;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
@@ -34,7 +36,14 @@ public class DomainNameValidator {
     private final static String TAG = "DomainNameValidator";
 
     private static final boolean DEBUG = false;
-    private static final boolean LOG_ENABLED = false;
+    private static final boolean LOG_ENABLED = DEBUG ? Config.LOGD : Config.LOGV;
+
+    private static Pattern QUICK_IP_PATTERN;
+    static {
+        try {
+            QUICK_IP_PATTERN = Pattern.compile("^[a-f0-9\\.:]+$");
+        } catch (PatternSyntaxException e) {}
+    }
 
     private static final int ALT_DNS_NAME = 2;
     private static final int ALT_IPA_NAME = 7;
@@ -66,11 +75,19 @@ public class DomainNameValidator {
         if (rval) {
             try {
                 // do a quick-dirty IP match first to avoid DNS lookup
-                rval = domain.equals(
-                        NetworkUtils.numericToInetAddress(domain).getHostAddress());
-            } catch (IllegalArgumentException e) {
+                rval = QUICK_IP_PATTERN.matcher(domain).matches();
+                if (rval) {
+                    rval = domain.equals(
+                        InetAddress.getByName(domain).getHostAddress());
+                }
+            } catch (UnknownHostException e) {
+                String errorMessage = e.getMessage();
+                if (errorMessage == null) {
+                  errorMessage = "unknown host exception";
+                }
+
                 if (LOG_ENABLED) {
-                    Log.v(TAG, "DomainNameValidator.isIpAddress(): " + e);
+                    Log.v(TAG, "DomainNameValidator.isIpAddress(): " + errorMessage);
                 }
 
                 rval = false;

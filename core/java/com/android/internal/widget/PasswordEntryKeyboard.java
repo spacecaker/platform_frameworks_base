@@ -20,9 +20,16 @@ import java.util.Locale;
 import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.Paint.Align;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.Keyboard;
 import android.inputmethodservice.KeyboardView;
+import android.util.Log;
 import com.android.internal.R;
 
 /**
@@ -33,6 +40,7 @@ import com.android.internal.R;
  * keypad with alpha characters hints.
  */
 public class PasswordEntryKeyboard extends Keyboard {
+    private static final String TAG = "PasswordEntryKeyboard";
     private static final int SHIFT_OFF = 0;
     private static final int SHIFT_ON = 1;
     private static final int SHIFT_LOCKED = 2;
@@ -40,14 +48,17 @@ public class PasswordEntryKeyboard extends Keyboard {
 
     private Drawable mShiftIcon;
     private Drawable mShiftLockIcon;
-
-    // These two arrays must be the same length
-    private Drawable[] mOldShiftIcons = { null, null };
-    private Key[] mShiftKeys = { null, null };
-
+    private Drawable mShiftLockPreviewIcon;
+    private Drawable mOldShiftIcon;
+    private Drawable mOldShiftPreviewIcon;
+    private Drawable mSpaceIcon;
+    private Key mShiftKey;
     private Key mEnterKey;
     private Key mF1Key;
     private Key mSpaceKey;
+    private Locale mLocale;
+    private Resources mRes;
+    private int mExtensionResId;
     private int mShiftState = SHIFT_OFF;
 
     static int sSpacebarVerticalCorrection;
@@ -56,25 +67,17 @@ public class PasswordEntryKeyboard extends Keyboard {
         this(context, xmlLayoutResId, 0);
     }
 
-    public PasswordEntryKeyboard(Context context, int xmlLayoutResId, int width, int height) {
-        this(context, xmlLayoutResId, 0, width, height);
-    }
-
     public PasswordEntryKeyboard(Context context, int xmlLayoutResId, int mode) {
         super(context, xmlLayoutResId, mode);
-        init(context);
-    }
-
-    public PasswordEntryKeyboard(Context context, int xmlLayoutResId, int mode,
-            int width, int height) {
-        super(context, xmlLayoutResId, mode, width, height);
-        init(context);
-    }
-
-    private void init(Context context) {
         final Resources res = context.getResources();
+        mRes = res;
         mShiftIcon = res.getDrawable(R.drawable.sym_keyboard_shift);
         mShiftLockIcon = res.getDrawable(R.drawable.sym_keyboard_shift_locked);
+        mShiftLockPreviewIcon = res.getDrawable(R.drawable.sym_keyboard_feedback_shift_locked);
+        mShiftLockPreviewIcon.setBounds(0, 0,
+                mShiftLockPreviewIcon.getIntrinsicWidth(),
+                mShiftLockPreviewIcon.getIntrinsicHeight());
+        mSpaceIcon = res.getDrawable(R.drawable.sym_keyboard_space);
         sSpacebarVerticalCorrection = res.getDimensionPixelOffset(
                 R.dimen.password_keyboard_spacebar_vertical_correction);
     }
@@ -140,16 +143,14 @@ public class PasswordEntryKeyboard extends Keyboard {
      *
      */
     void enableShiftLock() {
-        int i = 0;
-        for (int index : getShiftKeyIndices()) {
-            if (index >= 0 && i < mShiftKeys.length) {
-                mShiftKeys[i] = getKeys().get(index);
-                if (mShiftKeys[i] instanceof LatinKey) {
-                    ((LatinKey)mShiftKeys[i]).enableShiftLock();
-                }
-                mOldShiftIcons[i] = mShiftKeys[i].icon;
-                i++;
+        int index = getShiftKeyIndex();
+        if (index >= 0) {
+            mShiftKey = getKeys().get(index);
+            if (mShiftKey instanceof LatinKey) {
+                ((LatinKey)mShiftKey).enableShiftLock();
             }
+            mOldShiftIcon = mShiftKey.icon;
+            mOldShiftPreviewIcon = mShiftKey.iconPreview;
         }
     }
 
@@ -161,13 +162,17 @@ public class PasswordEntryKeyboard extends Keyboard {
      * @param shiftLocked
      */
     void setShiftLocked(boolean shiftLocked) {
-        for (Key shiftKey : mShiftKeys) {
-            if (shiftKey != null) {
-                shiftKey.on = shiftLocked;
-                shiftKey.icon = mShiftLockIcon;
+        if (mShiftKey != null) {
+            if (shiftLocked) {
+                mShiftKey.on = true;
+                mShiftKey.icon = mShiftLockIcon;
+                mShiftState = SHIFT_LOCKED;
+            } else {
+                mShiftKey.on = false;
+                mShiftKey.icon = mShiftLockIcon;
+                mShiftState = SHIFT_ON;
             }
         }
-        mShiftState = shiftLocked ? SHIFT_LOCKED : SHIFT_ON;
     }
 
     /**
@@ -180,25 +185,20 @@ public class PasswordEntryKeyboard extends Keyboard {
     @Override
     public boolean setShifted(boolean shiftState) {
         boolean shiftChanged = false;
-        if (shiftState == false) {
-            shiftChanged = mShiftState != SHIFT_OFF;
-            mShiftState = SHIFT_OFF;
-        } else if (mShiftState == SHIFT_OFF) {
-            shiftChanged = mShiftState == SHIFT_OFF;
-            mShiftState = SHIFT_ON;
-        }
-        for (int i = 0; i < mShiftKeys.length; i++) {
-            if (mShiftKeys[i] != null) {
-                if (shiftState == false) {
-                    mShiftKeys[i].on = false;
-                    mShiftKeys[i].icon = mOldShiftIcons[i];
-                } else if (mShiftState == SHIFT_OFF) {
-                    mShiftKeys[i].on = false;
-                    mShiftKeys[i].icon = mShiftIcon;
-                }
-            } else {
-                // return super.setShifted(shiftState);
+        if (mShiftKey != null) {
+            if (shiftState == false) {
+                shiftChanged = mShiftState != SHIFT_OFF;
+                mShiftState = SHIFT_OFF;
+                mShiftKey.on = false;
+                mShiftKey.icon = mOldShiftIcon;
+            } else if (mShiftState == SHIFT_OFF) {
+                shiftChanged = mShiftState == SHIFT_OFF;
+                mShiftState = SHIFT_ON;
+                mShiftKey.on = false;
+                mShiftKey.icon = mShiftIcon;
             }
+        } else {
+            return super.setShifted(shiftState);
         }
         return shiftChanged;
     }
@@ -209,7 +209,7 @@ public class PasswordEntryKeyboard extends Keyboard {
      */
     @Override
     public boolean isShifted() {
-        if (mShiftKeys[0] != null) {
+        if (mShiftKey != null) {
             return mShiftState != SHIFT_OFF;
         } else {
             return super.isShifted();

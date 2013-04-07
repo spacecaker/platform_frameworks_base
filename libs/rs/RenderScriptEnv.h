@@ -9,10 +9,12 @@ typedef void * RsDevice;
 typedef void * RsElement;
 typedef void * RsSampler;
 typedef void * RsScript;
-typedef void * RsMesh;
+typedef void * RsSimpleMesh;
 typedef void * RsType;
 typedef void * RsProgramFragment;
-typedef void * RsProgramStore;
+typedef void * RsProgramFragmentStore;
+typedef void * RsLight;
+
 
 typedef struct {
     float m[16];
@@ -26,4 +28,4 @@ typedef struct {
 #define RS_PROGRAM_VERTEX_MODELVIEW_OFFSET 0
 #define RS_PROGRAM_VERTEX_PROJECTION_OFFSET 16
 #define RS_PROGRAM_VERTEX_TEXTURE_OFFSET 32
-#define RS_PROGRAM_VERTEX_MVP_OFFSET 48
+

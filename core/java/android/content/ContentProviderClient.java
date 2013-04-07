@@ -18,7 +18,6 @@ package android.content;
 
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ParcelFileDescriptor;
 import android.content.res.AssetFileDescriptor;
@@ -44,77 +43,53 @@ public class ContentProviderClient {
         mContentResolver = contentResolver;
     }
 
-    /** See {@link ContentProvider#query ContentProvider.query} */
+    /** see {@link ContentProvider#query} */
     public Cursor query(Uri url, String[] projection, String selection,
             String[] selectionArgs, String sortOrder) throws RemoteException {
         return mContentProvider.query(url, projection, selection,  selectionArgs, sortOrder);
     }
 
-    /** See {@link ContentProvider#getType ContentProvider.getType} */
+    /** see {@link ContentProvider#getType} */
     public String getType(Uri url) throws RemoteException {
         return mContentProvider.getType(url);
     }
 
-    /** See {@link ContentProvider#getStreamTypes ContentProvider.getStreamTypes} */
-    public String[] getStreamTypes(Uri url, String mimeTypeFilter) throws RemoteException {
-        return mContentProvider.getStreamTypes(url, mimeTypeFilter);
-    }
-
-    /** See {@link ContentProvider#insert ContentProvider.insert} */
+    /** see {@link ContentProvider#insert} */
     public Uri insert(Uri url, ContentValues initialValues)
             throws RemoteException {
         return mContentProvider.insert(url, initialValues);
     }
 
-    /** See {@link ContentProvider#bulkInsert ContentProvider.bulkInsert} */
+    /** see {@link ContentProvider#bulkInsert} */
     public int bulkInsert(Uri url, ContentValues[] initialValues) throws RemoteException {
         return mContentProvider.bulkInsert(url, initialValues);
     }
 
-    /** See {@link ContentProvider#delete ContentProvider.delete} */
+    /** see {@link ContentProvider#delete} */
     public int delete(Uri url, String selection, String[] selectionArgs)
             throws RemoteException {
         return mContentProvider.delete(url, selection, selectionArgs);
     }
 
-    /** See {@link ContentProvider#update ContentProvider.update} */
+    /** see {@link ContentProvider#update} */
     public int update(Uri url, ContentValues values, String selection,
             String[] selectionArgs) throws RemoteException {
         return mContentProvider.update(url, values, selection, selectionArgs);
     }
 
-    /**
-     * See {@link ContentProvider#openFile ContentProvider.openFile}.  Note that
-     * this <em>does not</em>
-     * take care of non-content: URIs such as file:.  It is strongly recommended
-     * you use the {@link ContentResolver#openFileDescriptor
-     * ContentResolver.openFileDescriptor} API instead.
-     */
+    /** see {@link ContentProvider#openFile} */
     public ParcelFileDescriptor openFile(Uri url, String mode)
             throws RemoteException, FileNotFoundException {
         return mContentProvider.openFile(url, mode);
     }
 
-    /**
-     * See {@link ContentProvider#openAssetFile ContentProvider.openAssetFile}.
-     * Note that this <em>does not</em>
-     * take care of non-content: URIs such as file:.  It is strongly recommended
-     * you use the {@link ContentResolver#openAssetFileDescriptor
-     * ContentResolver.openAssetFileDescriptor} API instead.
-     */
+    /** see {@link ContentProvider#openAssetFile} */
     public AssetFileDescriptor openAssetFile(Uri url, String mode)
             throws RemoteException, FileNotFoundException {
         return mContentProvider.openAssetFile(url, mode);
     }
 
-    /** See {@link ContentProvider#openTypedAssetFile ContentProvider.openTypedAssetFile} */
-    public final AssetFileDescriptor openTypedAssetFileDescriptor(Uri uri,
-            String mimeType, Bundle opts)
-            throws RemoteException, FileNotFoundException {
-        return mContentProvider.openTypedAssetFile(uri, mimeType, opts);
-    }
-
-    /** See {@link ContentProvider#applyBatch ContentProvider.applyBatch} */
+     /** see {@link ContentProvider#applyBatch} */
     public ContentProviderResult[] applyBatch(ArrayList<ContentProviderOperation> operations)
             throws RemoteException, OperationApplicationException {
         return mContentProvider.applyBatch(operations);

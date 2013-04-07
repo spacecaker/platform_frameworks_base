@@ -24,7 +24,7 @@ import com.android.internal.util.ArrayUtils;
  * there can be gaps in the indices.  It is intended to be more efficient
  * than using a HashMap to map Integers to Booleans.
  */
-public class SparseBooleanArray implements Cloneable {
+public class SparseBooleanArray {
     /**
      * Creates a new SparseBooleanArray containing no mappings.
      */
@@ -43,19 +43,6 @@ public class SparseBooleanArray implements Cloneable {
         mKeys = new int[initialCapacity];
         mValues = new boolean[initialCapacity];
         mSize = 0;
-    }
-
-    @Override
-    public SparseBooleanArray clone() {
-        SparseBooleanArray clone = null;
-        try {
-            clone = (SparseBooleanArray) super.clone();
-            clone.mKeys = mKeys.clone();
-            clone.mValues = mValues.clone();
-        } catch (CloneNotSupportedException cnse) {
-            /* ignore */
-        }
-        return clone;
     }
 
     /**
@@ -238,6 +225,18 @@ public class SparseBooleanArray implements Cloneable {
             return high;
         else
             return ~high;
+    }
+
+    private void checkIntegrity() {
+        for (int i = 1; i < mSize; i++) {
+            if (mKeys[i] <= mKeys[i - 1]) {
+                for (int j = 0; j < mSize; j++) {
+                    Log.e("FAIL", j + ": " + mKeys[j] + " -> " + mValues[j]);
+                }
+
+                throw new RuntimeException();
+            }
+        }
     }
 
     private int[] mKeys;

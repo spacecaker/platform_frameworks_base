@@ -79,13 +79,7 @@ void ABitReader::skipBits(size_t n) {
 }
 
 void ABitReader::putBits(uint32_t x, size_t n) {
-    CHECK_LE(n, 32u);
-
-    while (mNumBitsLeft + n > 32) {
-        mNumBitsLeft -= 8;
-        --mData;
-        ++mSize;
-    }
+    CHECK_LE(mNumBitsLeft + n, 32u);
 
     mReservoir = (mReservoir >> n) | (x << (32 - n));
     mNumBitsLeft += n;
@@ -96,7 +90,9 @@ size_t ABitReader::numBitsLeft() const {
 }
 
 const uint8_t *ABitReader::data() const {
-    return mData - (mNumBitsLeft + 7) / 8;
+    CHECK_EQ(mNumBitsLeft % 8, 0u);
+
+    return mData - mNumBitsLeft / 8;
 }
 
 }  // namespace android

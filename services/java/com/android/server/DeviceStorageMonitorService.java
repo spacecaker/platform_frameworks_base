@@ -16,9 +16,13 @@
 
 package com.android.server;
 
+import com.android.internal.app.ThemeUtils;
+import com.android.server.am.ActivityManagerService;
+
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -34,8 +38,10 @@ import android.os.StatFs;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
+import android.util.Config;
 import android.util.EventLog;
 import android.util.Slog;
+import android.provider.Settings;
 
 /**
  * This class implements a service to monitor the amount of disk
@@ -55,31 +61,31 @@ import android.util.Slog;
  * settings parameter with a default value of 2MB), the free memory is
  * logged to the event log.
  */
-public class DeviceStorageMonitorService extends Binder {
+class DeviceStorageMonitorService extends Binder {
     private static final String TAG = "DeviceStorageMonitorService";
     private static final boolean DEBUG = false;
-    private static final boolean localLOGV = false;
+    private static final boolean localLOGV = DEBUG ? Config.LOGD : Config.LOGV;
     private static final int DEVICE_MEMORY_WHAT = 1;
     private static final int MONITOR_INTERVAL = 1; //in minutes
     private static final int LOW_MEMORY_NOTIFICATION_ID = 1;
     private static final int DEFAULT_THRESHOLD_PERCENTAGE = 10;
-    private static final int DEFAULT_THRESHOLD_MAX_BYTES = 500*1024*1024; // 500MB
     private static final int DEFAULT_FREE_STORAGE_LOG_INTERVAL_IN_MINUTES = 12*60; //in minutes
     private static final long DEFAULT_DISK_FREE_CHANGE_REPORTING_THRESHOLD = 2 * 1024 * 1024; // 2MB
     private static final long DEFAULT_CHECK_INTERVAL = MONITOR_INTERVAL*60*1000;
     private static final int DEFAULT_FULL_THRESHOLD_BYTES = 1024*1024; // 1MB
-    private long mFreeMem;  // on /data
+    private long mFreeMem;  // on /data/data
     private long mLastReportedFreeMem;
     private long mLastReportedFreeMemTime;
     private boolean mLowMemFlag=false;
     private boolean mMemFullFlag=false;
     private Context mContext;
+    private Context mUiContext;
     private ContentResolver mContentResolver;
-    private long mTotalMemory;  // on /data
+    private long mTotalMemory;  // on /data/data
     private StatFs mDataFileStats;
     private StatFs mSystemFileStats;
     private StatFs mCacheFileStats;
-    private static final String DATA_PATH = "/data";
+    private static final String DATA_PATH = "/data/data"; // might not be the same fs as /data
     private static final String SYSTEM_PATH = "/system";
     private static final String CACHE_PATH = "/cache";
     private long mThreadStartTime = -1;
@@ -98,7 +104,7 @@ public class DeviceStorageMonitorService extends Binder {
     /**
      * This string is used for ServiceManager access to this class.
      */
-    public static final String SERVICE = "devicestoragemonitor";
+    static final String SERVICE = "devicestoragemonitor";
 
     /**
     * Handler that checks the amount of disk space on the device and sends a
@@ -163,6 +169,7 @@ public class DeviceStorageMonitorService extends Binder {
             } catch (IllegalArgumentException e) {
                 // ignore; report -1
             }
+            mCacheFileStats.restat(CACHE_PATH);
             EventLog.writeEvent(EventLogTags.FREE_STORAGE_LEFT,
                                 mFreeMem, mFreeSystem, mFreeCache);
         }
@@ -268,18 +275,13 @@ public class DeviceStorageMonitorService extends Binder {
      * any way
      */
     private long getMemThreshold() {
-        long value = Settings.Secure.getInt(
+        int value = Settings.Secure.getInt(
                               mContentResolver,
                               Settings.Secure.SYS_STORAGE_THRESHOLD_PERCENTAGE,
                               DEFAULT_THRESHOLD_PERCENTAGE);
         if(localLOGV) Slog.v(TAG, "Threshold Percentage="+value);
-        value *= mTotalMemory;
-        long maxValue = Settings.Secure.getInt(
-                mContentResolver,
-                Settings.Secure.SYS_STORAGE_THRESHOLD_MAX_BYTES,
-                DEFAULT_THRESHOLD_MAX_BYTES);
         //evaluate threshold value
-        return value < maxValue ? value : maxValue;
+        return mTotalMemory*value;
     }
 
     /*
@@ -304,6 +306,14 @@ public class DeviceStorageMonitorService extends Binder {
         mLastReportedFreeMemTime = 0;
         mContext = context;
         mContentResolver = mContext.getContentResolver();
+
+        ThemeUtils.registerThemeChangeReceiver(mContext, new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context content, Intent intent) {
+                mUiContext = null;
+            }
+        });
+
         //create StatFs object
         mDataFileStats = new StatFs(DATA_PATH);
         mSystemFileStats = new StatFs(SYSTEM_PATH);
@@ -351,7 +361,7 @@ public class DeviceStorageMonitorService extends Binder {
         notification.icon = com.android.internal.R.drawable.stat_notify_disk_full;
         notification.tickerText = title;
         notification.flags |= Notification.FLAG_NO_CLEAR;
-        notification.setLatestEventInfo(mContext, title, details, intent);
+        notification.setLatestEventInfo(getUiContext(), title, details, intent);
         mNotificationMgr.notify(LOW_MEMORY_NOTIFICATION_ID, notification);
         mContext.sendStickyBroadcast(mStorageLowIntent);
     }
@@ -397,23 +407,10 @@ public class DeviceStorageMonitorService extends Binder {
         postCheckMemoryMsg(true, 0);
     }
 
-    /**
-     * Callable from other things in the system service to obtain the low memory
-     * threshold.
-     * 
-     * @return low memory threshold in bytes
-     */
-    public long getMemoryLowThreshold() {
-        return mMemLowThreshold;
-    }
-
-    /**
-     * Callable from other things in the system process to check whether memory
-     * is low.
-     * 
-     * @return true is memory is low
-     */
-    public boolean isMemoryLow() {
-        return mLowMemFlag;
+    private Context getUiContext() {
+        if (mUiContext == null) {
+            mUiContext = ThemeUtils.createUiContext(mContext);
+        }
+        return mUiContext != null ? mUiContext : mContext;
     }
 }

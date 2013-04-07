@@ -1,3 +1,4 @@
+ifneq ($(TARGET_SIMULATOR),true)
 LOCAL_PATH:= $(call my-dir)
 
 #include $(CLEAR_VARS)
@@ -12,4 +13,8 @@ LOCAL_MODULE := servicemanager
 ifeq ($(BOARD_USE_LVMX),true)
     LOCAL_CFLAGS += -DLVMX
 endif
+ifeq ($(BOARD_USE_YAMAHAPLAYER),true)
+    LOCAL_CFLAGS += -DYAMAHAPLAYER
+endif
 include $(BUILD_EXECUTABLE)
+endif

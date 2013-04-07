@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2012 The Android Open Source Project
+ * Copyright (C) 2007 The Android Open Source Project
+ * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,36 +25,55 @@
 #include <binder/IInterface.h>
 #include <utils/RefBase.h>
 #include <utils/threads.h>
-#include <hardware/gralloc.h>
 
 #include <ui/PixelFormat.h>
+#include <ui/IOverlay.h>
+
+#include <hardware/overlay.h>
 
 namespace android {
 
-typedef void* overlay_buffer_t;
-typedef uint32_t overlay_handle_t;
+class IMemory;
+class IMemoryHeap;
+
+// ----------------------------------------------------------------------------
+
+class OverlayRef : public LightRefBase<OverlayRef>
+{
+public:
+    OverlayRef(overlay_handle_t, const sp<IOverlay>&,
+            uint32_t w, uint32_t h, int32_t f, uint32_t ws, uint32_t hs);
+
+    static sp<OverlayRef> readFromParcel(const Parcel& data);
+    static status_t writeToParcel(Parcel* reply, const sp<OverlayRef>& o);    
+
+private:
+    friend class LightRefBase<OverlayRef>;
+    friend class Overlay;
+
+    OverlayRef();
+    virtual ~OverlayRef();
+
+    overlay_handle_t mOverlayHandle;
+    sp<IOverlay> mOverlayChannel;
+    uint32_t mWidth;
+    uint32_t mHeight;
+    int32_t  mFormat;
+    int32_t  mWidthStride;
+    int32_t  mHeightStride;
+    bool mOwnHandle;
+};
+
+// ----------------------------------------------------------------------------
 
 class Overlay : public virtual RefBase
 {
 public:
-    typedef void (*QueueBufferHook)(void *data, void* buffer, size_t size);
-
-    enum Format {
-        FORMAT_YUV422SP,
-        FORMAT_YUV420SP,
-        FORMAT_YUV422I,
-        FORMAT_YUV420P,
-        FORMAT_RGB565,
-        FORMAT_RGBA8888,
-        FORMAT_UNKNOWN
-    };
-
-public:
-    Overlay(uint32_t width, uint32_t height, Format format, QueueBufferHook queueBuffer, void* data);
+    Overlay(const sp<OverlayRef>& overlayRef);
 
     /* destroys this overlay */
     void destroy();
-
+    
     /* get the HAL handle for this overlay */
     overlay_handle_t getHandleRef() const;
 
@@ -68,6 +88,9 @@ public:
 
     status_t setCrop(uint32_t x, uint32_t y, uint32_t w, uint32_t h) ;
 
+#ifdef OMAP_ENHANCEMENT
+    status_t set_s3d_params(int32_t s3d_mode, uint32_t s3d_fmt, uint32_t s3d_order, uint32_t s3d_subsampling);
+#endif
     status_t getCrop(uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h) ;
 
     /* set the buffer attributes */
@@ -85,40 +108,13 @@ public:
     int32_t getHeightStride() const;
     int32_t getBufferCount() const;
     status_t getStatus() const;
-
-public:
-    static int getBppFromFormat(Format format);
-    static Format getFormatFromString(const char* name);
-
+    
 private:
     virtual ~Overlay();
 
-    // C style hook
-    QueueBufferHook mQueueBufferHook;
-    void* mHookData;
-
-    // overlay data
-    static const uint32_t NUM_BUFFERS = 8;
-    static const uint32_t NUM_MIN_FREE_BUFFERS = 2;
-    uint32_t mNumFreeBuffers;
-
+    sp<OverlayRef> mOverlayRef;
+    overlay_data_device_t *mOverlayData;
     status_t mStatus;
-    uint32_t mWidth, mHeight;
-    Format mFormat;
-
-    // ashmem region
-    struct MappingData {
-        int fd;
-        size_t length;
-        uint32_t offset;
-        void *ptr;
-    };
-
-    MappingData mBuffers[NUM_BUFFERS];
-    bool mQueued[NUM_BUFFERS]; // true if buffer is currently queued
-
-    // queue/dequeue mutex
-    pthread_mutex_t mQueueMutex;
 };
 
 // ----------------------------------------------------------------------------

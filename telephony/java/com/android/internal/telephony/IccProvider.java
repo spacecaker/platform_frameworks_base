@@ -19,19 +19,165 @@ package com.android.internal.telephony;
 import android.content.ContentProvider;
 import android.content.UriMatcher;
 import android.content.ContentValues;
+import android.database.AbstractCursor;
 import android.database.Cursor;
-import android.database.MatrixCursor;
+import android.database.CursorWindow;
 import android.net.Uri;
+import android.os.SystemProperties;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.android.internal.telephony.IccConstants;
 import com.android.internal.telephony.AdnRecord;
 import com.android.internal.telephony.IIccPhoneBook;
+
+/**
+ * XXX old code -- should be replaced with MatrixCursor.
+ * @deprecated This is has been replaced by MatrixCursor.
+*/
+class ArrayListCursor extends AbstractCursor {
+    private String[] mColumnNames;
+    private ArrayList<Object>[] mRows;
+
+    @SuppressWarnings({"unchecked"})
+    public ArrayListCursor(String[] columnNames, ArrayList<ArrayList> rows) {
+        int colCount = columnNames.length;
+        boolean foundID = false;
+        // Add an _id column if not in columnNames
+        for (int i = 0; i < colCount; ++i) {
+            if (columnNames[i].compareToIgnoreCase("_id") == 0) {
+                mColumnNames = columnNames;
+                foundID = true;
+                break;
+            }
+        }
+
+        if (!foundID) {
+            mColumnNames = new String[colCount + 1];
+            System.arraycopy(columnNames, 0, mColumnNames, 0, columnNames.length);
+            mColumnNames[colCount] = "_id";
+        }
+
+        int rowCount = rows.size();
+        mRows = new ArrayList[rowCount];
+
+        for (int i = 0; i < rowCount; ++i) {
+            mRows[i] = rows.get(i);
+            if (!foundID) {
+                mRows[i].add(i);
+            }
+        }
+    }
+
+    @Override
+    public void fillWindow(int position, CursorWindow window) {
+        if (position < 0 || position > getCount()) {
+            return;
+        }
+
+        window.acquireReference();
+        try {
+            int oldpos = mPos;
+            mPos = position - 1;
+            window.clear();
+            window.setStartPosition(position);
+            int columnNum = getColumnCount();
+            window.setNumColumns(columnNum);
+            while (moveToNext() && window.allocRow()) {
+                for (int i = 0; i < columnNum; i++) {
+                    final Object data = mRows[mPos].get(i);
+                    if (data != null) {
+                        if (data instanceof byte[]) {
+                            byte[] field = (byte[]) data;
+                            if (!window.putBlob(field, mPos, i)) {
+                                window.freeLastRow();
+                                break;
+                            }
+                        } else {
+                            String field = data.toString();
+                            if (!window.putString(field, mPos, i)) {
+                                window.freeLastRow();
+                                break;
+                            }
+                        }
+                    } else {
+                        if (!window.putNull(mPos, i)) {
+                            window.freeLastRow();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            mPos = oldpos;
+        } catch (IllegalStateException e){
+            // simply ignore it
+        } finally {
+            window.releaseReference();
+        }
+    }
+
+    @Override
+    public int getCount() {
+        return mRows.length;
+    }
+
+    @Override
+    public String[] getColumnNames() {
+        return mColumnNames;
+    }
+
+    @Override
+    public byte[] getBlob(int columnIndex) {
+        return (byte[]) mRows[mPos].get(columnIndex);
+    }
+
+    @Override
+    public String getString(int columnIndex) {
+        Object cell = mRows[mPos].get(columnIndex);
+        return (cell == null) ? null : cell.toString();
+    }
+
+    @Override
+    public short getShort(int columnIndex) {
+        Number num = (Number) mRows[mPos].get(columnIndex);
+        return num.shortValue();
+    }
+
+    @Override
+    public int getInt(int columnIndex) {
+        Number num = (Number) mRows[mPos].get(columnIndex);
+        return num.intValue();
+    }
+
+    @Override
+    public long getLong(int columnIndex) {
+        Number num = (Number) mRows[mPos].get(columnIndex);
+        return num.longValue();
+    }
+
+    @Override
+    public float getFloat(int columnIndex) {
+        Number num = (Number) mRows[mPos].get(columnIndex);
+        return num.floatValue();
+    }
+
+    @Override
+    public double getDouble(int columnIndex) {
+        Number num = (Number) mRows[mPos].get(columnIndex);
+        return num.doubleValue();
+    }
+
+    @Override
+    public boolean isNull(int columnIndex) {
+        return mRows[mPos].get(columnIndex) == null;
+    }
+}
 
 
 /**
@@ -45,8 +191,7 @@ public class IccProvider extends ContentProvider {
     private static final String[] ADDRESS_BOOK_COLUMN_NAMES = new String[] {
         "name",
         "number",
-        "emails",
-        "_id"
+        "emails"
     };
 
     private static final int ADN = 1;
@@ -68,27 +213,70 @@ public class IccProvider extends ContentProvider {
     }
 
 
+    private boolean mSimulator;
+
     @Override
     public boolean onCreate() {
+        String device = SystemProperties.get("ro.product.device");
+        if (!TextUtils.isEmpty(device)) {
+            mSimulator = false;
+        } else {
+            // simulator
+            mSimulator = true;
+        }
+
         return true;
     }
 
     @Override
     public Cursor query(Uri url, String[] projection, String selection,
             String[] selectionArgs, String sort) {
-        switch (URL_MATCHER.match(url)) {
-            case ADN:
-                return loadFromEf(IccConstants.EF_ADN);
+        ArrayList<ArrayList> results;
 
-            case FDN:
-                return loadFromEf(IccConstants.EF_FDN);
+        if (!mSimulator) {
+            switch (URL_MATCHER.match(url)) {
+                case ADN:
+                    results = loadFromEf(IccConstants.EF_ADN);
+                    break;
 
-            case SDN:
-                return loadFromEf(IccConstants.EF_SDN);
+                case FDN:
+                    results = loadFromEf(IccConstants.EF_FDN);
+                    break;
 
-            default:
-                throw new IllegalArgumentException("Unknown URL " + url);
+                case SDN:
+                    results = loadFromEf(IccConstants.EF_SDN);
+                    break;
+
+                default:
+                    throw new IllegalArgumentException("Unknown URL " + url);
+            }
+        } else {
+            // Fake up some data for the simulator
+            results = new ArrayList<ArrayList>(4);
+            ArrayList<String> contact;
+
+            contact = new ArrayList<String>();
+            contact.add("Ron Stevens/H");
+            contact.add("512-555-5038");
+            results.add(contact);
+
+            contact = new ArrayList<String>();
+            contact.add("Ron Stevens/M");
+            contact.add("512-555-8305");
+            results.add(contact);
+
+            contact = new ArrayList<String>();
+            contact.add("Melissa Owens");
+            contact.add("512-555-8305");
+            results.add(contact);
+
+            contact = new ArrayList<String>();
+            contact.add("Directory Assistence");
+            contact.add("411");
+            results.add(contact);
         }
+
+        return new ArrayListCursor(ADDRESS_BOOK_COLUMN_NAMES, results);
     }
 
     @Override
@@ -285,10 +473,12 @@ public class IccProvider extends ContentProvider {
         return 1;
     }
 
-    private MatrixCursor loadFromEf(int efType) {
+    private ArrayList<ArrayList> loadFromEf(int efType) {
+        ArrayList<ArrayList> results = new ArrayList<ArrayList>();
+        List<AdnRecord> adnRecords = null;
+
         if (DBG) log("loadFromEf: efType=" + efType);
 
-        List<AdnRecord> adnRecords = null;
         try {
             IIccPhoneBook iccIpb = IIccPhoneBook.Stub.asInterface(
                     ServiceManager.getService("simphonebook"));
@@ -300,21 +490,21 @@ public class IccProvider extends ContentProvider {
         } catch (SecurityException ex) {
             if (DBG) log(ex.toString());
         }
-
         if (adnRecords != null) {
             // Load the results
-            final int N = adnRecords.size();
-            final MatrixCursor cursor = new MatrixCursor(ADDRESS_BOOK_COLUMN_NAMES, N);
+
+            int N = adnRecords.size();
             if (DBG) log("adnRecords.size=" + N);
             for (int i = 0; i < N ; i++) {
-                loadRecord(adnRecords.get(i), cursor, i);
+                loadRecord(adnRecords.get(i), results);
             }
-            return cursor;
         } else {
             // No results to load
             Log.w(TAG, "Cannot load ADN records");
-            return new MatrixCursor(ADDRESS_BOOK_COLUMN_NAMES);
+            results.clear();
         }
+        if (DBG) log("loadFromEf: return results");
+        return results;
     }
 
     private boolean
@@ -394,33 +584,35 @@ public class IccProvider extends ContentProvider {
     }
 
     /**
-     * Loads an AdnRecord into a MatrixCursor. Must be called with mLock held.
+     * Loads an AdnRecord into an ArrayList. Must be called with mLock held.
      *
      * @param record the ADN record to load from
-     * @param cursor the cursor to receive the results
+     * @param results the array list to put the results in
      */
-    private void loadRecord(AdnRecord record, MatrixCursor cursor, int id) {
+    private void loadRecord(AdnRecord record,
+            ArrayList<ArrayList> results) {
         if (!record.isEmpty()) {
-            Object[] contact = new Object[4];
+            ArrayList<String> contact = new ArrayList<String>();
             String alphaTag = record.getAlphaTag();
             String number = record.getNumber();
+            String[] emails = record.getEmails();
 
             if (DBG) log("loadRecord: " + alphaTag + ", " + number + ",");
-            contact[0] = alphaTag;
-            contact[1] = number;
+            contact.add(alphaTag);
+            contact.add(number);
+            StringBuilder emailString = new StringBuilder();
 
-            String[] emails = record.getEmails();
             if (emails != null) {
-                StringBuilder emailString = new StringBuilder();
                 for (String email: emails) {
                     if (DBG) log("Adding email:" + email);
                     emailString.append(email);
                     emailString.append(",");
                 }
-                contact[2] = emailString.toString();
+                contact.add(emailString.toString());
+            } else {
+                contact.add(null);
             }
-            contact[3] = id;
-            cursor.addRow(contact);
+            results.add(contact);
         }
     }
 

@@ -42,30 +42,31 @@ public:
     virtual ~AudioPlayer();
 
     // Caller retains ownership of "source".
-    virtual void setSource(const sp<MediaSource> &source);
+    void setSource(const sp<MediaSource> &source);
 
     // Return time in us.
     virtual int64_t getRealTimeUs();
 
-    virtual status_t start(bool sourceAlreadyStarted = false);
+    status_t start(bool sourceAlreadyStarted = false);
 
-    virtual void pause(bool playPendingSamples = false);
-    virtual void resume();
-
+    void pause(bool playPendingSamples = false);
+    void resume();
+#ifdef OMAP_ENHANCEMENT
+    void flush();
+#endif
     // Returns the timestamp of the last buffer played (in us).
-    virtual int64_t getMediaTimeUs();
+    int64_t getMediaTimeUs();
 
     // Returns true iff a mapping is established, i.e. the AudioPlayer
     // has played at least one frame of audio.
-    virtual bool getMediaTimeMapping(int64_t *realtime_us, int64_t *mediatime_us);
+    bool getMediaTimeMapping(int64_t *realtime_us, int64_t *mediatime_us);
 
-    virtual status_t seekTo(int64_t time_us);
+    status_t seekTo(int64_t time_us);
 
-    virtual bool isSeeking();
-    virtual bool reachedEOS(status_t *finalStatus);
+    bool isSeeking();
+    bool reachedEOS(status_t *finalStatus);
 
 private:
-    friend class VideoEditorAudioPlayer;
     sp<MediaSource> mSource;
     AudioTrack *mAudioTrack;
 
@@ -87,9 +88,7 @@ private:
     int64_t mSeekTimeUs;
 
     bool mStarted;
-#ifdef QCOM_HARDWARE
-    bool mSourcePaused;
-#endif
+
     bool mIsFirstBuffer;
     status_t mFirstBufferResult;
     MediaBuffer *mFirstBuffer;
@@ -110,10 +109,12 @@ private:
 
     void reset();
 
-    uint32_t getNumFramesPendingPlayout() const;
-
     AudioPlayer(const AudioPlayer &);
     AudioPlayer &operator=(const AudioPlayer &);
+#if defined(OMAP_ENHANCEMENT) && defined(TARGET_OMAP4)
+    int64_t mRealTimeInterpolation;
+    int64_t GetSystemTimeuSec();
+#endif
 };
 
 }  // namespace android

@@ -56,16 +56,13 @@ import java.util.Iterator;
 
 import com.android.internal.R;
 import com.android.internal.app.DisableCarModeActivity;
+import com.android.internal.app.ThemeUtils;
 
 class UiModeManagerService extends IUiModeManager.Stub {
     private static final String TAG = UiModeManager.class.getSimpleName();
     private static final boolean LOG = false;
 
     private static final String KEY_LAST_UPDATE_INTERVAL = "LAST_UPDATE_INTERVAL";
-
-    // Enable launching of applications when entering the dock.
-    private static final boolean ENABLE_LAUNCH_CAR_DOCK_APP = true;
-    private static final boolean ENABLE_LAUNCH_DESK_DOCK_APP = true;
 
     private static final int MSG_UPDATE_TWILIGHT = 0;
     private static final int MSG_ENABLE_LOCATION_UPDATES = 1;
@@ -81,6 +78,7 @@ class UiModeManagerService extends IUiModeManager.Stub {
     private static final String ACTION_UPDATE_NIGHT_MODE = "com.android.server.action.UPDATE_NIGHT_MODE";
 
     private final Context mContext;
+    private Context mUiContext;
 
     final Object mLock = new Object();
 
@@ -127,10 +125,6 @@ class UiModeManagerService extends IUiModeManager.Stub {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (getResultCode() != Activity.RESULT_OK) {
-                if (LOG) {
-                    Slog.v(TAG, "Handling broadcast result for action " + intent.getAction() 
-                            + ": canceled: " + getResultCode());
-                }
                 return;
             }
 
@@ -143,16 +137,14 @@ class UiModeManagerService extends IUiModeManager.Stub {
                 if (UiModeManager.ACTION_ENTER_CAR_MODE.equals(intent.getAction())) {
                     // Only launch car home when car mode is enabled and the caller
                     // has asked us to switch to it.
-                    if (ENABLE_LAUNCH_CAR_DOCK_APP
-                            && (enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
+                    if ((enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
                         category = Intent.CATEGORY_CAR_DOCK;
                     }
                 } else if (UiModeManager.ACTION_ENTER_DESK_MODE.equals(intent.getAction())) {
                     // Only launch car home when desk mode is enabled and the caller
                     // has asked us to switch to it.  Currently re-using the car
                     // mode flag since we don't have a formal API for "desk mode".
-                    if (ENABLE_LAUNCH_DESK_DOCK_APP
-                            && (enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
+                    if ((enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
                         category = Intent.CATEGORY_DESK_DOCK;
                     }
                 } else {
@@ -160,12 +152,6 @@ class UiModeManagerService extends IUiModeManager.Stub {
                     if ((disableFlags&UiModeManager.DISABLE_CAR_MODE_GO_HOME) != 0) {
                         category = Intent.CATEGORY_HOME;
                     }
-                }
-
-                if (LOG) {
-                    Slog.v(TAG, String.format(
-                        "Handling broadcast result for action %s: enable=0x%08x disable=0x%08x category=%s", 
-                        intent.getAction(), enableFlags, disableFlags, category));
                 }
                 
                 if (category != null) {
@@ -246,6 +232,13 @@ class UiModeManagerService extends IUiModeManager.Stub {
                 // Time zone has changed!
                 mHandler.sendEmptyMessage(MSG_GET_NEW_LOCATION_UPDATE);
             }
+        }
+    };
+
+    private final BroadcastReceiver mThemeChangeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mUiContext = null;
         }
     };
 
@@ -341,6 +334,8 @@ class UiModeManagerService extends IUiModeManager.Stub {
         IntentFilter filter = new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED);
         filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         mContext.registerReceiver(mUpdateLocationReceiver, filter);
+
+        ThemeUtils.registerThemeChangeReceiver(mContext, mThemeChangeReceiver);
 
         PowerManager powerManager = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
         mWakeLock = powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK, TAG);
@@ -440,22 +435,11 @@ class UiModeManagerService extends IUiModeManager.Stub {
         }
     }
 
-    final static boolean isDeskDockState(int state) {
-        switch (state) {
-            case Intent.EXTRA_DOCK_STATE_DESK:
-            case Intent.EXTRA_DOCK_STATE_LE_DESK:
-            case Intent.EXTRA_DOCK_STATE_HE_DESK:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     final void updateConfigurationLocked(boolean sendIt) {
         int uiMode = Configuration.UI_MODE_TYPE_NORMAL;
         if (mCarModeEnabled) {
             uiMode = Configuration.UI_MODE_TYPE_CAR;
-        } else if (isDeskDockState(mDockState)) {
+        } else if (mDockState == Intent.EXTRA_DOCK_STATE_DESK) {
             uiMode = Configuration.UI_MODE_TYPE_DESK;
         }
         if (mCarModeEnabled) {
@@ -504,7 +488,7 @@ class UiModeManagerService extends IUiModeManager.Stub {
             if (mLastBroadcastState == Intent.EXTRA_DOCK_STATE_CAR) {
                 adjustStatusBarCarModeLocked();
                 oldAction = UiModeManager.ACTION_EXIT_CAR_MODE;
-            } else if (isDeskDockState(mLastBroadcastState)) {
+            } else if (mLastBroadcastState == Intent.EXTRA_DOCK_STATE_DESK) {
                 oldAction = UiModeManager.ACTION_EXIT_DESK_MODE;
             }
 
@@ -518,12 +502,12 @@ class UiModeManagerService extends IUiModeManager.Stub {
                     mLastBroadcastState = Intent.EXTRA_DOCK_STATE_CAR;
                     action = UiModeManager.ACTION_ENTER_CAR_MODE;
                 }
-            } else if (isDeskDockState(mDockState)) {
-                if (!isDeskDockState(mLastBroadcastState)) {
+            } else if (mDockState == Intent.EXTRA_DOCK_STATE_DESK) {
+                if (mLastBroadcastState != Intent.EXTRA_DOCK_STATE_DESK) {
                     if (oldAction != null) {
                         mContext.sendBroadcast(new Intent(oldAction));
                     }
-                    mLastBroadcastState = mDockState;
+                    mLastBroadcastState = Intent.EXTRA_DOCK_STATE_DESK;
                     action = UiModeManager.ACTION_ENTER_DESK_MODE;
                 }
             } else {
@@ -532,12 +516,6 @@ class UiModeManagerService extends IUiModeManager.Stub {
             }
 
             if (action != null) {
-                if (LOG) {
-                    Slog.v(TAG, String.format(
-                        "updateLocked: preparing broadcast: action=%s enable=0x%08x disable=0x%08x",
-                        action, enableFlags, disableFlags));
-                }
-
                 // Send the ordered broadcast; the result receiver will receive after all
                 // broadcasts have been sent. If any broadcast receiver changes the result
                 // code from the initial value of RESULT_OK, then the result receiver will
@@ -556,13 +534,11 @@ class UiModeManagerService extends IUiModeManager.Stub {
             } else {
                 Intent homeIntent = null;
                 if (mCarModeEnabled) {
-                    if (ENABLE_LAUNCH_CAR_DOCK_APP
-                            && (enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
+                    if ((enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
                         homeIntent = buildHomeIntent(Intent.CATEGORY_CAR_DOCK);
                     }
-                } else if (isDeskDockState(mDockState)) {
-                    if (ENABLE_LAUNCH_DESK_DOCK_APP
-                            && (enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
+                } else if (mDockState == Intent.EXTRA_DOCK_STATE_DESK) {
+                    if ((enableFlags&UiModeManager.ENABLE_CAR_MODE_GO_CAR_HOME) != 0) {
                         homeIntent = buildHomeIntent(Intent.CATEGORY_DESK_DOCK);
                     }
                 } else {
@@ -570,12 +546,6 @@ class UiModeManagerService extends IUiModeManager.Stub {
                         homeIntent = buildHomeIntent(Intent.CATEGORY_HOME);
                     }
                 }
-
-                if (LOG) {
-                    Slog.v(TAG, "updateLocked: null action, mDockState="
-                            + mDockState +", firing homeIntent: " + homeIntent);
-                }
-
                 if (homeIntent != null) {
                     try {
                         mContext.startActivity(homeIntent);
@@ -587,9 +557,10 @@ class UiModeManagerService extends IUiModeManager.Stub {
             updateConfigurationLocked(true);
 
             // keep screen on when charging and in car mode
+            // or when on a desk dock
             boolean keepScreenOn = mCharging &&
                     ((mCarModeEnabled && mCarModeKeepsScreenOn) ||
-                     (mCurUiMode == Configuration.UI_MODE_TYPE_DESK && mDeskModeKeepsScreenOn));
+                    ((mCurUiMode&Configuration.UI_MODE_TYPE_DESK)!=0 && mDeskModeKeepsScreenOn));
             if (keepScreenOn != mWakeLock.isHeld()) {
                 if (keepScreenOn) {
                     mWakeLock.acquire();
@@ -633,7 +604,7 @@ class UiModeManagerService extends IUiModeManager.Stub {
                 n.flags = Notification.FLAG_ONGOING_EVENT;
                 n.when = 0;
                 n.setLatestEventInfo(
-                        mContext,
+                        getUiContext(),
                         mContext.getString(R.string.car_mode_disable_notification_title),
                         mContext.getString(R.string.car_mode_disable_notification_message),
                         PendingIntent.getActivity(mContext, 0, carModeOffIntent, 0));
@@ -827,6 +798,13 @@ class UiModeManagerService extends IUiModeManager.Stub {
         mAlarmManager.set(AlarmManager.RTC_WAKEUP, nextUpdate, pendingIntent);
 
         mComputedNightMode = nightMode;
+    }
+
+    private Context getUiContext() {
+        if (mUiContext == null) {
+            mUiContext = ThemeUtils.createUiContext(mContext);
+        }
+        return mUiContext != null ? mUiContext : mContext;
     }
 
     @Override

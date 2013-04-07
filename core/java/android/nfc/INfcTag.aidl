@@ -17,7 +17,6 @@
 package android.nfc;
 
 import android.nfc.NdefMessage;
-import android.nfc.Tag;
 import android.nfc.TransceiveResult;
 
 /**
@@ -41,11 +40,7 @@ interface INfcTag
     int ndefMakeReadOnly(int nativeHandle);
     boolean ndefIsWritable(int nativeHandle);
     int formatNdef(int nativeHandle, in byte[] key);
-    Tag rediscover(int nativehandle);
 
-    int setTimeout(int technology, int timeout);
-    int getTimeout(int technology);
-    void resetTimeouts();
-    boolean canMakeReadOnly(int ndefType);
-    int getMaxTransceiveLength(int technology);
+    void setIsoDepTimeout(int timeout);
+    void resetIsoDepTimeout();
 }

@@ -33,6 +33,7 @@ import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
+import android.util.Config;
 import android.util.EventLog;
 import android.util.Log;
 import android.util.Slog;
@@ -44,7 +45,7 @@ import java.util.Calendar;
 /** This class calls its monitor every minute. Killing this process if they don't return **/
 public class Watchdog extends Thread {
     static final String TAG = "Watchdog";
-    static final boolean localLOGV = false || false;
+    static final boolean localLOGV = false || Config.LOGV;
 
     // Set this to true to use debug default values.
     static final boolean DB = false;
@@ -451,14 +452,25 @@ public class Watchdog extends Thread {
             Thread dropboxThread = new Thread("watchdogWriteToDropbox") {
                     public void run() {
                         mActivity.addErrorToDropBox(
-                                "watchdog", null, "system_server", null, null,
-                                name, null, stack, null);
+                                "watchdog", null, null, null, name, null, stack, null);
                     }
                 };
             dropboxThread.start();
             try {
                 dropboxThread.join(2000);  // wait up to 2 seconds for it to return.
             } catch (InterruptedException ignored) {}
+
+            if (!Debug.isDebuggerConnected()) {
+            // Generate tombstone of zygote
+            // zygote forks system_server
+                 int zygotePid = Process.getPpid();
+                 if (zygotePid > 0) {
+                     Process.sendSignal(zygotePid, 6);
+                     SystemClock.sleep(2000);
+                     Process.sendSignal(zygotePid, 6);
+                     SystemClock.sleep(2000);
+                 }
+            }
 
             // Only kill the process if the debugger is not attached.
             if (!Debug.isDebuggerConnected()) {

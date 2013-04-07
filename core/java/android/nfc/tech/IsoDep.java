@@ -16,7 +16,6 @@
 
 package android.nfc.tech;
 
-import android.nfc.ErrorCodes;
 import android.nfc.Tag;
 import android.os.Bundle;
 import android.os.RemoteException;
@@ -91,29 +90,20 @@ public final class IsoDep extends BasicTagTechnology {
      */
     public void setTimeout(int timeout) {
         try {
-            int err = mTag.getTagService().setTimeout(TagTechnology.ISO_DEP, timeout);
-            if (err != ErrorCodes.SUCCESS) {
-                throw new IllegalArgumentException("The supplied timeout is not valid");
-            }
+            mTag.getTagService().setIsoDepTimeout(timeout);
         } catch (RemoteException e) {
             Log.e(TAG, "NFC service dead", e);
         }
     }
 
-    /**
-     * Get the current timeout for {@link #transceive} in milliseconds.
-     *
-     * <p class="note">Requires the {@link android.Manifest.permission#NFC} permission.
-     *
-     * @return timeout value in milliseconds
-     */
-    public int getTimeout() {
+    @Override
+    public void close() throws IOException {
         try {
-            return mTag.getTagService().getTimeout(TagTechnology.ISO_DEP);
+            mTag.getTagService().resetIsoDepTimeout();
         } catch (RemoteException e) {
             Log.e(TAG, "NFC service dead", e);
-            return 0;
         }
+        super.close();
     }
 
     /**
@@ -154,9 +144,6 @@ public final class IsoDep extends BasicTagTechnology {
      * will be automatically fragmented and defragmented by {@link #transceive} if
      * it exceeds FSD/FSC limits.
      *
-     * <p>Use {@link #getMaxTransceiveLength} to retrieve the maximum number of bytes
-     * that can be sent with {@link #transceive}.
-     *
      * <p>This is an I/O operation and will block until complete. It must
      * not be called from the main application thread. A blocked call will be canceled with
      * {@link IOException} if {@link #close} is called from another thread.
@@ -170,13 +157,5 @@ public final class IsoDep extends BasicTagTechnology {
      */
     public byte[] transceive(byte[] data) throws IOException {
         return transceive(data, true);
-    }
-
-    /**
-     * Return the maximum number of bytes that can be sent with {@link #transceive}.
-     * @return the maximum number of bytes that can be sent with {@link #transceive}.
-     */
-    public int getMaxTransceiveLength() {
-        return getMaxTransceiveLengthInternal();
     }
 }

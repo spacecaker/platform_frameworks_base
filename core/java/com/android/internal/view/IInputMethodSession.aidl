@@ -36,9 +36,7 @@ oneway interface IInputMethodSession {
     void updateSelection(int oldSelStart, int oldSelEnd,
             int newSelStart, int newSelEnd,
             int candidatesStart, int candidatesEnd);
-
-    void viewClicked(boolean focusChanged);
-
+    
     void updateCursor(in Rect newCursor);
     
     void displayCompletions(in CompletionInfo[] completions);

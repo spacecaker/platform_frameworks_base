@@ -17,7 +17,6 @@
 package com.android.internal.telephony.gsm;
 
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.AsyncResult;
 import android.os.Binder;
 import android.os.Handler;
@@ -51,8 +50,6 @@ public class SimSmsInterfaceManager extends IccSmsInterfaceManager {
     private final Object mLock = new Object();
     private boolean mSuccess;
     private List<SmsRawData> mSms;
-    private HashMap<Integer, HashSet<String>> mCellBroadcastSubscriptions =
-            new HashMap<Integer, HashSet<String>>();
 
     private CellBroadcastRangeManager mCellBroadcastRangeManager =
             new CellBroadcastRangeManager();
@@ -110,7 +107,6 @@ public class SimSmsInterfaceManager extends IccSmsInterfaceManager {
     public void dispose() {
     }
 
-    @Override
     protected void finalize() {
         try {
             super.finalize();
@@ -246,8 +242,6 @@ public class SimSmsInterfaceManager extends IccSmsInterfaceManager {
             log("Added cell broadcast subscription for MID range " + startMessageId
                     + " to " + endMessageId + " from client " + client);
 
-        setCellBroadcastActivation(!mCellBroadcastRangeManager.isEmpty());
-
         return true;
     }
 
@@ -272,8 +266,6 @@ public class SimSmsInterfaceManager extends IccSmsInterfaceManager {
         if (DBG)
             log("Removed cell broadcast subscription for MID range " + startMessageId
                     + " to " + endMessageId + " from client " + client);
-
-        setCellBroadcastActivation(!mCellBroadcastRangeManager.isEmpty());
 
         return true;
     }
@@ -305,15 +297,14 @@ public class SimSmsInterfaceManager extends IccSmsInterfaceManager {
         /**
          * Called to indicate the end of a range update started by the
          * previous call to {@link #startUpdate}.
-         * @return true if successful, false otherwise
          */
         protected boolean finishUpdate() {
             if (mConfigList.isEmpty()) {
-                return true;
+                return setCellBroadcastActivation(false);
             } else {
                 SmsBroadcastConfigInfo[] configs =
                         mConfigList.toArray(new SmsBroadcastConfigInfo[mConfigList.size()]);
-                return setCellBroadcastConfig(configs);
+                return setCellBroadcastConfig(configs) && setCellBroadcastActivation(true);
             }
         }
     }

@@ -16,24 +16,24 @@
 
 package com.android.internal.telephony.gsm;
 
+import android.os.Parcel;
 import android.telephony.PhoneNumberUtils;
 import android.text.format.Time;
+import android.util.Config;
 import android.util.Log;
-
+import com.android.internal.telephony.IccUtils;
 import com.android.internal.telephony.EncodeException;
 import com.android.internal.telephony.GsmAlphabet;
 import com.android.internal.telephony.SimRegionCache;
-import com.android.internal.telephony.IccUtils;
 import com.android.internal.telephony.SmsHeader;
 import com.android.internal.telephony.SmsMessageBase;
 
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 
-import static android.telephony.SmsMessage.ENCODING_16BIT;
 import static android.telephony.SmsMessage.ENCODING_7BIT;
 import static android.telephony.SmsMessage.ENCODING_8BIT;
-import static android.telephony.SmsMessage.ENCODING_KSC5601;
+import static android.telephony.SmsMessage.ENCODING_16BIT;
 import static android.telephony.SmsMessage.ENCODING_UNKNOWN;
 import static android.telephony.SmsMessage.MAX_USER_DATA_BYTES;
 import static android.telephony.SmsMessage.MAX_USER_DATA_BYTES_WITH_HEADER;
@@ -44,8 +44,14 @@ import static android.telephony.SmsMessage.MessageClass;
  * A Short Message Service message.
  *
  */
-public class SmsMessage extends SmsMessageBase {
+public class SmsMessage extends SmsMessageBase{
     static final String LOG_TAG = "GSM";
+
+    /**
+     * Used with the ENCODING_ constants from {@link android.telephony.SmsMessage}
+     * Not a part of the public API, therefore not in order with those constants.
+     */
+    private static final int ENCODING_KSC5601 = 4000;
 
     private MessageClass messageClass;
 
@@ -138,6 +144,14 @@ public class SmsMessage extends SmsMessageBase {
     }
 
     /** @hide */
+    public static SmsMessage newFromCMTI(String line) {
+        // the thinking here is not to read the message immediately
+        // FTA test case
+        Log.e(LOG_TAG, "newFromCMTI: not yet supported");
+        return null;
+    }
+
+    /** @hide */
     public static SmsMessage newFromCDS(String line) {
         try {
             SmsMessage msg = new SmsMessage();
@@ -147,6 +161,15 @@ public class SmsMessage extends SmsMessageBase {
             Log.e(LOG_TAG, "CDS SMS PDU parsing failed: ", ex);
             return null;
         }
+    }
+
+    /**
+     * Note: This functionality is currently not supported in GSM mode.
+     * @hide
+     */
+    public static SmsMessageBase newFromParcel(Parcel p){
+        Log.w(LOG_TAG, "newFromParcel: is not supported in GSM mode.");
+        return null;
     }
 
     /**
@@ -241,43 +264,18 @@ public class SmsMessage extends SmsMessageBase {
             return null;
         }
 
-        if (encoding == ENCODING_UNKNOWN) {
-            // Find the best encoding to use
-            TextEncodingDetails ted = calculateLength(message, false);
-            encoding = ted.codeUnitSize;
-            languageTable = ted.languageTable;
-            languageShiftTable = ted.languageShiftTable;
-
-            if (encoding == ENCODING_7BIT && (languageTable != 0 || languageShiftTable != 0)) {
-                if (header != null) {
-                    SmsHeader smsHeader = SmsHeader.fromByteArray(header);
-                    if (smsHeader.languageTable != languageTable
-                            || smsHeader.languageShiftTable != languageShiftTable) {
-                        Log.w(LOG_TAG, "Updating language table in SMS header: "
-                                + smsHeader.languageTable + " -> " + languageTable + ", "
-                                + smsHeader.languageShiftTable + " -> " + languageShiftTable);
-                        smsHeader.languageTable = languageTable;
-                        smsHeader.languageShiftTable = languageShiftTable;
-                        header = SmsHeader.toByteArray(smsHeader);
-                    }
-                } else {
-                    SmsHeader smsHeader = new SmsHeader();
-                    smsHeader.languageTable = languageTable;
-                    smsHeader.languageShiftTable = languageShiftTable;
-                    header = SmsHeader.toByteArray(smsHeader);
-                }
-            }
-        }
-
         SubmitPdu ret = new SubmitPdu();
         // MTI = SMS-SUBMIT, UDHI = header != null
         byte mtiByte = (byte)(0x01 | (header != null ? 0x40 : 0x00));
         ByteArrayOutputStream bo = getSubmitPduHead(
                 scAddress, destinationAddress, mtiByte,
                 statusReportRequested, ret);
-
         // User Data (and length)
         byte[] userData;
+        if (encoding == ENCODING_UNKNOWN) {
+            // First, try encoding it with the GSM alphabet
+            encoding = ENCODING_7BIT;
+        }
         try {
             if (encoding == ENCODING_7BIT) {
                 userData = GsmAlphabet.stringToGsm7BitPackedWithHeader(message, header,
@@ -309,7 +307,6 @@ public class SmsMessage extends SmsMessageBase {
         if (encoding == ENCODING_7BIT) {
             if ((0xff & userData[0]) > MAX_USER_DATA_SEPTETS) {
                 // Message too long
-                Log.e(LOG_TAG, "Message too long (" + (0xff & userData[0]) + " septets)");
                 return null;
             }
             // TP-Data-Coding-Scheme
@@ -321,10 +318,9 @@ public class SmsMessage extends SmsMessageBase {
             // the receiver's SIM card. You can then send messages to yourself
             // (on a phone with this change) and they'll end up on the SIM card.
             bo.write(0x00);
-        } else { // assume UCS-2
+        } else { //assume UCS-2
             if ((0xff & userData[0]) > MAX_USER_DATA_BYTES) {
                 // Message too long
-                Log.e(LOG_TAG, "Message too long (" + (0xff & userData[0]) + " bytes)");
                 return null;
             }
             // TP-Data-Coding-Scheme
@@ -469,7 +465,7 @@ public class SmsMessage extends SmsMessageBase {
         if (statusReportRequested) {
             // Set TP-Status-Report-Request bit.
             mtiByte |= 0x20;
-            if (false) Log.d(LOG_TAG, "SMS status report requested");
+            if (Config.LOGD) Log.d(LOG_TAG, "SMS status report requested");
         }
         bo.write(mtiByte);
 
@@ -493,13 +489,17 @@ public class SmsMessage extends SmsMessageBase {
         return bo;
     }
 
-    private static class PduParser {
+    static class PduParser {
         byte pdu[];
         int cur;
         SmsHeader userDataHeader;
         byte[] userData;
         int mUserDataSeptetPadding;
         int mUserDataSize;
+
+        PduParser(String s) {
+            this(IccUtils.hexStringToBytes(s));
+        }
 
         PduParser(byte[] pdu) {
             this.pdu = pdu;
@@ -552,7 +552,7 @@ public class SmsMessage extends SmsMessageBase {
             GsmSmsAddress ret;
 
             // "The Address-Length field is an integer representation of
-            // the number field, i.e. excludes any semi-octet containing only
+            // the number field, i.e. excludes any semi octet containing only
             // fill bits."
             // The TOA field is not included as part of this
             int addressLength = pdu[cur] & 0xff;
@@ -678,10 +678,10 @@ public class SmsMessage extends SmsMessageBase {
         }
 
         /**
-         * Returns the number of padding bits at the beginning of the user data
+         * Returns the number of padding bits at the begining of the user data
          * array before the start of the septets.
          *
-         * @return the number of padding bits at the beginning of the user data
+         * @return the number of padding bits at the begining of the user data
          * array before the start of the septets
          */
         int getUserDataSeptetPadding() {
@@ -738,8 +738,8 @@ public class SmsMessage extends SmsMessageBase {
         }
 
         /**
-         * Interprets the user data payload as KSC-5601 characters, and
-         * decodes them into a String.
+         * Interprets the user data payload as KSC5601 characters, and
+         * decodes them into a String
          *
          * @param byteCount the number of bytes in the user data payload
          * @return a String with the decoded characters
@@ -750,7 +750,8 @@ public class SmsMessage extends SmsMessageBase {
             try {
                 ret = new String(pdu, cur, byteCount, "KSC5601");
             } catch (UnsupportedEncodingException ex) {
-                ret = "";
+                // Should return same as ENCODING_UNKNOWN on error.
+                ret = null;
                 Log.e(LOG_TAG, "implausible UnsupportedEncodingException", ex);
             }
 
@@ -792,21 +793,11 @@ public class SmsMessage extends SmsMessageBase {
     }
 
     /** {@inheritDoc} */
-    @Override
     public int getProtocolIdentifier() {
         return protocolIdentifier;
     }
 
-    /**
-     * Returns the TP-Data-Coding-Scheme byte, for acknowledgement of SMS-PP download messages.
-     * @return the TP-DCS field of the SMS header
-     */
-    int getDataCodingScheme() {
-        return dataCodingScheme;
-    }
-
     /** {@inheritDoc} */
-    @Override
     public boolean isReplace() {
         return (protocolIdentifier & 0xc0) == 0x40
                 && (protocolIdentifier & 0x3f) > 0
@@ -814,14 +805,12 @@ public class SmsMessage extends SmsMessageBase {
     }
 
     /** {@inheritDoc} */
-    @Override
     public boolean isCphsMwiMessage() {
         return ((GsmSmsAddress) originatingAddress).isCphsVoiceMessageClear()
                 || ((GsmSmsAddress) originatingAddress).isCphsVoiceMessageSet();
     }
 
     /** {@inheritDoc} */
-    @Override
     public boolean isMWIClearMessage() {
         if (isMwi && !mwiSense) {
             return true;
@@ -832,7 +821,6 @@ public class SmsMessage extends SmsMessageBase {
     }
 
     /** {@inheritDoc} */
-    @Override
     public boolean isMWISetMessage() {
         if (isMwi && mwiSense) {
             return true;
@@ -843,7 +831,6 @@ public class SmsMessage extends SmsMessageBase {
     }
 
     /** {@inheritDoc} */
-    @Override
     public boolean isMwiDontStore() {
         if (isMwi && mwiDontStore) {
             return true;
@@ -863,25 +850,22 @@ public class SmsMessage extends SmsMessageBase {
     }
 
     /** {@inheritDoc} */
-    @Override
     public int getStatus() {
         return status;
     }
 
     /** {@inheritDoc} */
-    @Override
     public boolean isStatusReportMessage() {
         return isStatusReportMessage;
     }
 
     /** {@inheritDoc} */
-    @Override
     public boolean isReplyPathPresent() {
         return replyPathPresent;
     }
 
     /**
-     * TS 27.005 3.1, &lt;pdu&gt; definition "In the case of SMS: 3GPP TS 24.011 [6]
+     * TS 27.005 3.1, <pdu> definition "In the case of SMS: 3GPP TS 24.011 [6]
      * SC address followed by 3GPP TS 23.040 [3] TPDU in hexadecimal format:
      * ME/TA converts each octet of TP data unit into two IRA character long
      * hex number (e.g. octet with integer value 42 is presented to TE as two
@@ -898,7 +882,7 @@ public class SmsMessage extends SmsMessageBase {
         scAddress = p.getSCAddress();
 
         if (scAddress != null) {
-            if (false) Log.d(LOG_TAG, "SMS SC address: " + scAddress);
+            if (Config.LOGD) Log.d(LOG_TAG, "SMS SC address: " + scAddress);
         }
 
         // TODO(mkf) support reply path, user data header indicator
@@ -980,7 +964,7 @@ public class SmsMessage extends SmsMessageBase {
         originatingAddress = p.getAddress();
 
         if (originatingAddress != null) {
-            if (false) Log.v(LOG_TAG, "SMS originating address: "
+            if (Config.LOGV) Log.v(LOG_TAG, "SMS originating address: "
                     + originatingAddress.address);
         }
 
@@ -992,14 +976,14 @@ public class SmsMessage extends SmsMessageBase {
         // see TS 23.038
         dataCodingScheme = p.getByte();
 
-        if (false) {
+        if (Config.LOGV) {
             Log.v(LOG_TAG, "SMS TP-PID:" + protocolIdentifier
                     + " data coding scheme: " + dataCodingScheme);
         }
 
         scTimeMillis = p.getSCTimestampMillis();
 
-        if (false) Log.d(LOG_TAG, "SMS SC timestamp: " + scTimeMillis);
+        if (Config.LOGD) Log.d(LOG_TAG, "SMS SC timestamp: " + scTimeMillis);
 
         boolean hasUserDataHeader = (firstByte & 0x40) == 0x40;
 
@@ -1043,10 +1027,11 @@ public class SmsMessage extends SmsMessageBase {
                 case 3: // reserved
                     Log.w(LOG_TAG, "1 - Unsupported SMS data coding scheme "
                             + (dataCodingScheme & 0xff));
-                    encodingType = ENCODING_8BIT;
                     if (SimRegionCache.getRegion() == SimRegionCache.MCC_KOREAN) {
                         Log.w(LOG_TAG, "Korean SIM, using KSC5601 for decoding.");
                         encodingType = ENCODING_KSC5601;
+                    } else {
+                        encodingType = ENCODING_8BIT;
                     }
                     break;
                 }
@@ -1093,16 +1078,6 @@ public class SmsMessage extends SmsMessageBase {
                 Log.w(LOG_TAG, "MWI for fax, email, or other "
                         + (dataCodingScheme & 0xff));
             }
-        } else if ((dataCodingScheme & 0xC0) == 0x80) {
-            // 3GPP TS 23.038 V7.0.0 (2006-03) section 4
-            // 0x80..0xBF == Reserved coding groups
-            if (dataCodingScheme == 0x84) {
-                // This value used for KSC5601 by carriers in Korea.
-                encodingType = ENCODING_KSC5601;
-            } else {
-                Log.w(LOG_TAG, "5 - Unsupported SMS data coding scheme "
-                        + (dataCodingScheme & 0xff));
-            }
         } else {
             Log.w(LOG_TAG, "3 - Unsupported SMS data coding scheme "
                     + (dataCodingScheme & 0xff));
@@ -1139,7 +1114,7 @@ public class SmsMessage extends SmsMessageBase {
             break;
         }
 
-        if (false) Log.v(LOG_TAG, "SMS message body (raw): '" + messageBody + "'");
+        if (Config.LOGV) Log.v(LOG_TAG, "SMS message body (raw): '" + messageBody + "'");
 
         if (messageBody != null) {
             parseMessageBody();
@@ -1168,19 +1143,8 @@ public class SmsMessage extends SmsMessageBase {
     /**
      * {@inheritDoc}
      */
-    @Override
     public MessageClass getMessageClass() {
         return messageClass;
     }
 
-    /**
-     * Returns true if this is a (U)SIM data download type SM.
-     * See 3GPP TS 31.111 section 9.1 and TS 23.040 section 9.2.3.9.
-     *
-     * @return true if this is a USIM data download message; false otherwise
-     */
-    boolean isUsimDataDownload() {
-        return messageClass == MessageClass.CLASS_2 &&
-                (protocolIdentifier == 0x7f || protocolIdentifier == 0x7c);
-    }
 }

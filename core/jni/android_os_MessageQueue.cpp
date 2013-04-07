@@ -27,6 +27,8 @@ namespace android {
 // ----------------------------------------------------------------------------
 
 static struct {
+    jclass clazz;
+
     jfieldID mPtr;   // native object attached to the DVM MessageQueue
 } gMessageQueueClassInfo;
 
@@ -133,7 +135,8 @@ static JNINativeMethod gMessageQueueMethods[] = {
 
 #define FIND_CLASS(var, className) \
         var = env->FindClass(className); \
-        LOG_FATAL_IF(! var, "Unable to find class " className);
+        LOG_FATAL_IF(! var, "Unable to find class " className); \
+        var = jclass(env->NewGlobalRef(var));
 
 #define GET_FIELD_ID(var, clazz, fieldName, fieldDescriptor) \
         var = env->GetFieldID(clazz, fieldName, fieldDescriptor); \
@@ -144,10 +147,9 @@ int register_android_os_MessageQueue(JNIEnv* env) {
             gMessageQueueMethods, NELEM(gMessageQueueMethods));
     LOG_FATAL_IF(res < 0, "Unable to register native methods.");
 
-    jclass clazz;
-    FIND_CLASS(clazz, "android/os/MessageQueue");
+    FIND_CLASS(gMessageQueueClassInfo.clazz, "android/os/MessageQueue");
 
-    GET_FIELD_ID(gMessageQueueClassInfo.mPtr, clazz,
+    GET_FIELD_ID(gMessageQueueClassInfo.mPtr, gMessageQueueClassInfo.clazz,
             "mPtr", "I");
     
     return 0;

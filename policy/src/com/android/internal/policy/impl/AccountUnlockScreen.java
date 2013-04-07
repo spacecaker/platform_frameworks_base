@@ -17,6 +17,7 @@
 package com.android.internal.policy.impl;
 
 import com.android.internal.R;
+import com.android.internal.app.ThemeUtils;
 import com.android.internal.widget.LockPatternUtils;
 
 import android.accounts.Account;
@@ -25,6 +26,7 @@ import android.accounts.OperationCanceledException;
 import android.accounts.AccountManagerFuture;
 import android.accounts.AuthenticatorException;
 import android.accounts.AccountManagerCallback;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
@@ -52,9 +54,10 @@ import java.io.IOException;
  * account's login/password to unlock the phone (and reset their lock pattern).
  */
 public class AccountUnlockScreen extends RelativeLayout implements KeyguardScreen,
-        View.OnClickListener, TextWatcher {
+        KeyguardUpdateMonitor.InfoCallback,View.OnClickListener, TextWatcher {
     private static final String LOCK_PATTERN_PACKAGE = "com.android.settings";
-    private static final String LOCK_PATTERN_CLASS = LOCK_PATTERN_PACKAGE + ".ChooseLockGeneric";
+    private static final String LOCK_PATTERN_CLASS =
+            "com.android.settings.ChooseLockPattern";
 
     /**
      * The amount of millis to stay awake once this screen detects activity
@@ -70,19 +73,28 @@ public class AccountUnlockScreen extends RelativeLayout implements KeyguardScree
     private EditText mLogin;
     private EditText mPassword;
     private Button mOk;
+    private Button mEmergencyCall;
 
     /**
      * Shown while making asynchronous check of password.
      */
+    private Context mUiContext;
     private ProgressDialog mCheckingDialog;
-    private KeyguardStatusViewManager mKeyguardStatusViewManager;
+
+    private BroadcastReceiver mThemeChangeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mUiContext = null;
+            context.unregisterReceiver(this);
+        }
+    };
 
     /**
      * AccountUnlockScreen constructor.
      * @param configuration
      * @param updateMonitor
      */
-    public AccountUnlockScreen(Context context, Configuration configuration,
+    public AccountUnlockScreen(Context context,Configuration configuration,
             KeyguardUpdateMonitor updateMonitor, KeyguardScreenCallback callback,
             LockPatternUtils lockPatternUtils) {
         super(context);
@@ -109,10 +121,12 @@ public class AccountUnlockScreen extends RelativeLayout implements KeyguardScree
         mOk = (Button) findViewById(R.id.ok);
         mOk.setOnClickListener(this);
 
-        mUpdateMonitor = updateMonitor;
+        mEmergencyCall = (Button) findViewById(R.id.emergencyCall);
+        mEmergencyCall.setOnClickListener(this);
+        mLockPatternUtils.updateEmergencyCallButtonState(mEmergencyCall);
 
-        mKeyguardStatusViewManager = new KeyguardStatusViewManager(this, updateMonitor,
-                lockPatternUtils, callback, true);
+        mUpdateMonitor = updateMonitor;
+        mUpdateMonitor.registerInfoCallback(this);
     }
 
     public void afterTextChanged(Editable s) {
@@ -139,7 +153,10 @@ public class AccountUnlockScreen extends RelativeLayout implements KeyguardScree
 
     /** {@inheritDoc} */
     public void onPause() {
-        mKeyguardStatusViewManager.onPause();
+        if (mUiContext != null) {
+            mContext.unregisterReceiver(mThemeChangeReceiver);
+            mUiContext = null;
+        }
     }
 
     /** {@inheritDoc} */
@@ -148,7 +165,7 @@ public class AccountUnlockScreen extends RelativeLayout implements KeyguardScree
         mLogin.setText("");
         mPassword.setText("");
         mLogin.requestFocus();
-        mKeyguardStatusViewManager.onResume();
+        mLockPatternUtils.updateEmergencyCallButtonState(mEmergencyCall);
     }
 
     /** {@inheritDoc} */
@@ -167,6 +184,10 @@ public class AccountUnlockScreen extends RelativeLayout implements KeyguardScree
         mCallback.pokeWakelock();
         if (v == mOk) {
             asyncCheckPassword();
+        }
+
+        if (v == mEmergencyCall) {
+            mCallback.takeEmergencyCallAction();
         }
     }
 
@@ -303,15 +324,60 @@ public class AccountUnlockScreen extends RelativeLayout implements KeyguardScree
     }
 
     private Dialog getProgressDialog() {
+        if (mUiContext == null && mCheckingDialog != null) {
+            mCheckingDialog.dismiss();
+            mCheckingDialog = null;
+        }
+
         if (mCheckingDialog == null) {
-            mCheckingDialog = new ProgressDialog(mContext);
+            final Context context;
+
+            mUiContext = ThemeUtils.createUiContext(mContext);
+            if (mUiContext != null) {
+                context = mUiContext;
+                ThemeUtils.registerThemeChangeReceiver(mContext, mThemeChangeReceiver);
+            } else {
+                context = mContext;
+            }
+
+            mCheckingDialog = new ProgressDialog(context);
             mCheckingDialog.setMessage(
                     mContext.getString(R.string.lockscreen_glogin_checking_password));
             mCheckingDialog.setIndeterminate(true);
             mCheckingDialog.setCancelable(false);
             mCheckingDialog.getWindow().setType(
                     WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG);
+            if (!mContext.getResources().getBoolean(
+                    com.android.internal.R.bool.config_sf_slowBlur)) {
+                mCheckingDialog.getWindow().setFlags(
+                        WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
+                        WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+            }
         }
         return mCheckingDialog;
+    }
+
+    public void onPhoneStateChanged(String newState) {
+        mLockPatternUtils.updateEmergencyCallButtonState(mEmergencyCall);
+    }
+
+    public void onRefreshBatteryInfo(boolean showBatteryInfo, boolean pluggedIn, int batteryLevel) {
+
+    }
+
+    public void onRefreshCarrierInfo(CharSequence plmn, CharSequence spn) {
+
+    }
+
+    public void onRingerModeChanged(int state) {
+
+    }
+
+    public void onTimeChanged() {
+
+    }
+
+    public void onMusicChanged() {
+
     }
 }

@@ -33,7 +33,6 @@ class IPCThreadState
 {
 public:
     static  IPCThreadState*     self();
-    static  IPCThreadState*     selfOrNull();  // self(), but won't instantiate
     
             sp<ProcessState>    process();
             

@@ -2,23 +2,22 @@
 **
 ** Copyright 2006, The Android Open Source Project
 **
-** Licensed under the Apache License, Version 2.0 (the "License");
-** you may not use this file except in compliance with the License.
-** You may obtain a copy of the License at
+** Licensed under the Apache License, Version 2.0 (the "License"); 
+** you may not use this file except in compliance with the License. 
+** You may obtain a copy of the License at 
 **
-**     http://www.apache.org/licenses/LICENSE-2.0
+**     http://www.apache.org/licenses/LICENSE-2.0 
 **
-** Unless required by applicable law or agreed to in writing, software
-** distributed under the License is distributed on an "AS IS" BASIS,
-** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-** See the License for the specific language governing permissions and
+** Unless required by applicable law or agreed to in writing, software 
+** distributed under the License is distributed on an "AS IS" BASIS, 
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
+** See the License for the specific language governing permissions and 
 ** limitations under the License.
 */
 
 #define LOG_TAG "XmlBlock"
 
 #include "jni.h"
-#include "JNIHelp.h"
 #include <utils/misc.h>
 #include <android_runtime/AndroidRuntime.h>
 #include <utils/AssetManager.h>
@@ -32,18 +31,28 @@ namespace android {
 
 // ----------------------------------------------------------------------------
 
+static void doThrow(JNIEnv* env, const char* exc, const char* msg = NULL)
+{
+    jclass npeClazz;
+
+    npeClazz = env->FindClass(exc);
+    LOG_FATAL_IF(npeClazz == NULL, "Unable to find class %s", exc);
+
+    env->ThrowNew(npeClazz, msg);
+}
+
 static jint android_content_XmlBlock_nativeCreate(JNIEnv* env, jobject clazz,
                                                jbyteArray bArray,
                                                jint off, jint len)
 {
     if (bArray == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
     jsize bLen = env->GetArrayLength(bArray);
     if (off < 0 || off >= bLen || len < 0 || len > bLen || (off+len) > bLen) {
-        jniThrowException(env, "java/lang/IndexOutOfBoundsException", NULL);
+        doThrow(env, "java/lang/IndexOutOfBoundsException");
         return 0;
     }
 
@@ -52,7 +61,7 @@ static jint android_content_XmlBlock_nativeCreate(JNIEnv* env, jobject clazz,
     env->ReleaseByteArrayElements(bArray, b, 0);
 
     if (osb == NULL || osb->getError() != NO_ERROR) {
-        jniThrowException(env, "java/lang/IllegalArgumentException", NULL);
+        doThrow(env, "java/lang/IllegalArgumentException");
         return 0;
     }
 
@@ -64,7 +73,7 @@ static jint android_content_XmlBlock_nativeGetStringBlock(JNIEnv* env, jobject c
 {
     ResXMLTree* osb = (ResXMLTree*)token;
     if (osb == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -76,13 +85,13 @@ static jint android_content_XmlBlock_nativeCreateParseState(JNIEnv* env, jobject
 {
     ResXMLTree* osb = (ResXMLTree*)token;
     if (osb == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
     ResXMLParser* st = new ResXMLParser(*osb);
     if (st == NULL) {
-        jniThrowException(env, "java/lang/OutOfMemoryError", NULL);
+        doThrow(env, "java/lang/OutOfMemoryError");
         return 0;
     }
 
@@ -116,9 +125,9 @@ static jint android_content_XmlBlock_nativeNext(JNIEnv* env, jobject clazz,
                 goto bad;
         }
     } while (true);
-
+    
 bad:
-    jniThrowException(env, "org/xmlpull/v1/XmlPullParserException",
+    doThrow(env, "org/xmlpull/v1/XmlPullParserException",
             "Corrupt XML binary file");
     return ResXMLParser::BAD_DOCUMENT;
 }
@@ -130,7 +139,7 @@ static jint android_content_XmlBlock_nativeGetNamespace(JNIEnv* env, jobject cla
     if (st == NULL) {
         return -1;
     }
-
+    
     return (jint)st->getElementNamespaceID();
 }
 
@@ -161,7 +170,7 @@ static jint android_content_XmlBlock_nativeGetLineNumber(JNIEnv* env, jobject cl
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -173,7 +182,7 @@ static jint android_content_XmlBlock_nativeGetAttributeCount(JNIEnv* env, jobjec
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -185,10 +194,10 @@ static jint android_content_XmlBlock_nativeGetAttributeNamespace(JNIEnv* env, jo
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
-
+    
     return (jint)st->getAttributeNamespaceID(idx);
 }
 
@@ -197,7 +206,7 @@ static jint android_content_XmlBlock_nativeGetAttributeName(JNIEnv* env, jobject
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -209,7 +218,7 @@ static jint android_content_XmlBlock_nativeGetAttributeResource(JNIEnv* env, job
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -221,7 +230,7 @@ static jint android_content_XmlBlock_nativeGetAttributeDataType(JNIEnv* env, job
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -233,7 +242,7 @@ static jint android_content_XmlBlock_nativeGetAttributeData(JNIEnv* env, jobject
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -245,7 +254,7 @@ static jint android_content_XmlBlock_nativeGetAttributeStringValue(JNIEnv* env, 
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -258,7 +267,7 @@ static jint android_content_XmlBlock_nativeGetAttributeIndex(JNIEnv* env, jobjec
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL || name == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -268,7 +277,7 @@ static jint android_content_XmlBlock_nativeGetAttributeIndex(JNIEnv* env, jobjec
         ns16 = env->GetStringChars(ns, NULL);
         nsLen = env->GetStringLength(ns);
     }
-
+    
     const char16_t* name16 = env->GetStringChars(name, NULL);
     jsize nameLen = env->GetStringLength(name);
 
@@ -287,7 +296,7 @@ static jint android_content_XmlBlock_nativeGetIdAttribute(JNIEnv* env, jobject c
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -300,10 +309,10 @@ static jint android_content_XmlBlock_nativeGetClassAttribute(JNIEnv* env, jobjec
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
-
+    
     ssize_t idx = st->indexOfClass();
     return idx >= 0 ? (jint)st->getAttributeValueStringID(idx) : -1;
 }
@@ -313,7 +322,7 @@ static jint android_content_XmlBlock_nativeGetStyleAttribute(JNIEnv* env, jobjec
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return 0;
     }
 
@@ -327,7 +336,7 @@ static jint android_content_XmlBlock_nativeGetStyleAttribute(JNIEnv* env, jobjec
         return 0;
     }
 
-    return value.dataType == value.TYPE_REFERENCE
+    return value.dataType == value.TYPE_REFERENCE 
         || value.dataType == value.TYPE_ATTRIBUTE
         ? value.data : 0;
 }
@@ -337,7 +346,7 @@ static void android_content_XmlBlock_nativeDestroyParseState(JNIEnv* env, jobjec
 {
     ResXMLParser* st = (ResXMLParser*)token;
     if (st == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return;
     }
 
@@ -349,7 +358,7 @@ static void android_content_XmlBlock_nativeDestroy(JNIEnv* env, jobject clazz,
 {
     ResXMLTree* osb = (ResXMLTree*)token;
     if (osb == NULL) {
-        jniThrowNullPointerException(env, NULL);
+        doThrow(env, "java/lang/NullPointerException");
         return;
     }
 
@@ -414,3 +423,4 @@ int register_android_content_XmlBlock(JNIEnv* env)
 }
 
 }; // namespace android
+

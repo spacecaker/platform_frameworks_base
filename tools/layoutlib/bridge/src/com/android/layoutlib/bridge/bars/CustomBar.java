@@ -145,14 +145,6 @@ abstract class CustomBar extends LinearLayout {
         }
     }
 
-    protected void loadIconById(int id, String iconReference) {
-        ResourceValue value = getResourceValue(iconReference);
-        if (value != null) {
-            loadIconById(id, value);
-        }
-    }
-
-
     protected Drawable loadIcon(int index, ResourceType type, String name) {
         BridgeContext bridgeContext = (BridgeContext) mContext;
         RenderResources res = bridgeContext.getRenderResources();
@@ -170,62 +162,32 @@ abstract class CustomBar extends LinearLayout {
         if (child instanceof ImageView) {
             ImageView imageView = (ImageView) child;
 
-            return loadIcon(imageView, value);
+            Drawable drawable = ResourceHelper.getDrawable(
+                    value, (BridgeContext) mContext);
+            if (drawable != null) {
+                imageView.setBackgroundDrawable(drawable);
+            }
+
+            return drawable;
         }
 
         return null;
-    }
-
-    private Drawable loadIconById(int id, ResourceValue value) {
-        View child = findViewById(id);
-        if (child instanceof ImageView) {
-            ImageView imageView = (ImageView) child;
-
-            return loadIcon(imageView, value);
-        }
-
-        return null;
-    }
-
-
-    private Drawable loadIcon(ImageView imageView, ResourceValue value) {
-        Drawable drawable = ResourceHelper.getDrawable(value, (BridgeContext) mContext);
-        if (drawable != null) {
-            imageView.setImageDrawable(drawable);
-        }
-
-        return drawable;
     }
 
     protected TextView setText(int index, String stringReference) {
         View child = getChildAt(index);
         if (child instanceof TextView) {
             TextView textView = (TextView) child;
-            setText(textView, stringReference);
+            ResourceValue value = getResourceValue(stringReference);
+            if (value != null) {
+                textView.setText(value.getValue());
+            } else {
+                textView.setText(stringReference);
+            }
             return textView;
         }
 
         return null;
-    }
-
-    protected TextView setTextById(int id, String stringReference) {
-        View child = findViewById(id);
-        if (child instanceof TextView) {
-            TextView textView = (TextView) child;
-            setText(textView, stringReference);
-            return textView;
-        }
-
-        return null;
-    }
-
-    private void setText(TextView textView, String stringReference) {
-        ResourceValue value = getResourceValue(stringReference);
-        if (value != null) {
-            textView.setText(value.getValue());
-        } else {
-            textView.setText(stringReference);
-        }
     }
 
     protected void setStyle(String themeEntryName) {
@@ -268,7 +230,7 @@ abstract class CustomBar extends LinearLayout {
                     if (ResourceHelper.parseFloatAttribute("textSize", textSize.getValue(), out,
                             true /*requireUnit*/)) {
                         textView.setTextSize(
-                                out.getDimension(bridgeContext.getResources().getDisplayMetrics()));
+                                out.getDimension(bridgeContext.getResources().mMetrics));
                     }
                 }
 

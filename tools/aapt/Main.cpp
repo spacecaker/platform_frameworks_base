@@ -1,5 +1,6 @@
 //
 // Copyright 2006 The Android Open Source Project
+// This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
 //
 // Android Asset Packaging Tool main entry point.
 //
@@ -14,6 +15,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <assert.h>
+#include <ctype.h>
 
 using namespace android;
 
@@ -55,7 +57,7 @@ void usage(void)
         "   xmltree          Print the compiled xmls in the given assets.\n"
         "   xmlstrings       Print the strings of the given compiled xml assets.\n\n", gProgName);
     fprintf(stderr,
-        " %s p[ackage] [-d][-f][-m][-u][-v][-x][-z][-M AndroidManifest.xml] \\\n"
+        " %s p[ackage] [-d][-f][-m][-u][-v][-x[ extending-resource-id]][-z][-M AndroidManifest.xml] \\\n"
         "        [-0 extension [-0 extension ...]] [-g tolerance] [-j jarfile] \\\n"
         "        [--debug-mode] [--min-sdk-version VAL] [--target-sdk-version VAL] \\\n"
         "        [--app-version VAL] [--app-version-name TEXT] [--custom-package VAL] \\\n"
@@ -65,11 +67,9 @@ void usage(void)
         "        [--max-res-version VAL] \\\n"
         "        [-I base-package [-I base-package ...]] \\\n"
         "        [-A asset-source-dir]  [-G class-list-file] [-P public-definitions-file] \\\n"
-        "        [-S resource-sources [-S resource-sources ...]] \\\n"
+        "        [-S resource-sources [-S resource-sources ...]] "
         "        [-F apk-file] [-J R-file-dir] \\\n"
         "        [--product product1,product2,...] \\\n"
-        "        [-c CONFIGS] [--preferred-configurations CONFIGS] \\\n"
-        "        [-o] \\\n"
         "        [raw-files-dir [raw-files-dir] ...]\n"
         "\n"
         "   Package the android resources.  It will read assets and resources that are\n"
@@ -83,9 +83,6 @@ void usage(void)
     fprintf(stderr,
         " %s a[dd] [-v] file.{zip,jar,apk} file1 [file2 ...]\n"
         "   Add specified files to Zip-compatible archive.\n\n", gProgName);
-    fprintf(stderr,
-        " %s c[runch] [-v] -S resource-sources ... -C output-folder ...\n"
-        "   Do PNG preprocessing and store the results in output folder.\n\n", gProgName);
     fprintf(stderr,
         " %s v[ersion]\n"
         "   Print program version.\n\n", gProgName);
@@ -110,13 +107,12 @@ void usage(void)
         "   -j  specify a jar or zip file containing classes to include\n"
         "   -k  junk path of file(s) added\n"
         "   -m  make package directories under location specified by -J\n"
-        "   -o  create overlay package (ie only resources; expects <overlay-package> in manifest)\n"
 #if 0
         "   -p  pseudolocalize the default configuration\n"
 #endif
         "   -u  update existing packages (add new, replace older, remove deleted files)\n"
         "   -v  verbose output\n"
-        "   -x  create extending (non-application) resource IDs\n"
+        "   -x  either create or assign (if specified) extending (non-application) resource IDs\n"
         "   -z  require localization of resource attributes marked with\n"
         "       localization=\"suggested\"\n"
         "   -A  additional directory in which to find raw asset files\n"
@@ -149,16 +145,8 @@ void usage(void)
         "       inserts android:versionName in to manifest.\n"
         "   --custom-package\n"
         "       generates R.java into a different package.\n"
-        "   --extra-packages\n"
-        "       generate R.java for libraries. Separate libraries with ':'.\n"
-        "   --generate-dependencies\n"
-        "       generate dependency files in the same directories for R.java and resource package\n"
         "   --auto-add-overlay\n"
         "       Automatically add resources that are only in overlays.\n"
-        "   --preferred-configurations\n"
-        "       Like the -c option for filtering out unneeded configurations, but\n"
-        "       only expresses a preference.  If there is no resource available with\n"
-        "       the preferred configuration then it will not be stripped.\n"
         "   --rename-manifest-package\n"
         "       Rewrite the manifest so that its package name is the package name\n"
         "       given here.  Relative class names (for example .Foo) will be\n"
@@ -198,7 +186,6 @@ int handleCommand(Bundle* bundle)
     case kCommandAdd:       return doAdd(bundle);
     case kCommandRemove:    return doRemove(bundle);
     case kCommandPackage:   return doPackage(bundle);
-    case kCommandCrunch:    return doCrunch(bundle);
     default:
         fprintf(stderr, "%s: requested command not yet supported\n", gProgName);
         return 1;
@@ -236,8 +223,6 @@ int main(int argc, char* const argv[])
         bundle.setCommand(kCommandRemove);
     else if (argv[1][0] == 'p')
         bundle.setCommand(kCommandPackage);
-    else if (argv[1][0] == 'c')
-        bundle.setCommand(kCommandCrunch);
     else {
         fprintf(stderr, "ERROR: Unknown command '%s'\n", argv[1]);
         wantUsage = true;
@@ -292,9 +277,6 @@ int main(int argc, char* const argv[])
             case 'm':
                 bundle.setMakePackageDirs(true);
                 break;
-            case 'o':
-                bundle.setIsOverlayPackage(true);
-                break;
 #if 0
             case 'p':
                 bundle.setPseudolocalize(true);
@@ -305,6 +287,14 @@ int main(int argc, char* const argv[])
                 break;
             case 'x':
                 bundle.setExtending(true);
+                argc--;
+                argv++;
+                if (!argc || !isdigit(argv[0][0])) {
+                    argc++;
+                    argv--;
+                } else {
+                    bundle.setExtendedPackageId(atoi(argv[0]));
+                }
                 break;
             case 'z':
                 bundle.setRequireLocalization(true);
@@ -408,17 +398,6 @@ int main(int argc, char* const argv[])
                 convertPath(argv[0]);
                 bundle.addResourceSourceDir(argv[0]);
                 break;
-            case 'C':
-                argc--;
-                argv++;
-                if (!argc) {
-                    fprintf(stderr, "ERROR: No argument supplied for '-C' option\n");
-                    wantUsage = true;
-                    goto bail;
-                }
-                convertPath(argv[0]);
-                bundle.setCrunchedOutputDir(argv[0]);
-                break;
             case '0':
                 argc--;
                 argv++;
@@ -501,28 +480,8 @@ int main(int argc, char* const argv[])
                         goto bail;
                     }
                     bundle.setCustomPackage(argv[0]);
-                } else if (strcmp(cp, "-extra-packages") == 0) {
-                    argc--;
-                    argv++;
-                    if (!argc) {
-                        fprintf(stderr, "ERROR: No argument supplied for '--extra-packages' option\n");
-                        wantUsage = true;
-                        goto bail;
-                    }
-                    bundle.setExtraPackages(argv[0]);
-                } else if (strcmp(cp, "-generate-dependencies") == 0) {
-                    bundle.setGenDependencies(true);
                 } else if (strcmp(cp, "-utf16") == 0) {
                     bundle.setWantUTF16(true);
-                } else if (strcmp(cp, "-preferred-configurations") == 0) {
-                    argc--;
-                    argv++;
-                    if (!argc) {
-                        fprintf(stderr, "ERROR: No argument supplied for '--preferred-configurations' option\n");
-                        wantUsage = true;
-                        goto bail;
-                    }
-                    bundle.addPreferredConfigurations(argv[0]);
                 } else if (strcmp(cp, "-rename-manifest-package") == 0) {
                     argc--;
                     argv++;
@@ -554,9 +513,7 @@ int main(int argc, char* const argv[])
                     bundle.setProduct(argv[0]);
                 } else if (strcmp(cp, "-non-constant-id") == 0) {
                     bundle.setNonConstantId(true);
-                } else if (strcmp(cp, "-no-crunch") == 0) {
-                    bundle.setUseCrunchCache(true);
-                }else {
+                } else {
                     fprintf(stderr, "ERROR: Unknown option '-%s'\n", cp);
                     wantUsage = true;
                     goto bail;

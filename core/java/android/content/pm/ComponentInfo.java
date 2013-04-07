@@ -98,13 +98,6 @@ public class ComponentInfo extends PackageItemInfo {
         }
         return name;
     }
-
-    /**
-     * Return whether this component and its enclosing application are enabled.
-     */
-    public boolean isEnabled() {
-        return enabled && applicationInfo.enabled;
-    }
     
     /**
      * Return the icon resource identifier to use for this component.  If

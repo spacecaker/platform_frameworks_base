@@ -1,3 +1,4 @@
+ifndef TARGET_PROVIDES_MEDIASERVER
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -11,16 +12,6 @@ LOCAL_SHARED_LIBRARIES := \
 	libutils \
 	libbinder
 
-ifeq ($(BOARD_USE_YAMAHAPLAYER),true)
-    LOCAL_CFLAGS += -DYAMAHAPLAYER
-    LOCAL_SHARED_LIBRARIES += libmediayamahaservice
-endif
-
-ifeq ($(BOARD_USE_SECTVOUT),true)
-    LOCAL_CFLAGS += -DSECTVOUT
-	LOCAL_SHARED_LIBRARIES += libTVOut
-endif
-
 base := $(LOCAL_PATH)/../..
 
 LOCAL_C_INCLUDES := \
@@ -31,3 +22,4 @@ LOCAL_C_INCLUDES := \
 LOCAL_MODULE:= mediaserver
 
 include $(BUILD_EXECUTABLE)
+endif

@@ -242,6 +242,7 @@ static JNINativeMethod gYuvImageMethods[] = {
 
 #define kClassPathName  "android/graphics/YuvImage"
 
+int register_android_graphics_YuvImage(JNIEnv* env);
 int register_android_graphics_YuvImage(JNIEnv* env)
 {
     return android::AndroidRuntime::registerNativeMethods(env, kClassPathName,

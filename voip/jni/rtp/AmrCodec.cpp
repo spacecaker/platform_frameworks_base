@@ -52,7 +52,7 @@ public:
 
     int set(int sampleRate, const char *fmtp);
     int encode(void *payload, int16_t *samples);
-    int decode(int16_t *samples, int count, void *payload, int length);
+    int decode(int16_t *samples, void *payload, int length);
 
 private:
     void *mEncoder;
@@ -73,7 +73,7 @@ int AmrCodec::set(int sampleRate, const char *fmtp)
     }
 
     // Handle mode-set and octet-align.
-    const char *modes = strcasestr(fmtp, "mode-set=");
+    char *modes = (char*)strcasestr(fmtp, "mode-set=");
     if (modes) {
         mMode = 0;
         mModeSet = 0;
@@ -128,7 +128,7 @@ int AmrCodec::encode(void *payload, int16_t *samples)
     return length;
 }
 
-int AmrCodec::decode(int16_t *samples, int count, void *payload, int length)
+int AmrCodec::decode(int16_t *samples, void *payload, int length)
 {
     unsigned char *bytes = (unsigned char *)payload;
     Frame_Type_3GPP type;
@@ -213,7 +213,7 @@ public:
     }
 
     int encode(void *payload, int16_t *samples);
-    int decode(int16_t *samples, int count, void *payload, int length);
+    int decode(int16_t *samples, void *payload, int length);
 
 private:
     void *mEncoder;
@@ -239,24 +239,20 @@ int GsmEfrCodec::encode(void *payload, int16_t *samples)
     return -1;
 }
 
-int GsmEfrCodec::decode(int16_t *samples, int count, void *payload, int length)
+int GsmEfrCodec::decode(int16_t *samples, void *payload, int length)
 {
     unsigned char *bytes = (unsigned char *)payload;
-    int n = 0;
-    while (n + 160 <= count && length >= 31 && (bytes[0] >> 4) == 0x0C) {
+    if (length == 31 && (bytes[0] >> 4) == 0x0C) {
         for (int i = 0; i < 30; ++i) {
             bytes[i] = (bytes[i] << 4) | (bytes[i + 1] >> 4);
         }
         bytes[30] <<= 4;
 
-        if (AMRDecode(mDecoder, AMR_122, bytes, &samples[n], MIME_IETF) != 31) {
-            break;
+        if (AMRDecode(mDecoder, AMR_122, bytes, samples, MIME_IETF) == 31) {
+            return 160;
         }
-        n += 160;
-        length -= 31;
-        bytes += 31;
     }
-    return n;
+    return -1;
 }
 
 } // namespace

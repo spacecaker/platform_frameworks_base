@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,15 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*--------------------------------------------------------------------------
-Copyright (c) 2011, Code Aurora Forum. All rights reserved.
---------------------------------------------------------------------------*/
 
 #ifndef OMX_CODEC_H_
 
 #define OMX_CODEC_H_
 
-#include <android/native_window.h>
 #include <media/IOMX.h>
 #include <media/stagefright/MediaBuffer.h>
 #include <media/stagefright/MediaSource.h>
@@ -42,27 +38,12 @@ struct OMXCodec : public MediaSource,
         // The client wants to access the output buffer's video
         // data for example for thumbnail extraction.
         kClientNeedsFramebuffer  = 4,
-
-        // Request for software or hardware codecs. If request
-        // can not be fullfilled, Create() returns NULL.
-        kSoftwareCodecsOnly      = 8,
-        kHardwareCodecsOnly      = 16,
-
-        // Store meta data in video buffers
-        kStoreMetaDataInVideoBuffers = 32,
-
-        // Only submit one input buffer at one time.
-        kOnlySubmitOneInputBufferAtOneTime = 64,
-
-        // Enable GRALLOC_USAGE_PROTECTED for output buffers from native window
-        kEnableGrallocUsageProtected = 128,
-
-        // Secure decoding mode
-        kUseSecureInputBuffers = 256,
-
-#ifdef QCOM_HARDWARE
-        kEnableThumbnailMode = 512,
-        kUseMinBufferCount = 32768,
+#if defined(OMAP_ENHANCEMENT) || defined(OMAP_COMPAT)
+        kPreferThumbnailMode               = 0x8,
+        kPreferInterlacedOutputContent     = 0x10,
+        MAX_RESOLUTION = 414720, // video resolution for TI Vid Dec
+        MAX_RESOLUTION_WIDTH = 864, // video width for TI Vid Dec
+        MAX_RESOLUTION_HEIGHT = 864, // video height for TI Vid Dec
 #endif
     };
     static sp<MediaSource> Create(
@@ -70,8 +51,17 @@ struct OMXCodec : public MediaSource,
             const sp<MetaData> &meta, bool createEncoder,
             const sp<MediaSource> &source,
             const char *matchComponentName = NULL,
-            uint32_t flags = 0,
-            const sp<ANativeWindow> &nativeWindow = NULL);
+            uint32_t flags = 0);
+
+#ifdef OMAP_ENHANCEMENT
+    static sp<MediaSource> Create(
+            const sp<IOMX> &omx,
+            const sp<MetaData> &meta, bool createEncoder,
+            const sp<MediaSource> &source,
+            IOMX::node_id &nodeId,
+            const char *matchComponentName = NULL,
+            uint32_t flags = 0);
+#endif
 
     static void setComponentRole(
             const sp<IOMX> &omx, IOMX::node_id node, bool isEncoder,
@@ -81,26 +71,26 @@ struct OMXCodec : public MediaSource,
     virtual status_t stop();
 
     virtual sp<MetaData> getFormat();
-
+#ifdef OMAP_ENHANCEMENT
+    virtual void setBuffers(Vector< sp<IMemory> > mBufferAddresses, bool portReconfig = false);
+    virtual int getNumofOutputBuffers();
+#endif
     virtual status_t read(
             MediaBuffer **buffer, const ReadOptions *options = NULL);
 
     virtual status_t pause();
 
+    void registerBuffers(const sp<IMemoryHeap> &mem);
+
     // from MediaBufferObserver
     virtual void signalBufferReturned(MediaBuffer *buffer);
-
-    // for use by ACodec
-    static void findMatchingCodecs(
-            const char *mime,
-            bool createEncoder, const char *matchComponentName,
-            uint32_t flags,
-            Vector<String8> *matchingCodecs);
 
 protected:
     virtual ~OMXCodec();
 
+#ifndef OMAP_ENHANCEMENT
 private:
+#endif
 
     // Make sure mLock is accessible to OMXCodecObserver
     friend class OMXCodecObserver;
@@ -117,18 +107,10 @@ private:
         EXECUTING_TO_IDLE,
         IDLE_TO_LOADED,
         RECONFIGURING,
-#ifdef QCOM_HARDWARE
-        PAUSING,
-        FLUSHING,
-        PAUSED,
-#endif
         ERROR
     };
 
     enum {
-#ifdef QCOM_HARDWARE
-        kPortIndexBoth   = -1,
-#endif
         kPortIndexInput  = 0,
         kPortIndexOutput = 1
     };
@@ -156,29 +138,29 @@ private:
         kAvoidMemcopyInputRecordingFrames     = 2048,
         kRequiresLargerEncoderOutputBuffer    = 4096,
         kOutputBuffersAreUnreadable           = 8192,
-#ifdef QCOM_HARDWARE
         kStoreMetaDataInInputVideoBuffers     = 16384,
-        kRequiresGlobalFlush                  = 0x20000000, // 2^29
-        kRequiresWMAProComponent              = 0x40000000, //2^30
+        kCanNotSetVideoParameters             = 32768,
+        kDoesNotRequireMemcpyOnOutputPort     = 65536,
+#if defined(OMAP_ENHANCEMENT) || defined(OMAP_COMPAT)
+        kDecoderNeedsPortReconfiguration      = 131072,
+        kDecoderCantRenderSmallClips          = 262144,
+        kInterlacedOutputContent              = 524288,
+        kThumbnailMode                        = 1048576,
 #endif
-    };
-
-    enum BufferStatus {
-        OWNED_BY_US,
-        OWNED_BY_COMPONENT,
-        OWNED_BY_NATIVE_WINDOW,
-        OWNED_BY_CLIENT,
     };
 
     struct BufferInfo {
         IOMX::buffer_id mBuffer;
-        BufferStatus mStatus;
+        bool mOwnedByComponent;
+#ifdef OMAP_ENHANCEMENT
+        bool mOwnedByPlayer;
+#endif
         sp<IMemory> mMem;
         size_t mSize;
         void *mData;
         MediaBuffer *mMediaBuffer;
         OMX_U8 *mAllocatedBuffer;
-        OMX_U32 mAllocatedSize;
+        size_t mAllocatedSize;
     };
 
     struct CodecSpecificData {
@@ -190,10 +172,6 @@ private:
     bool mOMXLivesLocally;
     IOMX::node_id mNode;
     uint32_t mQuirks;
-
-    // Flags specified in the creation of the codec.
-    uint32_t mFlags;
-
     bool mIsEncoder;
     char *mMIME;
     char *mComponentName;
@@ -201,10 +179,15 @@ private:
     sp<MediaSource> mSource;
     Vector<CodecSpecificData *> mCodecSpecificData;
     size_t mCodecSpecificDataIndex;
-
+    sp<IMemoryHeap> mPmemInfo;
     sp<MemoryDealer> mDealer[2];
 
     State mState;
+#ifdef OMAP_ENHANCEMENT
+    Vector< sp<IMemory> > mExtBufferAddresses;
+    uint32_t mStride;
+    nsecs_t mNSecsToWait;
+#endif
     Vector<BufferInfo> mPortBuffers[2];
     PortStatus mPortStatus[2];
     bool mInitialBufferSubmit;
@@ -215,10 +198,7 @@ private:
     int64_t mSeekTimeUs;
     ReadOptions::SeekMode mSeekMode;
     int64_t mTargetTimeUs;
-    bool mOutputPortSettingsChangedPending;
-#ifdef QCOM_HARDWARE
-    bool mThumbnailMode;
-#endif
+    int64_t mSkipTimeUs;
 
     MediaBuffer *mLeftOverBuffer;
 
@@ -227,34 +207,13 @@ private:
 
     bool mPaused;
 
-    sp<ANativeWindow> mNativeWindow;
-
-    // The index in each of the mPortBuffers arrays of the buffer that will be
-    // submitted to OMX next.  This only applies when using buffers from a
-    // native window.
-    size_t mNextNativeBufferIndex[2];
-
     // A list of indices into mPortStatus[kPortIndexOutput] filled with data.
     List<size_t> mFilledBuffers;
     Condition mBufferFilled;
 
-#ifdef QCOM_HARDWARE
-    bool mIsMetaDataStoredInVideoBuffers;
-    bool mOnlySubmitOneBufferAtOneTime;
-    bool mInterlaceFormatDetected;
-    bool mSPSParsed;
-    bool bInvalidState;
-#endif
-
-    // Used to record the decoding time for an output picture from
-    // a video encoder.
-    List<int64_t> mDecodingTimeList;
-
-    OMXCodec(const sp<IOMX> &omx, IOMX::node_id node,
-             uint32_t quirks, uint32_t flags,
+    OMXCodec(const sp<IOMX> &omx, IOMX::node_id node, uint32_t quirks,
              bool isEncoder, const char *mime, const char *componentName,
-             const sp<MediaSource> &source,
-             const sp<ANativeWindow> &nativeWindow);
+             const sp<MediaSource> &source);
 
     void addCodecSpecificData(const void *data, size_t size);
     void clearCodecSpecificData();
@@ -262,14 +221,7 @@ private:
     void setComponentRole();
 
     void setAMRFormat(bool isWAMR, int32_t bitRate);
-    status_t setAACFormat(int32_t numChannels, int32_t sampleRate, int32_t bitRate);
-#ifdef QCOM_HARDWARE
-    void setEVRCFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
-#endif
-    void setG711Format(int32_t numChannels);
-#ifdef QCOM_HARDWARE
-    void setQCELPFormat( int32_t sampleRate, int32_t numChannels, int32_t bitRate);
-#endif
+    void setAACFormat(int32_t numChannels, int32_t sampleRate, int32_t bitRate);
 
     status_t setVideoPortFormatType(
             OMX_U32 portIndex,
@@ -278,6 +230,11 @@ private:
 
     void setVideoInputFormat(
             const char *mime, const sp<MetaData>& meta);
+
+#if defined (TARGET_OMAP4) && defined (OMAP_ENHANCEMENT)
+    status_t setupEncoderPresetParams(int32_t isS3DEnabled);
+    status_t setupEncoderFrameDataContentParams(const sp<MetaData>& meta);
+#endif
 
     status_t setupBitRate(int32_t bitRate);
     status_t setupErrorCorrectionParameters();
@@ -312,29 +269,19 @@ private:
 
     status_t allocateBuffers();
     status_t allocateBuffersOnPort(OMX_U32 portIndex);
-    status_t allocateOutputBuffersFromNativeWindow();
 
-    status_t queueBufferToNativeWindow(BufferInfo *info);
-    status_t cancelBufferToNativeWindow(BufferInfo *info);
-    BufferInfo* dequeueBufferFromNativeWindow();
-    status_t pushBlankBuffersToNativeWindow();
-
+    status_t freeBuffer(
+            OMX_U32 portIndex, BufferInfo *info);
     status_t freeBuffersOnPort(
             OMX_U32 portIndex, bool onlyThoseWeOwn = false);
 
-    status_t freeBuffer(OMX_U32 portIndex, size_t bufIndex);
-
-    bool drainInputBuffer(IOMX::buffer_id buffer);
+    void drainInputBuffer(IOMX::buffer_id buffer);
     void fillOutputBuffer(IOMX::buffer_id buffer);
-    bool drainInputBuffer(BufferInfo *info);
+    void drainInputBuffer(BufferInfo *info);
     void fillOutputBuffer(BufferInfo *info);
 
     void drainInputBuffers();
     void fillOutputBuffers();
-
-    bool drainAnyInputBuffer();
-    BufferInfo *findInputBufferByDataPointer(void *ptr);
-    BufferInfo *findEmptyInputBuffer();
 
     // Returns true iff a flush was initiated and a completion event is
     // upcoming, false otherwise (A flush was not necessary as we own all
@@ -344,7 +291,7 @@ private:
     bool flushPortAsync(OMX_U32 portIndex);
 
     void disablePortAsync(OMX_U32 portIndex);
-    status_t enablePortAsync(OMX_U32 portIndex);
+    void enablePortAsync(OMX_U32 portIndex);
 
     static size_t countBuffersWeOwn(const Vector<BufferInfo> &buffers);
     static bool isIntermediateState(State state);
@@ -358,46 +305,94 @@ private:
 
     status_t init();
     void initOutputFormat(const sp<MetaData> &inputFormat);
-    status_t initNativeWindow();
-
-    void initNativeWindowCrop();
 
     void dumpPortStatus(OMX_U32 portIndex);
 
-    status_t configureCodec(const sp<MetaData> &meta);
+#ifdef OMAP_ENHANCEMENT
+public:
+#endif
+    status_t configureCodec(const sp<MetaData> &meta, uint32_t flags);
 
+#if defined(OMAP_ENHANCEMENT) || defined(OMAP_COMPAT)
+protected:
+    static uint32_t getComponentQuirks(const char *componentName, bool isEncoder, uint32_t flags = 0);
+    int32_t mVideoFPS;
+#if defined(TARGET_OMAP4)
+    void setS3DMetaDataConfig(int32_t frameContentType);
+#endif
+#else
     static uint32_t getComponentQuirks(
             const char *componentName, bool isEncoder);
-
-    void restorePatchedDataPointer(BufferInfo *info);
-
-    status_t applyRotation();
-    status_t waitForBufferFilled_l();
-
-    int64_t retrieveDecodingTimeUs(bool isCodecSpecific);
-
-    status_t parseAVCCodecSpecificData(
-            const void *data, size_t size,
-            unsigned *profile, unsigned *level, const sp<MetaData> &meta);
-#ifdef QCOM_HARDWARE
-    void parseFlags( uint32_t flags );
 #endif
+    static void findMatchingCodecs(
+            const char *mime,
+            bool createEncoder, const char *matchComponentName,
+            uint32_t flags,
+            Vector<String8> *matchingCodecs);
 
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
-#ifdef QCOM_HARDWARE
-    status_t setWMAFormat(const sp<MetaData> &inputFormat);
-    void setAC3Format(int32_t numChannels, int32_t sampleRate);
 
-    int32_t mNumBFrames;
-    bool mUseArbitraryMode;
+#if defined(OMAP_ENHANCEMENT) && defined(TARGET_OMAP4) && defined (NPA_BUFFERS)
+    uint32_t mNumberOfNPABuffersSent;
+	uint32_t mThumbnailEOSSent;
 #endif
+};
+
+#if defined(OMAP_ENHANCEMENT)
+struct OMXCodecObserver : public BnOMXObserver {
+    OMXCodecObserver() {
+    }
+
+    void setCodec(const sp<OMXCodec> &target) {
+        mTarget = target;
+    }
+
+    // from IOMXObserver
+    virtual void onMessage(const omx_message &msg) {
+         sp<OMXCodec> codec = mTarget.promote();
+
+        if (codec.get() != NULL) {
+            Mutex::Autolock autoLock(codec->mLock);
+            codec->on_message(msg);
+            codec.clear();
+        }
+    }
+
+protected:
+    virtual ~OMXCodecObserver() {}
+
+private:
+    wp<OMXCodec> mTarget;
+
+    OMXCodecObserver(const OMXCodecObserver &);
+    OMXCodecObserver &operator=(const OMXCodecObserver &);
+};
+
+template<class T>
+static void InitOMXParams(T *params) {
+    params->nSize = sizeof(T);
+    params->nVersion.s.nVersionMajor = 1;
+#if defined(OMAP_ENHANCEMENT) && defined(TARGET_OMAP4)
+    //Ducati strict OMX Version check
+    params->nVersion.s.nVersionMinor = 1;
+#else
+    params->nVersion.s.nVersionMinor = 0;
+#endif
+    params->nVersion.s.nRevision = 0;
+    params->nVersion.s.nStep = 0;
+}
+
+#endif
+
+struct CodecProfileLevel {
+    OMX_U32 mProfile;
+    OMX_U32 mLevel;
 };
 
 struct CodecCapabilities {
     String8 mComponentName;
     Vector<CodecProfileLevel> mProfileLevels;
-    Vector<OMX_U32> mColorFormats;
 };
 
 // Return a vector of componentNames with supported profile/level pairs
@@ -406,17 +401,10 @@ struct CodecCapabilities {
 // that encode content of the given type.
 // profile and level indications only make sense for h.263, mpeg4 and avc
 // video.
-// If hwCodecOnly==true, only returns hardware-based components, software and
-// hardware otherwise.
 // The profile/level values correspond to
 // OMX_VIDEO_H263PROFILETYPE, OMX_VIDEO_MPEG4PROFILETYPE,
 // OMX_VIDEO_AVCPROFILETYPE, OMX_VIDEO_H263LEVELTYPE, OMX_VIDEO_MPEG4LEVELTYPE
 // and OMX_VIDEO_AVCLEVELTYPE respectively.
-
-status_t QueryCodecs(
-        const sp<IOMX> &omx,
-        const char *mimeType, bool queryDecoders, bool hwCodecOnly,
-        Vector<CodecCapabilities> *results);
 
 status_t QueryCodecs(
         const sp<IOMX> &omx,

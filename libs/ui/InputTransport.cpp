@@ -27,26 +27,16 @@
 
 namespace android {
 
-#define ROUND_UP(value, boundary) (((value) + (boundary) - 1) & ~((boundary) - 1))
-#define MIN_HISTORY_DEPTH 20
-
 // Must be at least sizeof(InputMessage) + sufficient space for pointer data
-static const int DEFAULT_MESSAGE_BUFFER_SIZE = ROUND_UP(
-        sizeof(InputMessage) + MIN_HISTORY_DEPTH
-                * (sizeof(InputMessage::SampleData) + MAX_POINTERS * sizeof(PointerCoords)),
-        4096);
+static const int DEFAULT_MESSAGE_BUFFER_SIZE = 16384;
 
 // Signal sent by the producer to the consumer to inform it that a new message is
 // available to be consumed in the shared memory buffer.
 static const char INPUT_SIGNAL_DISPATCH = 'D';
 
 // Signal sent by the consumer to the producer to inform it that it has finished
-// consuming the most recent message and it handled it.
-static const char INPUT_SIGNAL_FINISHED_HANDLED = 'f';
-
-// Signal sent by the consumer to the producer to inform it that it has finished
-// consuming the most recent message but it did not handle it.
-static const char INPUT_SIGNAL_FINISHED_UNHANDLED = 'u';
+// consuming the most recent message.
+static const char INPUT_SIGNAL_FINISHED = 'f';
 
 
 // --- InputChannel ---
@@ -83,9 +73,7 @@ status_t InputChannel::openInputChannelPair(const String8& name,
         sp<InputChannel>& outServerChannel, sp<InputChannel>& outClientChannel) {
     status_t result;
 
-    String8 ashmemName("InputChannel ");
-    ashmemName.append(name);
-    int serverAshmemFd = ashmem_create_region(ashmemName.string(), DEFAULT_MESSAGE_BUFFER_SIZE);
+    int serverAshmemFd = ashmem_create_region(name.string(), DEFAULT_MESSAGE_BUFFER_SIZE);
     if (serverAshmemFd < 0) {
         result = -errno;
         LOGE("channel '%s' ~ Could not create shared memory region. errno=%d",
@@ -368,7 +356,6 @@ status_t InputPublisher::publishMotionEvent(
         int32_t flags,
         int32_t edgeFlags,
         int32_t metaState,
-        int32_t buttonState,
         float xOffset,
         float yOffset,
         float xPrecision,
@@ -376,17 +363,16 @@ status_t InputPublisher::publishMotionEvent(
         nsecs_t downTime,
         nsecs_t eventTime,
         size_t pointerCount,
-        const PointerProperties* pointerProperties,
+        const int32_t* pointerIds,
         const PointerCoords* pointerCoords) {
 #if DEBUG_TRANSPORT_ACTIONS
     LOGD("channel '%s' publisher ~ publishMotionEvent: deviceId=%d, source=0x%x, "
-            "action=0x%x, flags=0x%x, edgeFlags=0x%x, metaState=0x%x, buttonState=0x%x, "
-            "xOffset=%f, yOffset=%f, "
+            "action=0x%x, flags=0x%x, edgeFlags=0x%x, metaState=0x%x, xOffset=%f, yOffset=%f, "
             "xPrecision=%f, yPrecision=%f, downTime=%lld, eventTime=%lld, "
             "pointerCount=%d",
             mChannel->getName().string(),
-            deviceId, source, action, flags, edgeFlags, metaState, buttonState,
-            xOffset, yOffset, xPrecision, yPrecision, downTime, eventTime, pointerCount);
+            deviceId, source, action, flags, edgeFlags, metaState, xOffset, yOffset,
+            xPrecision, yPrecision, downTime, eventTime, pointerCount);
 #endif
 
     if (pointerCount > MAX_POINTERS || pointerCount < 1) {
@@ -404,7 +390,6 @@ status_t InputPublisher::publishMotionEvent(
     mSharedMessage->motion.flags = flags;
     mSharedMessage->motion.edgeFlags = edgeFlags;
     mSharedMessage->motion.metaState = metaState;
-    mSharedMessage->motion.buttonState = buttonState;
     mSharedMessage->motion.xOffset = xOffset;
     mSharedMessage->motion.yOffset = yOffset;
     mSharedMessage->motion.xPrecision = xPrecision;
@@ -416,15 +401,14 @@ status_t InputPublisher::publishMotionEvent(
     mSharedMessage->motion.sampleData[0].eventTime = eventTime;
 
     for (size_t i = 0; i < pointerCount; i++) {
-        mSharedMessage->motion.pointerProperties[i].copyFrom(pointerProperties[i]);
-        mSharedMessage->motion.sampleData[0].coords[i].copyFrom(pointerCoords[i]);
+        mSharedMessage->motion.pointerIds[i] = pointerIds[i];
+        mSharedMessage->motion.sampleData[0].coords[i] = pointerCoords[i];
     }
 
     // Cache essential information about the motion event to ensure that a malicious consumer
     // cannot confuse the publisher by modifying the contents of the shared memory buffer while
     // it is being updated.
-    if (action == AMOTION_EVENT_ACTION_MOVE
-            || action == AMOTION_EVENT_ACTION_HOVER_MOVE) {
+    if (action == AMOTION_EVENT_ACTION_MOVE) {
         mMotionEventPointerCount = pointerCount;
         mMotionEventSampleDataStride = InputMessage::sampleDataStride(pointerCount);
         mMotionEventSampleDataTail = InputMessage::sampleDataPtrIncrement(
@@ -445,8 +429,7 @@ status_t InputPublisher::appendMotionSample(
 
     if (! mPinned || ! mMotionEventSampleDataTail) {
         LOGE("channel '%s' publisher ~ Cannot append motion sample because there is no current "
-                "AMOTION_EVENT_ACTION_MOVE or AMOTION_EVENT_ACTION_HOVER_MOVE event.",
-                mChannel->getName().string());
+                "AMOTION_EVENT_ACTION_MOVE event.", mChannel->getName().string());
         return INVALID_OPERATION;
     }
 
@@ -487,7 +470,7 @@ status_t InputPublisher::appendMotionSample(
 
     mMotionEventSampleDataTail->eventTime = eventTime;
     for (size_t i = 0; i < mMotionEventPointerCount; i++) {
-        mMotionEventSampleDataTail->coords[i].copyFrom(pointerCoords[i]);
+        mMotionEventSampleDataTail->coords[i] = pointerCoords[i];
     }
     mMotionEventSampleDataTail = newTail;
 
@@ -514,7 +497,7 @@ status_t InputPublisher::sendDispatchSignal() {
     return mChannel->sendSignal(INPUT_SIGNAL_DISPATCH);
 }
 
-status_t InputPublisher::receiveFinishedSignal(bool* outHandled) {
+status_t InputPublisher::receiveFinishedSignal() {
 #if DEBUG_TRANSPORT_ACTIONS
     LOGD("channel '%s' publisher ~ receiveFinishedSignal",
             mChannel->getName().string());
@@ -523,14 +506,9 @@ status_t InputPublisher::receiveFinishedSignal(bool* outHandled) {
     char signal;
     status_t result = mChannel->receiveSignal(& signal);
     if (result) {
-        *outHandled = false;
         return result;
     }
-    if (signal == INPUT_SIGNAL_FINISHED_HANDLED) {
-        *outHandled = true;
-    } else if (signal == INPUT_SIGNAL_FINISHED_UNHANDLED) {
-        *outHandled = false;
-    } else {
+    if (signal != INPUT_SIGNAL_FINISHED) {
         LOGE("channel '%s' publisher ~ Received unexpected signal '%c' from consumer",
                 mChannel->getName().string(), signal);
         return UNKNOWN_ERROR;
@@ -648,15 +626,13 @@ status_t InputConsumer::consume(InputEventFactoryInterface* factory, InputEvent*
     return OK;
 }
 
-status_t InputConsumer::sendFinishedSignal(bool handled) {
+status_t InputConsumer::sendFinishedSignal() {
 #if DEBUG_TRANSPORT_ACTIONS
-    LOGD("channel '%s' consumer ~ sendFinishedSignal: handled=%d",
-            mChannel->getName().string(), handled);
+    LOGD("channel '%s' consumer ~ sendFinishedSignal",
+            mChannel->getName().string());
 #endif
 
-    return mChannel->sendSignal(handled
-            ? INPUT_SIGNAL_FINISHED_HANDLED
-            : INPUT_SIGNAL_FINISHED_UNHANDLED);
+    return mChannel->sendSignal(INPUT_SIGNAL_FINISHED);
 }
 
 status_t InputConsumer::receiveDispatchSignal() {
@@ -700,7 +676,6 @@ void InputConsumer::populateMotionEvent(MotionEvent* motionEvent) const {
             mSharedMessage->motion.flags,
             mSharedMessage->motion.edgeFlags,
             mSharedMessage->motion.metaState,
-            mSharedMessage->motion.buttonState,
             mSharedMessage->motion.xOffset,
             mSharedMessage->motion.yOffset,
             mSharedMessage->motion.xPrecision,
@@ -708,7 +683,7 @@ void InputConsumer::populateMotionEvent(MotionEvent* motionEvent) const {
             mSharedMessage->motion.downTime,
             mSharedMessage->motion.sampleData[0].eventTime,
             mSharedMessage->motion.pointerCount,
-            mSharedMessage->motion.pointerProperties,
+            mSharedMessage->motion.pointerIds,
             mSharedMessage->motion.sampleData[0].coords);
 
     size_t sampleCount = mSharedMessage->motion.sampleCount;

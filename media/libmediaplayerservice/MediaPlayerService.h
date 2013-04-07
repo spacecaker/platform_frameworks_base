@@ -30,14 +30,15 @@
 #include <media/MediaPlayerInterface.h>
 #include <media/Metadata.h>
 
-#include <system/audio.h>
-
 namespace android {
 
 class IMediaRecorder;
 class IMediaMetadataRetriever;
 class IOMX;
 class MediaRecorderClient;
+#ifdef OMAP_ENHANCEMENT
+class IOverlayRenderer;
+#endif
 
 #define CALLBACK_ANTAGONIZER 0
 #if CALLBACK_ANTAGONIZER
@@ -85,27 +86,14 @@ class MediaPlayerService : public BnMediaPlayerService
                 uint32_t sampleRate, int channelCount,
                 int format, int bufferCount,
                 AudioCallback cb, void *cookie);
-#ifdef WITH_QCOM_LPA
-        virtual status_t        openSession(
-                int format, int sessionId, uint32_t sampleRate, int channels);
-#endif
+
         virtual void            start();
         virtual ssize_t         write(const void* buffer, size_t size);
         virtual void            stop();
         virtual void            flush();
         virtual void            pause();
-#ifdef WITH_QCOM_LPA
-        virtual void            pauseSession();
-        virtual void            resumeSession();
-#endif
         virtual void            close();
-#ifdef WITH_QCOM_LPA
-        virtual void            closeSession();
-#endif
                 void            setAudioStreamType(int streamType) { mStreamType = streamType; }
-#ifdef WITH_QCOM_LPA
-        virtual int             getAudioStreamType() { return mStreamType; }
-#endif
                 void            setVolume(float left, float right);
                 status_t        setAuxEffectSendLevel(float level);
                 status_t        attachAuxEffect(int effectId);
@@ -119,15 +107,13 @@ class MediaPlayerService : public BnMediaPlayerService
                 int event, void *me, void *info);
 
         AudioTrack*             mTrack;
-#ifdef WITH_QCOM_LPA
-        AudioTrack*             mSession;
-#endif
         AudioCallback           mCallback;
         void *                  mCallbackCookie;
         int                     mStreamType;
         float                   mLeftVolume;
         float                   mRightVolume;
         float                   mMsecsPerFrame;
+        uint32_t                mLatency;
         int                     mSessionId;
         float                   mSendLevel;
         int                     mAuxEffectId;
@@ -147,7 +133,7 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual ssize_t         bufferSize() const { return frameSize() * mFrameCount; }
         virtual ssize_t         frameCount() const { return mFrameCount; }
         virtual ssize_t         channelCount() const { return (ssize_t)mChannelCount; }
-        virtual ssize_t         frameSize() const { return ssize_t(mChannelCount * ((mFormat == AUDIO_FORMAT_PCM_16_BIT)?sizeof(int16_t):sizeof(u_int8_t))); }
+        virtual ssize_t         frameSize() const { return ssize_t(mChannelCount * ((mFormat == AudioSystem::PCM_16_BIT)?sizeof(int16_t):sizeof(u_int8_t))); }
         virtual uint32_t        latency() const;
         virtual float           msecsPerFrame() const;
         virtual status_t        getPosition(uint32_t *position);
@@ -165,9 +151,6 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual void            pause() {}
         virtual void            close() {}
                 void            setAudioStreamType(int streamType) {}
-#ifdef WITH_QCOM_LPA
-        virtual int             getAudioStreamType() { return 0; }
-#endif
                 void            setVolume(float left, float right) {}
                 uint32_t        sampleRate() const { return mSampleRate; }
                 uint32_t        format() const { return (uint32_t)mFormat; }
@@ -176,8 +159,7 @@ class MediaPlayerService : public BnMediaPlayerService
 
                 sp<IMemoryHeap> getHeap() const { return mHeap; }
 
-        static  void            notify(void* cookie, int msg,
-                                       int ext1, int ext2, const Parcel *obj);
+        static  void            notify(void* cookie, int msg, int ext1, int ext2);
         virtual status_t        dump(int fd, const Vector<String16>& args) const;
 
     private:
@@ -206,68 +188,30 @@ public:
     void    removeMediaRecorderClient(wp<MediaRecorderClient> client);
     virtual sp<IMediaMetadataRetriever> createMetadataRetriever(pid_t pid);
 
-    virtual sp<IMediaPlayer>    create(pid_t pid, const sp<IMediaPlayerClient>& client, int audioSessionId);
+    // House keeping for media player clients
+    virtual sp<IMediaPlayer>    create(
+            pid_t pid, const sp<IMediaPlayerClient>& client, const char* url,
+            const KeyedVector<String8, String8> *headers, int audioSessionId);
 
+    virtual sp<IMediaPlayer>    create(pid_t pid, const sp<IMediaPlayerClient>& client, int fd, int64_t offset, int64_t length, int audioSessionId);
     virtual sp<IMemory>         decode(const char* url, uint32_t *pSampleRate, int* pNumChannels, int* pFormat);
     virtual sp<IMemory>         decode(int fd, int64_t offset, int64_t length, uint32_t *pSampleRate, int* pNumChannels, int* pFormat);
     virtual sp<IOMX>            getOMX();
-
+#ifdef OMAP_ENHANCEMENT
+    virtual sp<IOverlayRenderer>  getOverlayRenderer();
+#endif
     virtual status_t            dump(int fd, const Vector<String16>& args);
 
             void                removeClient(wp<Client> client);
 
-    // For battery usage tracking purpose
-    struct BatteryUsageInfo {
-        // how many streams are being played by one UID
-        int     refCount;
-        // a temp variable to store the duration(ms) of audio codecs
-        // when we start a audio codec, we minus the system time from audioLastTime
-        // when we pause it, we add the system time back to the audioLastTime
-        // so after the pause, audioLastTime = pause time - start time
-        // if multiple audio streams are played (or recorded), then audioLastTime
-        // = the total playing time of all the streams
-        int32_t audioLastTime;
-        // when all the audio streams are being paused, we assign audioLastTime to
-        // this variable, so this value could be provided to the battery app
-        // in the next pullBatteryData call
-        int32_t audioTotalTime;
 
-        int32_t videoLastTime;
-        int32_t videoTotalTime;
-    };
-    KeyedVector<int, BatteryUsageInfo>    mBatteryData;
-
-    enum {
-        SPEAKER,
-        OTHER_AUDIO_DEVICE,
-        SPEAKER_AND_OTHER,
-        NUM_AUDIO_DEVICES
-    };
-
-    struct BatteryAudioFlingerUsageInfo {
-        int refCount; // how many audio streams are being played
-        int deviceOn[NUM_AUDIO_DEVICES]; // whether the device is currently used
-        int32_t lastTime[NUM_AUDIO_DEVICES]; // in ms
-        // totalTime[]: total time of audio output devices usage
-        int32_t totalTime[NUM_AUDIO_DEVICES]; // in ms
-    };
-
-    // This varialble is used to record the usage of audio output device
-    // for battery app
-    BatteryAudioFlingerUsageInfo mBatteryAudio;
-
-    // Collect info of the codec usage from media player and media recorder
-    virtual void                addBatteryData(uint32_t params);
-    // API for the Battery app to pull the data of codecs usage
-    virtual status_t            pullBatteryData(Parcel* reply);
 private:
 
     class Client : public BnMediaPlayer {
 
         // IMediaPlayer interface
         virtual void            disconnect();
-        virtual status_t        setVideoSurfaceTexture(
-                                        const sp<ISurfaceTexture>& surfaceTexture);
+        virtual status_t        setVideoSurface(const sp<ISurface>& surface);
         virtual status_t        prepareAsync();
         virtual status_t        start();
         virtual status_t        stop();
@@ -285,23 +229,22 @@ private:
         virtual status_t        getMetadata(bool update_only,
                                             bool apply_filter,
                                             Parcel *reply);
+        virtual status_t        suspend();
+        virtual status_t        resume();
         virtual status_t        setAuxEffectSendLevel(float level);
         virtual status_t        attachAuxEffect(int effectId);
-        virtual status_t        setParameter(int key, const Parcel &request);
-        virtual status_t        getParameter(int key, Parcel *reply);
+#ifdef OMAP_ENHANCEMENT
+        virtual status_t        requestVideoCloneMode(bool enable);
+#endif
 
         sp<MediaPlayerBase>     createPlayer(player_type playerType);
 
-        virtual status_t        setDataSource(
+                status_t        setDataSource(
                         const char *url,
                         const KeyedVector<String8, String8> *headers);
 
-        virtual status_t        setDataSource(int fd, int64_t offset, int64_t length);
-
-        virtual status_t        setDataSource(const sp<IStreamSource> &source);
-
-        static  void            notify(void* cookie, int msg,
-                                       int ext1, int ext2, const Parcel *obj);
+                status_t        setDataSource(int fd, int64_t offset, int64_t length);
+        static  void            notify(void* cookie, int msg, int ext1, int ext2);
 
                 pid_t           pid() const { return mPid; }
         virtual status_t        dump(int fd, const Vector<String16>& args) const;
@@ -314,8 +257,7 @@ private:
                                         pid_t pid,
                                         int32_t connId,
                                         const sp<IMediaPlayerClient>& client,
-                                        int audioSessionId,
-                                        uid_t uid);
+                                        int audioSessionId);
                                 Client();
         virtual                 ~Client();
 
@@ -335,9 +277,6 @@ private:
         // @param type Of the metadata to be recorded.
         void addNewMetadataUpdate(media::Metadata::Type type);
 
-        // Disconnect from the currently connected ANativeWindow.
-        void disconnectNativeWindow();
-
         mutable     Mutex                       mLock;
                     sp<MediaPlayerBase>         mPlayer;
                     sp<MediaPlayerService>      mService;
@@ -348,9 +287,6 @@ private:
                     bool                        mLoop;
                     int32_t                     mConnId;
                     int                         mAudioSessionId;
-                    uid_t                       mUID;
-                    sp<ANativeWindow>           mConnectedWindow;
-                    sp<IBinder>                 mConnectedWindowBinder;
 
         // Metadata filters.
         media::Metadata::Filter mMetadataAllow;  // protected by mLock
@@ -377,6 +313,9 @@ private:
                 SortedVector< wp<MediaRecorderClient> > mMediaRecorderClients;
                 int32_t                     mNextConnId;
                 sp<IOMX>                    mOMX;
+#ifdef OMAP_ENHANCEMENT
+                sp<IOverlayRenderer> mOverlayRenderer;
+#endif
 };
 
 // ----------------------------------------------------------------------------

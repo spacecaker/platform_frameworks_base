@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Patched by Sven Dawitz; Copyright (C) 2011 CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,15 +25,16 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Resources;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.os.Handler;
 import android.util.Log;
-import android.view.KeyEvent;
-import android.view.SoundEffectConstants;
+import android.view.Display;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -46,19 +48,18 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
 //  private static final String LOG_TAG = "RecentApplicationsDialog";
     private static final boolean DBG_FORCE_EMPTY_LIST = false;
 
+    private static boolean mTabletWorkaroundEnabled = false;
+
     static private StatusBarManager sStatusBar;
 
-    private static final int NUM_BUTTONS = 8;
-    private static final int MAX_RECENT_TASKS = NUM_BUTTONS * 2;    // allow for some discards
+    private static int NUM_BUTTONS = 8;
+    private static int MAX_RECENT_TASKS = NUM_BUTTONS * 2; // allow for some discards
+    private static int currRecentAppsNum;
 
-    final TextView[] mIcons = new TextView[NUM_BUTTONS];
+    TextView[] mIcons;
+    View mTitle;
     View mNoAppsText;
     IntentFilter mBroadcastIntentFilter = new IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS);
-
-    class RecentTag {
-        ActivityManager.RecentTaskInfo info;
-        Intent intent;
-    }
 
     Handler mHandler = new Handler();
     Runnable mCleanup = new Runnable() {
@@ -71,9 +72,10 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
         }
     };
 
+    private int mIconSize;
+
     public RecentApplicationsDialog(Context context) {
         super(context, com.android.internal.R.style.Theme_Dialog_RecentApplications);
-
     }
 
     /**
@@ -99,120 +101,31 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
                 WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
         window.setTitle("Recents");
 
-        setContentView(com.android.internal.R.layout.recent_apps_dialog);
-
-        final WindowManager.LayoutParams params = window.getAttributes();
-        params.width = WindowManager.LayoutParams.MATCH_PARENT;
-        params.height = WindowManager.LayoutParams.MATCH_PARENT;
-        window.setAttributes(params);
-        window.setFlags(0, WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-
-        mIcons[0] = (TextView)findViewById(com.android.internal.R.id.button0);
-        mIcons[1] = (TextView)findViewById(com.android.internal.R.id.button1);
-        mIcons[2] = (TextView)findViewById(com.android.internal.R.id.button2);
-        mIcons[3] = (TextView)findViewById(com.android.internal.R.id.button3);
-        mIcons[4] = (TextView)findViewById(com.android.internal.R.id.button4);
-        mIcons[5] = (TextView)findViewById(com.android.internal.R.id.button5);
-        mIcons[6] = (TextView)findViewById(com.android.internal.R.id.button6);
-        mIcons[7] = (TextView)findViewById(com.android.internal.R.id.button7);
-        mNoAppsText = findViewById(com.android.internal.R.id.no_applications_message);
-
-        for (TextView b: mIcons) {
-            b.setOnClickListener(this);
-        }
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_TAB) {
-            // Ignore all meta keys other than SHIFT.  The app switch key could be a
-            // fallback action chorded with ALT, META or even CTRL depending on the key map.
-            // DPad navigation is handled by the ViewRoot elsewhere.
-            final boolean backward = event.isShiftPressed();
-            final int numIcons = mIcons.length;
-            int numButtons = 0;
-            while (numButtons < numIcons && mIcons[numButtons].getVisibility() == View.VISIBLE) {
-                numButtons += 1;
-            }
-            if (numButtons != 0) {
-                int nextFocus = backward ? numButtons - 1 : 0;
-                for (int i = 0; i < numButtons; i++) {
-                    if (mIcons[i].hasFocus()) {
-                        if (backward) {
-                            nextFocus = (i + numButtons - 1) % numButtons;
-                        } else {
-                            nextFocus = (i + 1) % numButtons;
-                        }
-                        break;
-                    }
-                }
-                final int direction = backward ? View.FOCUS_BACKWARD : View.FOCUS_FORWARD;
-                if (mIcons[nextFocus].requestFocus(direction)) {
-                    mIcons[nextFocus].playSoundEffect(
-                            SoundEffectConstants.getContantForFocusDirection(direction));
-                }
-            }
-
-            // The dialog always handles the key to prevent the ViewRoot from
-            // performing the default navigation itself.
-            return true;
-        }
-
-        return super.onKeyDown(keyCode, event);
-    }
-
-    /**
-     * Dismiss the dialog and switch to the selected application.
-     */
-    public void dismissAndSwitch() {
-        final int numIcons = mIcons.length;
-        RecentTag tag = null;
-        for (int i = 0; i < numIcons; i++) {
-            if (mIcons[i].getVisibility() != View.VISIBLE) {
-                break;
-            }
-            if (i == 0 || mIcons[i].hasFocus()) {
-                tag = (RecentTag) mIcons[i].getTag();
-                if (mIcons[i].hasFocus()) {
-                    break;
-                }
-            }
-        }
-        if (tag != null) {
-            switchTo(tag);
-        }
-        dismiss();
+        mTabletWorkaroundEnabled = context.getResources().getBoolean(
+                com.android.internal.R.bool.cm_default_recentapps_tablet_workaround);
     }
 
     /**
      * Handler for user clicks.  If a button was clicked, launch the corresponding activity.
      */
     public void onClick(View v) {
+
         for (TextView b: mIcons) {
             if (b == v) {
-                RecentTag tag = (RecentTag)b.getTag();
-                switchTo(tag);
+                // prepare a launch intent and send it
+                Intent intent = (Intent)b.getTag();
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY);
+                    try {
+                        getContext().startActivity(intent);
+                    } catch (ActivityNotFoundException e) {
+                        Log.w("Recent", "Unable to launch recent task", e);
+                    }
+                }
                 break;
             }
         }
         dismiss();
-    }
-
-    private void switchTo(RecentTag tag) {
-        if (tag.info.id >= 0) {
-            // This is an active task; it should just go to the foreground.
-            final ActivityManager am = (ActivityManager)
-                    getContext().getSystemService(Context.ACTIVITY_SERVICE);
-            am.moveTaskToFront(tag.info.id, ActivityManager.MOVE_TASK_WITH_HOME);
-        } else if (tag.intent != null) {
-            tag.intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY
-                    | Intent.FLAG_ACTIVITY_TASK_ON_HOME);
-            try {
-                getContext().startActivity(tag.intent);
-            } catch (ActivityNotFoundException e) {
-                Log.w("Recent", "Unable to launch recent task", e);
-            }
-        }
     }
 
     /**
@@ -221,7 +134,9 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
     @Override
     public void onStart() {
         super.onStart();
+        updateConfig();
         reloadButtons();
+        showHideRecentTitle();
         if (sStatusBar != null) {
             sStatusBar.disable(StatusBarManager.DISABLE_EXPAND);
         }
@@ -250,7 +165,127 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
      }
 
     /**
-     * Reload the 6 buttons with recent activities
+     * Updates the number of recent applications to show
+     */
+    private void updateConfig() {
+        final Context context = getContext();
+        NUM_BUTTONS = Settings.System.getInt(context.getContentResolver(),
+                Settings.System.RECENT_APPS_NUMBER, NUM_BUTTONS);
+
+        final Resources resources = context.getResources();
+        mIconSize = (int) resources.getDimension(android.R.dimen.app_icon_size);
+
+        if (currRecentAppsNum == NUM_BUTTONS) // No change
+        {
+            if (mTabletWorkaroundEnabled)
+                setWindowParams();
+            return;
+        }
+
+        if (NUM_BUTTONS != 8 && NUM_BUTTONS != 12 && NUM_BUTTONS != 15)
+            NUM_BUTTONS = 8; // Load 8 by default
+
+        MAX_RECENT_TASKS = NUM_BUTTONS * 2;
+        currRecentAppsNum = NUM_BUTTONS;
+
+        mIcons = new TextView[NUM_BUTTONS];
+
+        if (NUM_BUTTONS == 15) {
+            loadFifteenRecentAppsConfig();
+        } else if (NUM_BUTTONS == 12) {
+            loadTwelveRecentAppsConfig();
+        } else {
+            loadEightRecentAppsConfig();
+        }
+
+        mNoAppsText = findViewById(com.android.internal.R.id.no_applications_message);
+
+        for (TextView b : mIcons) {
+            b.setOnClickListener(this);
+        }
+    }
+
+    private void showHideRecentTitle() {
+        mTitle = findViewById(com.android.internal.R.id.recent_title);
+
+        if (Settings.System.getInt(getContext().getContentResolver(),
+                Settings.System.RECENT_APPS_SHOW_TITLE, 1) != 0) {
+            mTitle.setVisibility(View.VISIBLE);
+        } else {
+            mTitle.setVisibility(View.GONE);
+        }
+    }
+
+    private void setWindowParams() {
+        Window window = getWindow();
+        final WindowManager.LayoutParams params = window.getAttributes();
+        if (mTabletWorkaroundEnabled) {
+            final Display display = window.getWindowManager().getDefaultDisplay();
+            params.width = display.getWidth();
+            params.height = display.getHeight();
+        } else {
+            params.width = WindowManager.LayoutParams.MATCH_PARENT;
+            params.height = WindowManager.LayoutParams.MATCH_PARENT;
+        }
+        window.setAttributes(params);
+        window.setFlags(0, WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+    }
+
+    private void loadEightRecentAppsConfig() {
+        setContentView(com.android.internal.R.layout.recent_apps_dialog);
+        setWindowParams();
+
+        mIcons[0] = (TextView) findViewById(com.android.internal.R.id.button0);
+        mIcons[1] = (TextView) findViewById(com.android.internal.R.id.button1);
+        mIcons[2] = (TextView) findViewById(com.android.internal.R.id.button2);
+        mIcons[3] = (TextView) findViewById(com.android.internal.R.id.button3);
+        mIcons[4] = (TextView) findViewById(com.android.internal.R.id.button4);
+        mIcons[5] = (TextView) findViewById(com.android.internal.R.id.button5);
+        mIcons[6] = (TextView) findViewById(com.android.internal.R.id.button6);
+        mIcons[7] = (TextView) findViewById(com.android.internal.R.id.button7);
+    }
+
+    private void loadTwelveRecentAppsConfig() {
+        setContentView(com.android.internal.R.layout.recent_apps_dialog_12);
+        setWindowParams();
+
+        mIcons[0] = (TextView) findViewById(com.android.internal.R.id.button0);
+        mIcons[1] = (TextView) findViewById(com.android.internal.R.id.button1);
+        mIcons[2] = (TextView) findViewById(com.android.internal.R.id.button2);
+        mIcons[3] = (TextView) findViewById(com.android.internal.R.id.button3);
+        mIcons[4] = (TextView) findViewById(com.android.internal.R.id.button4);
+        mIcons[5] = (TextView) findViewById(com.android.internal.R.id.button5);
+        mIcons[6] = (TextView) findViewById(com.android.internal.R.id.button6);
+        mIcons[7] = (TextView) findViewById(com.android.internal.R.id.button7);
+        mIcons[8] = (TextView) findViewById(com.android.internal.R.id.button8);
+        mIcons[9] = (TextView) findViewById(com.android.internal.R.id.button9);
+        mIcons[10] = (TextView) findViewById(com.android.internal.R.id.button10);
+        mIcons[11] = (TextView) findViewById(com.android.internal.R.id.button11);
+    }
+
+    private void loadFifteenRecentAppsConfig() {
+        setContentView(com.android.internal.R.layout.recent_apps_dialog_15);
+        setWindowParams();
+
+        mIcons[0] = (TextView) findViewById(com.android.internal.R.id.button0);
+        mIcons[1] = (TextView) findViewById(com.android.internal.R.id.button1);
+        mIcons[2] = (TextView) findViewById(com.android.internal.R.id.button2);
+        mIcons[3] = (TextView) findViewById(com.android.internal.R.id.button3);
+        mIcons[4] = (TextView) findViewById(com.android.internal.R.id.button4);
+        mIcons[5] = (TextView) findViewById(com.android.internal.R.id.button5);
+        mIcons[6] = (TextView) findViewById(com.android.internal.R.id.button6);
+        mIcons[7] = (TextView) findViewById(com.android.internal.R.id.button7);
+        mIcons[8] = (TextView) findViewById(com.android.internal.R.id.button8);
+        mIcons[9] = (TextView) findViewById(com.android.internal.R.id.button9);
+        mIcons[10] = (TextView) findViewById(com.android.internal.R.id.button10);
+        mIcons[11] = (TextView) findViewById(com.android.internal.R.id.button11);
+        mIcons[12] = (TextView) findViewById(com.android.internal.R.id.button12);
+        mIcons[13] = (TextView) findViewById(com.android.internal.R.id.button13);
+        mIcons[14] = (TextView) findViewById(com.android.internal.R.id.button14);
+    }
+
+    /**
+     * Reload the 8/12/15 buttons with recent activities
      */
     private void reloadButtons() {
 
@@ -306,10 +341,7 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
                     tv.setText(title);
                     icon = iconUtilities.createIconDrawable(icon);
                     tv.setCompoundDrawables(null, icon, null, null);
-                    RecentTag tag = new RecentTag();
-                    tag.info = info;
-                    tag.intent = intent;
-                    tv.setTag(tag);
+                    tv.setTag(intent);
                     tv.setVisibility(View.VISIBLE);
                     tv.setPressed(false);
                     tv.clearFocus();
@@ -337,8 +369,8 @@ public class RecentApplicationsDialog extends Dialog implements OnClickListener 
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (Intent.ACTION_CLOSE_SYSTEM_DIALOGS.equals(action)) {
-                String reason = intent.getStringExtra(PhoneWindowManager.SYSTEM_DIALOG_REASON_KEY);
-                if (! PhoneWindowManager.SYSTEM_DIALOG_REASON_RECENT_APPS.equals(reason)) {
+                String reason = intent.getStringExtra(CmPhoneWindowManager.SYSTEM_DIALOG_REASON_KEY);
+                if (! CmPhoneWindowManager.SYSTEM_DIALOG_REASON_RECENT_APPS.equals(reason)) {
                     dismiss();
                 }
             }

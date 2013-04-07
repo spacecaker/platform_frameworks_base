@@ -33,6 +33,7 @@ import android.provider.BaseColumns;
 import android.provider.MediaStore.Images;
 import android.provider.MediaStore.Images.Thumbnails;
 import android.util.Log;
+import android.os.SystemProperties;
 
 import java.io.FileInputStream;
 import java.io.FileDescriptor;
@@ -98,7 +99,9 @@ public class ThumbnailUtils {
         SizedThumbnailBitmap sizedThumbnailBitmap = new SizedThumbnailBitmap();
         Bitmap bitmap = null;
         MediaFileType fileType = MediaFile.getFileType(filePath);
-        if (fileType != null && fileType.fileType == MediaFile.FILE_TYPE_JPEG) {
+        if (fileType != null && ((fileType.fileType == MediaFile.FILE_TYPE_JPEG) ||
+                                 ((SystemProperties.OMAP_ENHANCEMENT) && (fileType.fileType == MediaFile.FILE_TYPE_JPS)) ||
+                                 ((SystemProperties.OMAP_ENHANCEMENT)&& (fileType.fileType == MediaFile.FILE_TYPE_MPO)))){
             createThumbnailFromEXIF(filePath, targetSize, maxPixels, sizedThumbnailBitmap);
             bitmap = sizedThumbnailBitmap.mBitmap;
         }
@@ -161,21 +164,7 @@ public class ThumbnailUtils {
                 // Ignore failures while cleaning up.
             }
         }
-
-        if (bitmap == null) return null;
-
-        if (kind == Images.Thumbnails.MINI_KIND) {
-            // Scale down the bitmap if it's too large.
-            int width = bitmap.getWidth();
-            int height = bitmap.getHeight();
-            int max = Math.max(width, height);
-            if (max > 512) {
-                float scale = 512f / max;
-                int w = Math.round(scale * width);
-                int h = Math.round(scale * height);
-                bitmap = Bitmap.createScaledBitmap(bitmap, w, h, true);
-            }
-        } else if (kind == Images.Thumbnails.MICRO_KIND) {
+        if (kind == Images.Thumbnails.MICRO_KIND && bitmap != null) {
             bitmap = extractThumbnail(bitmap,
                     TARGET_SIZE_MICRO_THUMBNAIL,
                     TARGET_SIZE_MICRO_THUMBNAIL,
@@ -297,7 +286,7 @@ public class ThumbnailUtils {
     private static Bitmap makeBitmap(int minSideLength, int maxNumOfPixels,
             Uri uri, ContentResolver cr, ParcelFileDescriptor pfd,
             BitmapFactory.Options options) {
-        Bitmap b = null;
+            Bitmap b = null;
         try {
             if (pfd == null) pfd = makeInputStream(uri, cr);
             if (pfd == null) return null;
@@ -387,7 +376,6 @@ public class ThumbnailUtils {
             if (recycle) {
                 source.recycle();
             }
-            c.setBitmap(null);
             return b2;
         }
         float bitmapWidthF = source.getWidth();

@@ -20,7 +20,6 @@ import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.IOException;
-import java.util.Arrays;
 
 import android.content.res.Resources;
 import android.content.res.TypedArray;
@@ -45,7 +44,6 @@ import android.util.StateSet;
  * @attr ref android.R.styleable#DrawableStates_state_checkable
  * @attr ref android.R.styleable#DrawableStates_state_checked
  * @attr ref android.R.styleable#DrawableStates_state_selected
- * @attr ref android.R.styleable#DrawableStates_state_activated
  * @attr ref android.R.styleable#DrawableStates_state_active
  * @attr ref android.R.styleable#DrawableStates_state_single
  * @attr ref android.R.styleable#DrawableStates_state_first
@@ -54,9 +52,6 @@ import android.util.StateSet;
  * @attr ref android.R.styleable#DrawableStates_state_pressed
  */
 public class StateListDrawable extends DrawableContainer {
-    private static final boolean DEBUG = false;
-    private static final String TAG = "StateListDrawable";
-
     /**
      * To be proper, we should have a getter for dither (and alpha, etc.)
      * so that proxy classes like this can save/restore their delegates'
@@ -98,8 +93,6 @@ public class StateListDrawable extends DrawableContainer {
     @Override
     protected boolean onStateChange(int[] stateSet) {
         int idx = mStateListState.indexOfStateSet(stateSet);
-        if (DEBUG) android.util.Log.i(TAG, "onStateChange " + this + " states "
-                + Arrays.toString(stateSet) + " found " + idx);
         if (idx < 0) {
             idx = mStateListState.indexOfStateSet(StateSet.WILD_CARD);
         }
@@ -124,10 +117,6 @@ public class StateListDrawable extends DrawableContainer {
                 com.android.internal.R.styleable.StateListDrawable_variablePadding, false));
         mStateListState.setConstantSize(a.getBoolean(
                 com.android.internal.R.styleable.StateListDrawable_constantSize, false));
-        mStateListState.setEnterFadeDuration(a.getInt(
-                com.android.internal.R.styleable.StateListDrawable_enterFadeDuration, 0));
-        mStateListState.setExitFadeDuration(a.getInt(
-                com.android.internal.R.styleable.StateListDrawable_exitFadeDuration, 0));
 
         setDither(a.getBoolean(com.android.internal.R.styleable.StateListDrawable_dither,
                                DEFAULT_DITHER));
@@ -262,7 +251,7 @@ public class StateListDrawable extends DrawableContainer {
     }
 
     static final class StateListState extends DrawableContainerState {
-        int[][] mStateSets;
+        private int[][] mStateSets;
 
         StateListState(StateListState orig, StateListDrawable owner, Resources res) {
             super(orig, owner, res);

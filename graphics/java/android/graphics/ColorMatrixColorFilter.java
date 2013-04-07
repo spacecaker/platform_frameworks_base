@@ -25,9 +25,7 @@ public class ColorMatrixColorFilter extends ColorFilter {
      *               is constructed will not be reflected in the filter.
      */
     public ColorMatrixColorFilter(ColorMatrix matrix) {
-        final float[] colorMatrix = matrix.getArray();
-        native_instance = nativeColorMatrixFilter(colorMatrix);
-        nativeColorFilter = nColorMatrixFilter(native_instance, colorMatrix);
+        native_instance = nativeColorMatrixFilter(matrix.getArray());
     }
 
     /**
@@ -42,9 +40,7 @@ public class ColorMatrixColorFilter extends ColorFilter {
             throw new ArrayIndexOutOfBoundsException();
         }
         native_instance = nativeColorMatrixFilter(array);
-        nativeColorFilter = nColorMatrixFilter(native_instance, array);
     }
 
     private static native int nativeColorMatrixFilter(float[] array);
-    private static native int nColorMatrixFilter(int nativeFilter, float[] array);
 }

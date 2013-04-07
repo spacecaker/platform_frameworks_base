@@ -182,8 +182,7 @@ public abstract class RegisteredServicesCache<V> {
         public final ComponentName componentName;
         public final int uid;
 
-        /** @hide */
-        public ServiceInfo(V type, ComponentName componentName, int uid) {
+        private ServiceInfo(V type, ComponentName componentName, int uid) {
             this.type = type;
             this.componentName = componentName;
             this.uid = uid;
@@ -272,11 +271,17 @@ public abstract class RegisteredServicesCache<V> {
         }
 
         synchronized (mServicesLock) {
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.d(TAG, "generateServicesMap: " + mInterfaceName);
+            }
             if (mPersistentServices == null) {
                 readPersistentServicesLocked();
             }
             mServices = Maps.newHashMap();
-            StringBuilder changes = new StringBuilder();
+            boolean changed = false;
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.d(TAG, "found " + serviceInfos.size() + " services");
+            }
             for (ServiceInfo<V> info : serviceInfos) {
                 // four cases:
                 // - doesn't exist yet
@@ -289,7 +294,10 @@ public abstract class RegisteredServicesCache<V> {
                 //   - add, notify user that it was added
                 Integer previousUid = mPersistentServices.get(info.type);
                 if (previousUid == null) {
-                    changes.append("  New service added: ").append(info).append("\n");
+                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                        Log.d(TAG, "encountered new type: " + info);
+                    }
+                    changed = true;
                     mServices.put(info.type, info);
                     mPersistentServices.put(info.type, info.uid);
                     if (!mPersistentServicesFileDidNotExist) {
@@ -297,25 +305,29 @@ public abstract class RegisteredServicesCache<V> {
                     }
                 } else if (previousUid == info.uid) {
                     if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                        changes.append("  Existing service (nop): ").append(info).append("\n");
+                        Log.d(TAG, "encountered existing type with the same uid: " + info);
                     }
                     mServices.put(info.type, info);
                 } else if (inSystemImage(info.uid)
                         || !containsTypeAndUid(serviceInfos, info.type, previousUid)) {
-                    if (inSystemImage(info.uid)) {
-                        changes.append("  System service replacing existing: ").append(info)
-                                .append("\n");
-                    } else {
-                        changes.append("  Existing service replacing a removed service: ")
-                                .append(info).append("\n");
+                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                        if (inSystemImage(info.uid)) {
+                            Log.d(TAG, "encountered existing type with a new uid but from"
+                                    + " the system: " + info);
+                        } else {
+                            Log.d(TAG, "encountered existing type with a new uid but existing was"
+                                    + " removed: " + info);
+                        }
                     }
+                    changed = true;
                     mServices.put(info.type, info);
                     mPersistentServices.put(info.type, info.uid);
                     notifyListener(info.type, false /* removed */);
                 } else {
                     // ignore
-                    changes.append("  Existing service with new uid ignored: ").append(info)
-                            .append("\n");
+                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                        Log.d(TAG, "encountered existing type with a new uid, ignoring: " + info);
+                    }
                 }
             }
 
@@ -327,16 +339,18 @@ public abstract class RegisteredServicesCache<V> {
             }
             for (V v1 : toBeRemoved) {
                 mPersistentServices.remove(v1);
-                changes.append("  Service removed: ").append(v1).append("\n");
+                changed = true;
                 notifyListener(v1, true /* removed */);
             }
-            if (changes.length() > 0) {
-                Log.d(TAG, "generateServicesMap(" + mInterfaceName + "): " +
-                        serviceInfos.size() + " services:\n" + changes);
+            if (changed) {
+                if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                    Log.d(TAG, "writing updated list of persistent services");
+                }
                 writePersistentServicesLocked();
             } else {
-                Log.d(TAG, "generateServicesMap(" + mInterfaceName + "): " +
-                        serviceInfos.size() + " services unchanged");
+                if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                    Log.d(TAG, "persistent services did not change, so not writing anything");
+                }
             }
             mPersistentServicesFileDidNotExist = false;
         }

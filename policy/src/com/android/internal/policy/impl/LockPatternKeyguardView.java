@@ -17,14 +17,9 @@
 package com.android.internal.policy.impl;
 
 import com.android.internal.R;
-import com.android.internal.policy.impl.LockPatternKeyguardView.UnlockMode;
-import com.android.internal.policy.IFaceLockCallback;
-import com.android.internal.policy.IFaceLockInterface;
+import com.android.internal.app.ThemeUtils;
 import com.android.internal.telephony.IccCard;
 import com.android.internal.widget.LockPatternUtils;
-import com.android.internal.widget.LockScreenWidgetCallback;
-import com.android.internal.widget.LockScreenWidgetInterface;
-import com.android.internal.widget.TransportControlView;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -34,39 +29,27 @@ import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
-import android.content.ComponentName;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.content.res.Resources;
-import android.content.ServiceConnection;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Message;
-import android.os.IBinder;
-import android.os.Parcelable;
-import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
-import android.util.Slog;
 import android.view.KeyEvent;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.view.accessibility.AccessibilityManager;
 
 import java.io.IOException;
-
 
 /**
  * The host view for all of the screens of the pattern unlock screen.  There are
@@ -79,10 +62,7 @@ import java.io.IOException;
  * {@link com.android.internal.policy.impl.KeyguardViewManager}
  * via its {@link com.android.internal.policy.impl.KeyguardViewCallback}, as appropriate.
  */
-public class LockPatternKeyguardView extends KeyguardViewBase implements Handler.Callback,
-        KeyguardUpdateMonitor.InfoCallback {
-
-    private static final int TRANSPORT_USERACTIVITY_TIMEOUT = 10000;
+public class LockPatternKeyguardView extends KeyguardViewBase {
 
     static final boolean DEBUG_CONFIGURATION = false;
 
@@ -101,40 +81,10 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
     private View mLockScreen;
     private View mUnlockScreen;
 
-    private volatile boolean mScreenOn = false;
-    private volatile boolean mWindowFocused = false;
+    private Context mUiContext;
+
+    private boolean mScreenOn = false;
     private boolean mEnableFallback = false; // assume no fallback UI until we know better
-
-    private boolean mShowLockBeforeUnlock = false;
-
-    // The following were added to support FaceLock
-    private IFaceLockInterface mFaceLockService;
-    private boolean mBoundToFaceLockService = false;
-    private View mFaceLockAreaView;
-
-    private boolean mFaceLockServiceRunning = false;
-    private final Object mFaceLockServiceRunningLock = new Object();
-    private final Object mFaceLockStartupLock = new Object();
-
-    private Handler mHandler;
-    private final int MSG_SHOW_FACELOCK_AREA_VIEW = 0;
-    private final int MSG_HIDE_FACELOCK_AREA_VIEW = 1;
-
-    // Long enough to stay visible while dialer comes up
-    // Short enough to not be visible if the user goes back immediately
-    private final int FACELOCK_VIEW_AREA_EMERGENCY_DIALER_TIMEOUT = 1000;
-
-    // Long enough to stay visible while the service starts
-    // Short enough to not have to wait long for backup if service fails to start or crashes
-    // The service can take a couple of seconds to start on the first try after boot
-    private final int FACELOCK_VIEW_AREA_SERVICE_TIMEOUT = 3000;
-
-    // So the user has a consistent amount of time when brought to the backup method from FaceLock
-    private final int BACKUP_LOCK_TIMEOUT = 5000;
-
-    // Needed to keep track of failed FaceUnlock attempts
-    private int mFailedFaceUnlockAttempts = 0;
-    private static final int FAILED_FACE_UNLOCK_ATTEMPTS_BEFORE_BACKUP = 15;
 
     /**
      * The current {@link KeyguardScreen} will use this to communicate back to us.
@@ -143,11 +93,8 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
 
 
     private boolean mRequiresSim;
-    //True if we have some sort of overlay on top of the Lockscreen
-    //Also true if we've activated a phone call, either emergency dialing or incoming
-    //This resets when the phone is turned off with no current call
-    private boolean mHasOverlay;
 
+    private boolean mLockedButNotYetSecured = false;
 
     /**
      * Either a lock screen (an informational keyguard screen), or an unlock
@@ -170,14 +117,14 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         Pattern,
 
         /**
+         * Unlock by swiping a finger.
+         */
+        Finger,
+
+        /**
          * Unlock by entering a sim pin.
          */
         SimPin,
-
-        /**
-         * Unlock by entering a sim puk.
-         */
-        SimPuk,
 
         /**
          * Unlock by entering an account's login and password.
@@ -201,10 +148,15 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
     private Mode mMode = Mode.LockScreen;
 
     /**
+     * Whether the lockscreen should be disabled if security is on
+     */
+    private boolean mLockscreenDisableOnSecurity;
+
+    /**
      * Keeps track of what mode the current unlock screen is (cached from most recent computation in
      * {@link #getUnlockMode}).
      */
-    private UnlockMode mUnlockScreenMode = UnlockMode.Unknown;
+    private UnlockMode mUnlockScreenMode;
 
     private boolean mForgotPattern;
 
@@ -220,61 +172,30 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
      */
     private final LockPatternUtils mLockPatternUtils;
 
+    private UnlockMode mCurrentUnlockMode = UnlockMode.Unknown;
+
     /**
      * The current configuration.
      */
     private Configuration mConfiguration;
 
+    /**
+     * Used to dismiss the timeout dialog
+     */
+    private AlertDialog mTimeoutDialog;
+
+
     private Runnable mRecreateRunnable = new Runnable() {
         public void run() {
-            updateScreen(mMode, true);
-            restoreWidgetState();
+            recreateScreens();
         }
     };
 
-    private LockScreenWidgetCallback mWidgetCallback = new LockScreenWidgetCallback() {
-        public void userActivity(View self) {
-            mKeyguardScreenCallback.pokeWakelock(TRANSPORT_USERACTIVITY_TIMEOUT);
-        }
-
-        public void requestShow(View view) {
-            if (DEBUG) Log.v(TAG, "View " + view + " requested show transports");
-            view.setVisibility(View.VISIBLE);
-
-            // TODO: examine all widgets to derive clock status
-            mUpdateMonitor.reportClockVisible(false);
-
-            // If there's not a bg protection view containing the transport, then show a black
-            // background. Otherwise, allow the normal background to show.
-            if (findViewById(R.id.transport_bg_protect) == null) {
-                // TODO: We should disable the wallpaper instead
-                setBackgroundColor(0xff000000);
-            } else {
-                resetBackground();
-            }
-        }
-
-        public void requestHide(View view) {
-            if (DEBUG) Log.v(TAG, "View " + view + " requested hide transports");
-            view.setVisibility(View.GONE);
-
-            // TODO: examine all widgets to derive clock status
-            mUpdateMonitor.reportClockVisible(true);
-            resetBackground();
-        }
-
-        public boolean isVisible(View self) {
-            // TODO: this should be up to the lockscreen to determine if the view
-            // is currently showing. The idea is it can be used for the widget to
-            // avoid doing work if it's not visible. For now just returns the view's
-            // actual visibility.
-            return self.getVisibility() == View.VISIBLE;
+    private BroadcastReceiver mThemeChangeReceiver = new BroadcastReceiver() {
+        public void onReceive(Context context, Intent intent) {
+            mUiContext = null;
         }
     };
-
-    private TransportControlView mTransportControlView;
-
-    private Parcelable mSavedState;
 
     /**
      * @return Whether we are stuck on the lock screen because the sim is
@@ -283,8 +204,7 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
     private boolean stuckOnLockScreenBecauseSimMissing() {
         return mRequiresSim
                 && (!mUpdateMonitor.isDeviceProvisioned())
-                && (mUpdateMonitor.getSimState() == IccCard.State.ABSENT ||
-                    mUpdateMonitor.getSimState() == IccCard.State.PERM_DISABLED);
+                && (mUpdateMonitor.getSimState() == IccCard.State.ABSENT);
     }
 
     /**
@@ -301,16 +221,49 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             KeyguardWindowController controller) {
         super(context);
 
-        mHandler = new Handler(this);
         mConfiguration = context.getResources().getConfiguration();
         mEnableFallback = false;
-        mRequiresSim = TextUtils.isEmpty(SystemProperties.get("keyguard.no_require_sim"));
+
+        mRequiresSim =
+                TextUtils.isEmpty(SystemProperties.get("keyguard.no_require_sim"));
+
         mUpdateMonitor = updateMonitor;
         mLockPatternUtils = lockPatternUtils;
         mWindowController = controller;
-        mHasOverlay = false;
+        mTimeoutDialog = null;
 
-        mUpdateMonitor.registerInfoCallback(this);
+        // By design, this situation should never happen.
+        // If finger lock is in use, we should only allow the finger settings menu
+        // to delete all enrolled fingers. Other applications, like TSMDemo, should
+        // not get access to the database.
+        //
+        // Simply disable the finger key guard since it will fail to work in this case.
+        if (mLockPatternUtils.isLockFingerEnabled() && !mLockPatternUtils.savedFingerExists()) {
+            mLockPatternUtils.setLockFingerEnabled(false);
+        }
+
+        int LockscreenDisableOnSecurityValue = Settings.System.getInt(
+                mContext.getContentResolver(), Settings.System.LOCKSCREEN_DISABLE_ON_SECURITY, 3);
+
+        if (LockscreenDisableOnSecurityValue == 3) {
+            // We don't have the option set, check if pattern security is
+            // enabled and set the option accordingly
+            final boolean usingLockPattern = mLockPatternUtils.isLockPatternEnabled();
+
+            if (usingLockPattern) {
+                Settings.System.putInt(mContext.getContentResolver(),
+                        Settings.System.LOCKSCREEN_DISABLE_ON_SECURITY, 1);
+                LockscreenDisableOnSecurityValue = 1;
+            } else {
+                Settings.System.putInt(mContext.getContentResolver(),
+                        Settings.System.LOCKSCREEN_DISABLE_ON_SECURITY, 0);
+                LockscreenDisableOnSecurityValue = 0;
+            }
+        }
+
+        mLockscreenDisableOnSecurity = LockscreenDisableOnSecurityValue == 1;
+
+        mMode = getInitialMode();
 
         mKeyguardScreenCallback = new KeyguardScreenCallback() {
 
@@ -322,30 +275,39 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
                     mIsVerifyUnlockOnly = false;
                     getCallback().keyguardDone(false);
                 } else {
-                    updateScreen(Mode.LockScreen, false);
+                    updateScreen(Mode.LockScreen);
                 }
             }
 
             public void goToUnlockScreen() {
                 final IccCard.State simState = mUpdateMonitor.getSimState();
                 if (stuckOnLockScreenBecauseSimMissing()
-                         || (simState == IccCard.State.PUK_REQUIRED
-                             && !mLockPatternUtils.isPukUnlockScreenEnable())){
-                    // stuck on lock screen when sim missing or
-                    // puk'd but puk unlock screen is disabled
+                         || (simState == IccCard.State.PUK_REQUIRED)){
+                    // stuck on lock screen when sim missing or puk'd
+
+                    // Clear IsSecure() override flag if we have entered a bad
+                    // SIM state.
+                    LockPatternKeyguardView.this.mLockedButNotYetSecured = false;
                     return;
                 }
                 if (!isSecure()) {
                     getCallback().keyguardDone(true);
                 } else {
-                    updateScreen(Mode.UnlockScreen, false);
+                    updateScreen(Mode.UnlockScreen);
                 }
+
+                // Modifying this flag state before now would cause IsSecure()
+                // to fail to short circuit (if flag were set) as intended,
+                // causing the keyguard to proceed to the unlock screen even if
+                // in the interstital locked-but-not-yet-secured state. Clearing
+                // now so that subsequent operations proceed without override.
+                LockPatternKeyguardView.this.mLockedButNotYetSecured = false;
             }
 
             public void forgotPattern(boolean isForgotten) {
                 if (mEnableFallback) {
                     mForgotPattern = isForgotten;
-                    updateScreen(Mode.UnlockScreen, false);
+                    updateScreen(Mode.UnlockScreen);
                 }
             }
 
@@ -354,25 +316,23 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             }
 
             public boolean isVerifyUnlockOnly() {
+                // This is a good place to dismiss the timeout dialog if there is one.
+                if (mTimeoutDialog != null) {
+                    if (mTimeoutDialog.isShowing()) {
+                        mTimeoutDialog.dismiss();
+                    }
+                    mTimeoutDialog = null;
+                }
                 return mIsVerifyUnlockOnly;
             }
 
             public void recreateMe(Configuration config) {
+                mConfiguration = config;
                 removeCallbacks(mRecreateRunnable);
                 post(mRecreateRunnable);
             }
 
             public void takeEmergencyCallAction() {
-                mHasOverlay = true;
-
-                // Continue showing FaceLock area until dialer comes up or call is resumed
-                if (usingFaceLock() && mFaceLockServiceRunning) {
-                    showFaceLockAreaWithTimeout(FACELOCK_VIEW_AREA_EMERGENCY_DIALER_TIMEOUT);
-                }
-
-                // FaceLock must be stopped if it is running
-                stopAndUnbindFromFaceLock();
-
                 pokeWakelock(EMERGENCY_CALL_TIMEOUT);
                 if (TelephonyManager.getDefault().getCallState()
                         == TelephonyManager.CALL_STATE_OFFHOOK) {
@@ -395,7 +355,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
 
             public void keyguardDone(boolean authenticated) {
                 getCallback().keyguardDone(authenticated);
-                mSavedState = null; // clear state so we re-establish when locked again
             }
 
             public void keyguardDoneDrawing() {
@@ -405,51 +364,24 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             public void reportFailedUnlockAttempt() {
                 mUpdateMonitor.reportFailedAttempt();
                 final int failedAttempts = mUpdateMonitor.getFailedAttempts();
-                if (DEBUG) Log.d(TAG, "reportFailedPatternAttempt: #" + failedAttempts +
+                if (DEBUG) Log.d(TAG,
+                    "reportFailedPatternAttempt: #" + failedAttempts +
                     " (enableFallback=" + mEnableFallback + ")");
-
-                final boolean usingPattern = mLockPatternUtils.getKeyguardStoredPasswordQuality()
+                final boolean usingLockPattern = mLockPatternUtils.getKeyguardStoredPasswordQuality()
                         == DevicePolicyManager.PASSWORD_QUALITY_SOMETHING;
-
-                final int failedAttemptsBeforeWipe = mLockPatternUtils.getDevicePolicyManager()
-                        .getMaximumFailedPasswordsForWipe(null);
-
-                final int failedAttemptWarning = LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
-                        - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT;
-
-                final int remainingBeforeWipe = failedAttemptsBeforeWipe > 0 ?
-                        (failedAttemptsBeforeWipe - failedAttempts)
-                        : Integer.MAX_VALUE; // because DPM returns 0 if no restriction
-
-                if (remainingBeforeWipe < LockPatternUtils.FAILED_ATTEMPTS_BEFORE_WIPE_GRACE) {
-                    // If we reach this code, it means the user has installed a DevicePolicyManager
-                    // that requests device wipe after N attempts.  Once we get below the grace
-                    // period, we'll post this dialog every time as a clear warning until the
-                    // bombshell hits and the device is wiped.
-                    if (remainingBeforeWipe > 0) {
-                        showAlmostAtWipeDialog(failedAttempts, remainingBeforeWipe);
-                    } else {
-                        // Too many attempts. The device will be wiped shortly.
-                        Slog.i(TAG, "Too many unlock attempts; device will be wiped!");
-                        showWipeDialog(failedAttempts);
-                    }
-                } else {
-                    boolean showTimeout =
-                        (failedAttempts % LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT) == 0;
-                    if (usingPattern && mEnableFallback) {
-                        if (failedAttempts == failedAttemptWarning) {
-                            showAlmostAtAccountLoginDialog();
-                            showTimeout = false; // don't show both dialogs
-                        } else if (failedAttempts >= LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET) {
-                            mLockPatternUtils.setPermanentlyLocked(true);
-                            updateScreen(mMode, false);
-                            // don't show timeout dialog because we show account unlock screen next
-                            showTimeout = false;
-                        }
-                    }
-                    if (showTimeout) {
-                        showTimeoutDialog();
-                    }
+                final boolean usingLockFinger = mLockPatternUtils.getKeyguardStoredPasswordQuality()
+                        == DevicePolicyManager.PASSWORD_QUALITY_FINGER;
+                if ((usingLockPattern || usingLockFinger) && mEnableFallback && failedAttempts ==
+                        (LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
+                                - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT)) {
+                    showAlmostAtAccountLoginDialog();
+                } else if ((usingLockPattern || usingLockFinger) && mEnableFallback
+                        && failedAttempts >= LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET) {
+                    mLockPatternUtils.setPermanentlyLocked(true);
+                    updateScreen(mMode);
+                } else if ((failedAttempts % LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT)
+                        == 0) {
+                    showTimeoutDialog();
                 }
                 mLockPatternUtils.reportFailedPasswordAttempt();
             }
@@ -459,7 +391,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             }
 
             public void reportSuccessfulUnlockAttempt() {
-                mFailedFaceUnlockAttempts = 0;
                 mLockPatternUtils.reportSuccessfulPasswordAttempt();
             }
         };
@@ -471,8 +402,21 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         setFocusableInTouchMode(true);
         setDescendantFocusability(FOCUS_AFTER_DESCENDANTS);
 
-        updateScreen(getInitialMode(), false);
+        // create both the lock and unlock screen so they are quickly available
+        // when the screen turns on
+        mLockScreen = createLockScreen();
+        addView(mLockScreen);
+        final UnlockMode unlockMode = getUnlockMode();
+        if (DEBUG) Log.d(TAG,
+            "LockPatternKeyguardView ctor: about to createUnlockScreenFor; mEnableFallback="
+            + mEnableFallback);
+        mUnlockScreen = createUnlockScreenFor(unlockMode);
+        mUnlockScreenMode = unlockMode;
+
         maybeEnableFallback(context);
+
+        addView(mUnlockScreen);
+        updateScreen(mMode);
     }
 
     private class AccountAnalyzer implements AccountManagerCallback<Bundle> {
@@ -490,7 +434,7 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             // then finish and get out
             if (mEnableFallback || mAccountIndex >= mAccounts.length) {
                 if (mUnlockScreen == null) {
-                    if (DEBUG) Log.w(TAG, "no unlock screen when trying to enable fallback");
+                    Log.w(TAG, "no unlock screen when trying to enable fallback");
                 } else if (mUnlockScreen instanceof PatternUnlockScreen) {
                     ((PatternUnlockScreen)mUnlockScreen).setEnableFallback(mEnableFallback);
                 }
@@ -549,222 +493,76 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
     public void reset() {
         mIsVerifyUnlockOnly = false;
         mForgotPattern = false;
-        post(mRecreateRunnable);
+        updateScreen(getInitialMode());
     }
 
     @Override
     public void onScreenTurnedOff() {
-        if (DEBUG) Log.d(TAG, "screen off");
+        Log.d(TAG, "onScreenTurnedOff()");
         mScreenOn = false;
         mForgotPattern = false;
-        mHasOverlay = mUpdateMonitor.getPhoneState() != TelephonyManager.CALL_STATE_IDLE;
-
-        // Emulate activity life-cycle for both lock and unlock screen.
-        if (mLockScreen != null) {
-            ((KeyguardScreen) mLockScreen).onPause();
-        }
-        if (mUnlockScreen != null) {
-            ((KeyguardScreen) mUnlockScreen).onPause();
-        }
-
-        saveWidgetState();
-
-        // When screen is turned off, need to unbind from FaceLock service if using FaceLock
-        stopAndUnbindFromFaceLock();
-    }
-
-    /** When screen is turned on and focused, need to bind to FaceLock service if we are using
-     *  FaceLock, but only if we're not dealing with a call
-    */
-    private void activateFaceLockIfAble() {
-        final boolean tooManyFaceUnlockTries =
-                (mFailedFaceUnlockAttempts >= FAILED_FACE_UNLOCK_ATTEMPTS_BEFORE_BACKUP);
-        final int failedBackupAttempts = mUpdateMonitor.getFailedAttempts();
-        final boolean backupIsTimedOut =
-                (failedBackupAttempts >= LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT);
-        if (tooManyFaceUnlockTries) Log.i(TAG, "tooManyFaceUnlockTries: " + tooManyFaceUnlockTries);
-        if (mUpdateMonitor.getPhoneState() == TelephonyManager.CALL_STATE_IDLE
-                && usingFaceLock()
-                && !mHasOverlay
-                && !tooManyFaceUnlockTries
-                && !backupIsTimedOut) {
-            bindToFaceLock();
-
-            // Show FaceLock area, but only for a little bit so lockpattern will become visible if
-            // FaceLock fails to start or crashes
-            showFaceLockAreaWithTimeout(FACELOCK_VIEW_AREA_SERVICE_TIMEOUT);
-
-            // When switching between portrait and landscape view while FaceLock is running, the
-            // screen will eventually go dark unless we poke the wakelock when FaceLock is
-            // restarted
-            mKeyguardScreenCallback.pokeWakelock();
+        if (mMode == Mode.LockScreen) {
+           ((KeyguardScreen) mLockScreen).onPause();
         } else {
-            hideFaceLockArea();
+            ((KeyguardScreen) mUnlockScreen).onPause();
         }
     }
 
     @Override
     public void onScreenTurnedOn() {
-        if (DEBUG) Log.d(TAG, "screen on");
-        boolean runFaceLock = false;
-        //Make sure to start facelock iff the screen is both on and focused
-        synchronized(mFaceLockStartupLock) {
-            mScreenOn = true;
-            runFaceLock = mWindowFocused;
-        }
-
-        show();
-
-        restoreWidgetState();
-
-        if (runFaceLock) activateFaceLockIfAble();
-    }
-
-    private void saveWidgetState() {
-        if (mTransportControlView != null) {
-            if (DEBUG) Log.v(TAG, "Saving widget state");
-            mSavedState = mTransportControlView.onSaveInstanceState();
-        }
-    }
-
-    private void restoreWidgetState() {
-        if (mTransportControlView != null) {
-            if (DEBUG) Log.v(TAG, "Restoring widget state");
-            if (mSavedState != null) {
-                mTransportControlView.onRestoreInstanceState(mSavedState);
-            }
-        }
-    }
-
-    /** Unbind from facelock if something covers this window (such as an alarm)
-     * bind to facelock if the lockscreen window just came into focus, and the screen is on
-     */
-    @Override
-    public void onWindowFocusChanged (boolean hasWindowFocus) {
-        if (DEBUG) Log.d(TAG, hasWindowFocus ? "focused" : "unfocused");
-        boolean runFaceLock = false;
-        //Make sure to start facelock iff the screen is both on and focused
-        synchronized(mFaceLockStartupLock) {
-            if(mScreenOn && !mWindowFocused) runFaceLock = hasWindowFocus;
-            mWindowFocused = hasWindowFocus;
-        }
-        if(!hasWindowFocus) {
-            mHasOverlay = true;
-            stopAndUnbindFromFaceLock();
-            hideFaceLockArea();
-        } else if (runFaceLock) {
-            activateFaceLockIfAble();
-        }
-    }
-
-    @Override
-    public void show() {
-        // Emulate activity life-cycle for both lock and unlock screen.
-        if (mLockScreen != null) {
-            ((KeyguardScreen) mLockScreen).onResume();
-        }
-        if (mUnlockScreen != null) {
-            ((KeyguardScreen) mUnlockScreen).onResume();
-        }
-
-        if (usingFaceLock() && !mHasOverlay) {
-            // Note that show() gets called before the screen turns off to set it up for next time
-            // it is turned on.  We don't want to set a timeout on the FaceLock area here because it
-            // may be gone by the time the screen is turned on again.  We set the timeout when the
-            // screen turns on instead.
-            showFaceLockArea();
+        Log.d(TAG, "onScreenTurnedOn()");
+        mScreenOn = true;
+        if (mMode == Mode.LockScreen) {
+           ((KeyguardScreen) mLockScreen).onResume();
         } else {
-            hideFaceLockArea();
+            ((KeyguardScreen) mUnlockScreen).onResume();
         }
     }
 
     private void recreateLockScreen() {
-        if (mLockScreen != null) {
+        if (mLockScreen.getVisibility() == View.VISIBLE) {
             ((KeyguardScreen) mLockScreen).onPause();
-            ((KeyguardScreen) mLockScreen).cleanUp();
-            removeView(mLockScreen);
         }
+        ((KeyguardScreen) mLockScreen).cleanUp();
+        removeView(mLockScreen);
 
         mLockScreen = createLockScreen();
         mLockScreen.setVisibility(View.INVISIBLE);
         addView(mLockScreen);
     }
 
-    private void recreateUnlockScreen(UnlockMode unlockMode) {
-        if (mUnlockScreen != null) {
+    private void recreateUnlockScreen() {
+        if (mUnlockScreen.getVisibility() == View.VISIBLE) {
             ((KeyguardScreen) mUnlockScreen).onPause();
-            ((KeyguardScreen) mUnlockScreen).cleanUp();
-            removeView(mUnlockScreen);
         }
+        ((KeyguardScreen) mUnlockScreen).cleanUp();
+        removeView(mUnlockScreen);
 
+        final UnlockMode unlockMode = getUnlockMode();
         mUnlockScreen = createUnlockScreenFor(unlockMode);
         mUnlockScreen.setVisibility(View.INVISIBLE);
+        mUnlockScreenMode = unlockMode;
         addView(mUnlockScreen);
+    }
+
+    private void recreateScreens() {
+        recreateLockScreen();
+        recreateUnlockScreen();
+        updateScreen(mMode);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        ThemeUtils.registerThemeChangeReceiver(mContext, mThemeChangeReceiver);
     }
 
     @Override
     protected void onDetachedFromWindow() {
         removeCallbacks(mRecreateRunnable);
-
-        // When view is hidden, need to unbind from FaceLock service if we are using FaceLock
-        // e.g., when device becomes unlocked
-        stopAndUnbindFromFaceLock();
-
+        mContext.unregisterReceiver(mThemeChangeReceiver);
+        mUiContext = null;
         super.onDetachedFromWindow();
-    }
-
-    protected void onConfigurationChanged(Configuration newConfig) {
-        Resources resources = getResources();
-        mShowLockBeforeUnlock = resources.getBoolean(R.bool.config_enableLockBeforeUnlockScreen);
-        mConfiguration = newConfig;
-        if (DEBUG_CONFIGURATION) Log.v(TAG, "**** re-creating lock screen since config changed");
-        saveWidgetState();
-        removeCallbacks(mRecreateRunnable);
-        post(mRecreateRunnable);
-    }
-
-    //Ignore these events; they are implemented only because they come from the same interface
-    @Override
-    public void onRefreshBatteryInfo(boolean showBatteryInfo, boolean pluggedIn, int batteryLevel)
-    {}
-    @Override
-    public void onTimeChanged() {}
-    @Override
-    public void onRefreshCarrierInfo(CharSequence plmn, CharSequence spn) {}
-    @Override
-    public void onRingerModeChanged(int state) {}
-
-    @Override
-    public void onClockVisibilityChanged() {
-        int visFlags = getSystemUiVisibility() & ~View.STATUS_BAR_DISABLE_CLOCK;
-        setSystemUiVisibility(visFlags
-                | (mUpdateMonitor.isClockVisible() ? View.STATUS_BAR_DISABLE_CLOCK : 0));
-    }
-
-    @Override
-    public void onDeviceProvisioned() {}
-
-    //We need to stop faceunlock when a phonecall comes in
-    @Override
-    public void onPhoneStateChanged(int phoneState) {
-        if (DEBUG) Log.d(TAG, "phone state: " + phoneState);
-        if(phoneState == TelephonyManager.CALL_STATE_RINGING) {
-            mHasOverlay = true;
-            stopAndUnbindFromFaceLock();
-            hideFaceLockArea();
-        }
-    }
-
-    @Override
-    protected boolean dispatchHoverEvent(MotionEvent event) {
-        // Do not let the screen to get locked while the user is disabled and touch
-        // exploring. A blind user will need significantly more time to find and
-        // interact with the lock screen views.
-        AccessibilityManager accessibilityManager = AccessibilityManager.getInstance(mContext);
-        if (accessibilityManager.isEnabled() && accessibilityManager.isTouchExplorationEnabled()) {
-            getCallback().pokeWakelock();
-        }
-        return super.dispatchHoverEvent(event);
     }
 
     @Override
@@ -773,7 +571,7 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         if (keyCode == KeyEvent.KEYCODE_MENU && isSecure() && (mMode == Mode.LockScreen)
                 && (mUpdateMonitor.getSimState() != IccCard.State.PUK_REQUIRED)) {
             if (DEBUG) Log.d(TAG, "switching screens to unlock screen because wake key was MENU");
-            updateScreen(Mode.UnlockScreen, false);
+            updateScreen(Mode.UnlockScreen);
             getCallback().pokeWakelock();
         } else {
             if (DEBUG) Log.d(TAG, "poking wake lock immediately");
@@ -786,55 +584,45 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         if (!isSecure()) {
             // non-secure keyguard screens are successfull by default
             getCallback().keyguardDone(true);
-        } else if (mUnlockScreenMode != UnlockMode.Pattern
-                && mUnlockScreenMode != UnlockMode.Password) {
-            // can only verify unlock when in pattern/password mode
+        } else if (mUnlockScreenMode != UnlockMode.Pattern) {
+            // can only verify unlock when in pattern mode
             getCallback().keyguardDone(false);
         } else {
             // otherwise, go to the unlock screen, see if they can verify it
             mIsVerifyUnlockOnly = true;
-            updateScreen(Mode.UnlockScreen, false);
+            updateScreen(Mode.UnlockScreen);
         }
     }
 
     @Override
     public void cleanUp() {
-        if (mLockScreen != null) {
-            ((KeyguardScreen) mLockScreen).onPause();
-            ((KeyguardScreen) mLockScreen).cleanUp();
-            this.removeView(mLockScreen);
-            mLockScreen = null;
-        }
-        if (mUnlockScreen != null) {
-            ((KeyguardScreen) mUnlockScreen).onPause();
-            ((KeyguardScreen) mUnlockScreen).cleanUp();
-            this.removeView(mUnlockScreen);
-            mUnlockScreen = null;
-        }
-        mUpdateMonitor.removeCallback(this);
-        if (mFaceLockService != null) {
-            try {
-                mFaceLockService.unregisterCallback(mFaceLockCallback);
-            } catch (RemoteException e) {
-                // Not much we can do
-            }
-            stopFaceLock();
-            mFaceLockService = null;
-        }
+        ((KeyguardScreen) mLockScreen).onPause();
+        ((KeyguardScreen) mLockScreen).cleanUp();
+        this.removeView(mLockScreen);
+        ((KeyguardScreen) mUnlockScreen).onPause();
+        ((KeyguardScreen) mUnlockScreen).cleanUp();
+        this.removeView(mUnlockScreen);
     }
 
     private boolean isSecure() {
+        // If the LockScreen has been enabled via its timeout and the security
+        // lock timeout has not been reached then we are not secure (prevents
+        // the LockScreen exit from immediately invoking the UnlockScreen)
+        if (mLockedButNotYetSecured)
+            return false;
+
         UnlockMode unlockMode = getUnlockMode();
         boolean secure = false;
         switch (unlockMode) {
             case Pattern:
                 secure = mLockPatternUtils.isLockPatternEnabled();
                 break;
-            case SimPin:
-                secure = mUpdateMonitor.getSimState() == IccCard.State.PIN_REQUIRED;
+            case Finger:
+                secure = mLockPatternUtils.isLockFingerEnabled();
                 break;
-            case SimPuk:
-                secure = mUpdateMonitor.getSimState() == IccCard.State.PUK_REQUIRED;
+            case SimPin:
+                secure = mUpdateMonitor.getSimState() == IccCard.State.PIN_REQUIRED
+                            || mUpdateMonitor.getSimState() == IccCard.State.PUK_REQUIRED;
                 break;
             case Account:
                 secure = true;
@@ -848,32 +636,44 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         return secure;
     }
 
-    private void updateScreen(Mode mode, boolean force) {
+    public void onLockedButNotSecured(boolean lockedButNotSecured) {
+        // Setting the flag ensures that IsSecure() will short-circuit and
+        // report false
+        mLockedButNotYetSecured = lockedButNotSecured;
+
+        if (!lockedButNotSecured) {
+            // At this point we are security locking the phone
+            // So get the initialMode and set it, if it's different
+            // to current mode.
+            // getInitialMode() handles, if there should be an slider-
+            // lock in front of security lock.
+            Mode initialMode = getInitialMode();
+            if (mMode != initialMode) {
+                updateScreen(initialMode);
+            }
+        } else if (lockedButNotSecured && mMode != Mode.LockScreen) {
+            // If lockedButNotSecured is enabled, frob the screen to lock
+            updateScreen(Mode.LockScreen);
+        } else {
+            if (DEBUG_CONFIGURATION)
+                Log.v(TAG, "onLockedButNotSecured() : nothing to do");
+        }
+
+    }
+
+    private void updateScreen(final Mode mode) {
 
         if (DEBUG_CONFIGURATION) Log.v(TAG, "**** UPDATE SCREEN: mode=" + mode
-                + " last mode=" + mMode + ", force = " + force, new RuntimeException());
+                + " last mode=" + mMode, new RuntimeException());
 
         mMode = mode;
 
-        // Re-create the lock screen if necessary
-        if (mode == Mode.LockScreen || mShowLockBeforeUnlock) {
-            if (force || mLockScreen == null) {
-                recreateLockScreen();
-            }
-        }
-
         // Re-create the unlock screen if necessary. This is primarily required to properly handle
         // SIM state changes. This typically happens when this method is called by reset()
-        if (mode == Mode.UnlockScreen) {
-            final UnlockMode unlockMode = getUnlockMode();
-            if (force || mUnlockScreen == null || unlockMode != mUnlockScreenMode) {
-                boolean restartFaceLock = stopFaceLockIfRunning();
-                recreateUnlockScreen(unlockMode);
-                if (restartFaceLock) activateFaceLockIfAble();
-            }
+        if (mode == Mode.UnlockScreen && mCurrentUnlockMode != getUnlockMode()) {
+            recreateUnlockScreen();
         }
 
-        // visibleScreen should never be null
         final View goneScreen = (mode == Mode.LockScreen) ? mUnlockScreen : mLockScreen;
         final View visibleScreen = (mode == Mode.LockScreen) ? mLockScreen : mUnlockScreen;
 
@@ -887,7 +687,7 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         }
 
         if (mScreenOn) {
-            if (goneScreen != null && goneScreen.getVisibility() == View.VISIBLE) {
+            if (goneScreen.getVisibility() == View.VISIBLE) {
                 ((KeyguardScreen) goneScreen).onPause();
             }
             if (visibleScreen.getVisibility() != View.VISIBLE) {
@@ -895,9 +695,7 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             }
         }
 
-        if (goneScreen != null) {
-            goneScreen.setVisibility(View.GONE);
-        }
+        goneScreen.setVisibility(View.GONE);
         visibleScreen.setVisibility(View.VISIBLE);
         requestLayout();
 
@@ -908,22 +706,16 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
     }
 
     View createLockScreen() {
-        View lockView = new LockScreen(
+        return new LockScreen(
                 mContext,
                 mConfiguration,
                 mLockPatternUtils,
                 mUpdateMonitor,
                 mKeyguardScreenCallback);
-        initializeTransportControlView(lockView);
-        return lockView;
     }
 
     View createUnlockScreenFor(UnlockMode unlockMode) {
         View unlockView = null;
-
-        if (DEBUG) Log.d(TAG,
-                "createUnlockScreenFor(" + unlockMode + "): mEnableFallback=" + mEnableFallback);
-
         if (unlockMode == UnlockMode.Pattern) {
             PatternUnlockScreen view = new PatternUnlockScreen(
                     mContext,
@@ -932,15 +724,22 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
                     mUpdateMonitor,
                     mKeyguardScreenCallback,
                     mUpdateMonitor.getFailedAttempts());
+            if (DEBUG) Log.d(TAG,
+                "createUnlockScreenFor(" + unlockMode + "): mEnableFallback=" + mEnableFallback);
             view.setEnableFallback(mEnableFallback);
             unlockView = view;
-        } else if (unlockMode == UnlockMode.SimPuk) {
-            unlockView = new SimPukUnlockScreen(
+        } else if (unlockMode == UnlockMode.Finger) {
+            FingerUnlockScreen view = new FingerUnlockScreen(
                     mContext,
                     mConfiguration,
+                    mLockPatternUtils,
                     mUpdateMonitor,
                     mKeyguardScreenCallback,
-                    mLockPatternUtils);
+                    mUpdateMonitor.getFailedAttempts());
+            if (DEBUG) Log.d(TAG,
+                "createUnlockScreenFor(" + unlockMode + "): mEnableFallback=" + mEnableFallback);
+            view.setEnableFallback(mEnableFallback);
+            unlockView = view;
         } else if (unlockMode == UnlockMode.SimPin) {
             unlockView = new SimUnlockScreen(
                     mContext,
@@ -969,7 +768,7 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
                 // regular pattern unlock UI, regardless of the value of
                 // mUnlockScreenMode or whether or not we're in the
                 // "permanently locked" state.)
-                return createUnlockScreenFor(UnlockMode.Pattern);
+                unlockView = createUnlockScreenFor(UnlockMode.Pattern);
             }
         } else if (unlockMode == UnlockMode.Password) {
             unlockView = new PasswordUnlockScreen(
@@ -981,22 +780,8 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         } else {
             throw new IllegalArgumentException("unknown unlock mode " + unlockMode);
         }
-        initializeTransportControlView(unlockView);
-        initializeFaceLockAreaView(unlockView); // Only shows view if FaceLock is enabled
-
-        mUnlockScreenMode = unlockMode;
+        mCurrentUnlockMode = unlockMode;
         return unlockView;
-    }
-
-    private void initializeTransportControlView(View view) {
-        mTransportControlView = (TransportControlView) view.findViewById(R.id.transport);
-        if (mTransportControlView == null) {
-            if (DEBUG) Log.w(TAG, "Couldn't find transport control widget");
-        } else {
-            mUpdateMonitor.reportClockVisible(true);
-            mTransportControlView.setVisibility(View.GONE); // hide until it requests being shown.
-            mTransportControlView.setCallback(mWidgetCallback);
-        }
     }
 
     /**
@@ -1005,15 +790,15 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
      */
     private Mode getInitialMode() {
         final IccCard.State simState = mUpdateMonitor.getSimState();
-        if (stuckOnLockScreenBecauseSimMissing() ||
-                (simState == IccCard.State.PUK_REQUIRED &&
-                        !mLockPatternUtils.isPukUnlockScreenEnable())) {
+        if (stuckOnLockScreenBecauseSimMissing() || (simState == IccCard.State.PUK_REQUIRED)) {
             return Mode.LockScreen;
         } else {
-            if (!isSecure() || mShowLockBeforeUnlock) {
-                return Mode.LockScreen;
-            } else {
+            // Disable LockScreen if security lockscreen is active and option in CMParts set
+            // Also don't show the slider lockscreen if pin is required
+            if (mLockscreenDisableOnSecurity && isSecure() || (simState == IccCard.State.PIN_REQUIRED)) {
                 return Mode.UnlockScreen;
+            } else {
+                return Mode.LockScreen;
             }
         }
     }
@@ -1024,24 +809,24 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
     private UnlockMode getUnlockMode() {
         final IccCard.State simState = mUpdateMonitor.getSimState();
         UnlockMode currentMode;
-        if (simState == IccCard.State.PIN_REQUIRED) {
+        if (simState == IccCard.State.PIN_REQUIRED || simState == IccCard.State.PUK_REQUIRED) {
             currentMode = UnlockMode.SimPin;
-        } else if (simState == IccCard.State.PUK_REQUIRED) {
-            currentMode = UnlockMode.SimPuk;
         } else {
             final int mode = mLockPatternUtils.getKeyguardStoredPasswordQuality();
             switch (mode) {
                 case DevicePolicyManager.PASSWORD_QUALITY_NUMERIC:
                 case DevicePolicyManager.PASSWORD_QUALITY_ALPHABETIC:
                 case DevicePolicyManager.PASSWORD_QUALITY_ALPHANUMERIC:
-                case DevicePolicyManager.PASSWORD_QUALITY_COMPLEX:
                     currentMode = UnlockMode.Password;
                     break;
+                case DevicePolicyManager.PASSWORD_QUALITY_FINGER:
                 case DevicePolicyManager.PASSWORD_QUALITY_SOMETHING:
                 case DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED:
-                    // "forgot pattern" button is only available in the pattern mode...
+                    // "forgot pattern" button is only available in the pattern mode and finger mode...
                     if (mForgotPattern || mLockPatternUtils.isPermanentlyLocked()) {
                         currentMode = UnlockMode.Account;
+                    } else if (mode == DevicePolicyManager.PASSWORD_QUALITY_FINGER) {
+                        currentMode = UnlockMode.Finger;
                     } else {
                         currentMode = UnlockMode.Pattern;
                     }
@@ -1053,53 +838,79 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
         return currentMode;
     }
 
-    private void showDialog(String title, String message) {
-        final AlertDialog dialog = new AlertDialog.Builder(mContext)
-            .setTitle(title)
-            .setMessage(message)
-            .setNeutralButton(R.string.ok, null)
-            .create();
+    private void showTimeoutDialog() {
+        int timeoutInSeconds = (int) LockPatternUtils.FAILED_ATTEMPT_TIMEOUT_MS / 1000;
+        String message;
+
+        if (mUnlockScreenMode == UnlockMode.Finger) {
+            message = mContext.getString(
+                R.string.lockscreen_too_many_failed_fingers_dialog_message,
+                mUpdateMonitor.getFailedAttempts(),
+                timeoutInSeconds);
+        } else {
+            message = mContext.getString(
+                R.string.lockscreen_too_many_failed_attempts_dialog_message,
+                mUpdateMonitor.getFailedAttempts(),
+                timeoutInSeconds);
+        }
+
+        final AlertDialog dialog = new AlertDialog.Builder(getUiContext())
+                .setTitle(null)
+                .setMessage(message)
+                .setNeutralButton(R.string.ok, null)
+                .create();
         dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG);
+        if (!mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_sf_slowBlur)) {
+            dialog.getWindow().setFlags(
+                    WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
+                    WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+        }
+        mTimeoutDialog = dialog;
         dialog.show();
     }
 
-    private void showTimeoutDialog() {
-        int timeoutInSeconds = (int) LockPatternUtils.FAILED_ATTEMPT_TIMEOUT_MS / 1000;
-        int messageId = R.string.lockscreen_too_many_failed_attempts_dialog_message;
-        if (getUnlockMode() == UnlockMode.Password) {
-            if(mLockPatternUtils.getKeyguardStoredPasswordQuality() ==
-                DevicePolicyManager.PASSWORD_QUALITY_NUMERIC) {
-                messageId = R.string.lockscreen_too_many_failed_pin_attempts_dialog_message;
-            } else {
-                messageId = R.string.lockscreen_too_many_failed_password_attempts_dialog_message;
-            }
+    private Context getUiContext() {
+        if (mUiContext == null) {
+            mUiContext = ThemeUtils.createUiContext(mContext);
         }
-        String message = mContext.getString(messageId, mUpdateMonitor.getFailedAttempts(),
-                timeoutInSeconds);
-
-        showDialog(null, message);
+        return mUiContext != null ? mUiContext : mContext;
     }
 
     private void showAlmostAtAccountLoginDialog() {
-        final int timeoutInSeconds = (int) LockPatternUtils.FAILED_ATTEMPT_TIMEOUT_MS / 1000;
-        final int count = LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
-                - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT;
-        String message = mContext.getString(R.string.lockscreen_failed_attempts_almost_glogin,
-                count, LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT, timeoutInSeconds);
-        showDialog(null, message);
-    }
-
-    private void showAlmostAtWipeDialog(int attempts, int remaining) {
         int timeoutInSeconds = (int) LockPatternUtils.FAILED_ATTEMPT_TIMEOUT_MS / 1000;
-        String message = mContext.getString(
-                R.string.lockscreen_failed_attempts_almost_at_wipe, attempts, remaining);
-        showDialog(null, message);
-    }
+        String message;
 
-    private void showWipeDialog(int attempts) {
-        String message = mContext.getString(
-                R.string.lockscreen_failed_attempts_now_wiping, attempts);
-        showDialog(null, message);
+        if (mUnlockScreenMode == UnlockMode.Finger) {
+            message = mContext.getString(
+                R.string.lockscreen_failed_fingers_almost_glogin,
+                LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
+                - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
+                LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
+                timeoutInSeconds);
+        } else {
+            message = mContext.getString(
+                R.string.lockscreen_failed_attempts_almost_glogin,
+                LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
+                - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
+                LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
+                timeoutInSeconds);
+        }
+
+        final AlertDialog dialog = new AlertDialog.Builder(getUiContext())
+                .setTitle(null)
+                .setMessage(message)
+                .setNeutralButton(R.string.ok, null)
+                .create();
+        dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG);
+        if (!mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_sf_slowBlur)) {
+            dialog.getWindow().setFlags(
+                    WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
+                    WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+        }
+        mTimeoutDialog = dialog;
+        dialog.show();
     }
 
     /**
@@ -1159,254 +970,5 @@ public class LockPatternKeyguardView extends KeyguardViewBase implements Handler
             return mBitmap.getHeight();
         }
     }
-
-    // Everything below pertains to FaceLock - might want to separate this out
-
-    // Indicates whether FaceLock is in use
-    private boolean usingFaceLock() {
-        return (mLockPatternUtils.usingBiometricWeak() &&
-                mLockPatternUtils.isBiometricWeakInstalled());
-    }
-
-    // Takes care of FaceLock area when layout is created
-    private void initializeFaceLockAreaView(View view) {
-        if (usingFaceLock()) {
-            mFaceLockAreaView = view.findViewById(R.id.faceLockAreaView);
-            if (mFaceLockAreaView == null) {
-                Log.e(TAG, "Layout does not have faceLockAreaView and FaceLock is enabled");
-            }
-        } else {
-            mFaceLockAreaView = null; // Set to null if not using FaceLock
-        }
-    }
-
-    // Stops FaceLock if it is running and reports back whether it was running or not
-    private boolean stopFaceLockIfRunning() {
-        if (usingFaceLock() && mBoundToFaceLockService) {
-            stopAndUnbindFromFaceLock();
-            return true;
-        }
-        return false;
-    }
-
-    // Handles covering or exposing FaceLock area on the client side when FaceLock starts or stops
-    // This needs to be done in a handler because the call could be coming from a callback from the
-    // FaceLock service that is in a thread that can't modify the UI
-    @Override
-    public boolean handleMessage(Message msg) {
-        switch (msg.what) {
-        case MSG_SHOW_FACELOCK_AREA_VIEW:
-            if (mFaceLockAreaView != null) {
-                mFaceLockAreaView.setVisibility(View.VISIBLE);
-            }
-            break;
-        case MSG_HIDE_FACELOCK_AREA_VIEW:
-            if (mFaceLockAreaView != null) {
-                mFaceLockAreaView.setVisibility(View.INVISIBLE);
-            }
-            break;
-        default:
-            Log.w(TAG, "Unhandled message");
-            return false;
-        }
-        return true;
-    }
-
-    // Removes show and hide messages from the message queue
-    private void removeFaceLockAreaDisplayMessages() {
-        mHandler.removeMessages(MSG_SHOW_FACELOCK_AREA_VIEW);
-        mHandler.removeMessages(MSG_HIDE_FACELOCK_AREA_VIEW);
-    }
-
-    // Shows the FaceLock area immediately
-    private void showFaceLockArea() {
-        // Remove messages to prevent a delayed hide message from undo-ing the show
-        removeFaceLockAreaDisplayMessages();
-        mHandler.sendEmptyMessage(MSG_SHOW_FACELOCK_AREA_VIEW);
-    }
-
-    // Hides the FaceLock area immediately
-    private void hideFaceLockArea() {
-        // Remove messages to prevent a delayed show message from undo-ing the hide
-        removeFaceLockAreaDisplayMessages();
-        mHandler.sendEmptyMessage(MSG_HIDE_FACELOCK_AREA_VIEW);
-    }
-
-    // Shows the FaceLock area for a period of time
-    private void showFaceLockAreaWithTimeout(long timeoutMillis) {
-        showFaceLockArea();
-        mHandler.sendEmptyMessageDelayed(MSG_HIDE_FACELOCK_AREA_VIEW, timeoutMillis);
-    }
-
-    // Binds to FaceLock service.  This call does not tell it to start, but it causes the service
-    // to call the onServiceConnected callback, which then starts FaceLock.
-    public void bindToFaceLock() {
-        if (usingFaceLock()) {
-            if (!mBoundToFaceLockService) {
-                if (DEBUG) Log.d(TAG, "before bind to FaceLock service");
-                mContext.bindService(new Intent(IFaceLockInterface.class.getName()),
-                        mFaceLockConnection,
-                        Context.BIND_AUTO_CREATE);
-                if (DEBUG) Log.d(TAG, "after bind to FaceLock service");
-                mBoundToFaceLockService = true;
-            } else {
-                Log.w(TAG, "Attempt to bind to FaceLock when already bound");
-            }
-        }
-    }
-
-    // Tells FaceLock to stop and then unbinds from the FaceLock service
-    public void stopAndUnbindFromFaceLock() {
-        if (usingFaceLock()) {
-            stopFaceLock();
-
-            if (mBoundToFaceLockService) {
-                if (DEBUG) Log.d(TAG, "before unbind from FaceLock service");
-                if (mFaceLockService != null) {
-                    try {
-                        mFaceLockService.unregisterCallback(mFaceLockCallback);
-                    } catch (RemoteException e) {
-                        // Not much we can do
-                    }
-                }
-                mContext.unbindService(mFaceLockConnection);
-                if (DEBUG) Log.d(TAG, "after unbind from FaceLock service");
-                mBoundToFaceLockService = false;
-            } else {
-                // This is usually not an error when this happens.  Sometimes we will tell it to
-                // unbind multiple times because it's called from both onWindowFocusChanged and
-                // onDetachedFromWindow.
-                if (DEBUG) Log.d(TAG, "Attempt to unbind from FaceLock when not bound");
-            }
-        }
-    }
-
-    private ServiceConnection mFaceLockConnection = new ServiceConnection() {
-        // Completes connection, registers callback and starts FaceLock when service is bound
-        @Override
-        public void onServiceConnected(ComponentName className, IBinder iservice) {
-            mFaceLockService = IFaceLockInterface.Stub.asInterface(iservice);
-            if (DEBUG) Log.d(TAG, "Connected to FaceLock service");
-            try {
-                mFaceLockService.registerCallback(mFaceLockCallback);
-            } catch (RemoteException e) {
-                Log.e(TAG, "Caught exception connecting to FaceLock: " + e.toString());
-                mFaceLockService = null;
-                mBoundToFaceLockService = false;
-                return;
-            }
-
-            if (mFaceLockAreaView != null) {
-                int[] faceLockPosition;
-                faceLockPosition = new int[2];
-                mFaceLockAreaView.getLocationInWindow(faceLockPosition);
-                startFaceLock(mFaceLockAreaView.getWindowToken(),
-                        faceLockPosition[0], faceLockPosition[1],
-                        mFaceLockAreaView.getWidth(), mFaceLockAreaView.getHeight());
-            }
-        }
-
-        // Cleans up if FaceLock service unexpectedly disconnects
-        @Override
-        public void onServiceDisconnected(ComponentName className) {
-            synchronized(mFaceLockServiceRunningLock) {
-                mFaceLockService = null;
-                mFaceLockServiceRunning = false;
-            }
-            mBoundToFaceLockService = false;
-            Log.w(TAG, "Unexpected disconnect from FaceLock service");
-        }
-    };
-
-    // Tells the FaceLock service to start displaying its UI and perform recognition
-    public void startFaceLock(IBinder windowToken, int x, int y, int w, int h)
-    {
-        if (usingFaceLock()) {
-            synchronized (mFaceLockServiceRunningLock) {
-                if (!mFaceLockServiceRunning) {
-                    if (DEBUG) Log.d(TAG, "Starting FaceLock");
-                    try {
-                        mFaceLockService.startUi(windowToken, x, y, w, h);
-                    } catch (RemoteException e) {
-                        Log.e(TAG, "Caught exception starting FaceLock: " + e.toString());
-                        return;
-                    }
-                    mFaceLockServiceRunning = true;
-                } else {
-                    if (DEBUG) Log.w(TAG, "startFaceLock() attempted while running");
-                }
-            }
-        }
-    }
-
-    // Tells the FaceLock service to stop displaying its UI and stop recognition
-    public void stopFaceLock()
-    {
-        if (usingFaceLock()) {
-            // Note that attempting to stop FaceLock when it's not running is not an issue.
-            // FaceLock can return, which stops it and then we try to stop it when the
-            // screen is turned off.  That's why we check.
-            synchronized (mFaceLockServiceRunningLock) {
-                if (mFaceLockServiceRunning) {
-                    try {
-                        if (DEBUG) Log.d(TAG, "Stopping FaceLock");
-                        mFaceLockService.stopUi();
-                    } catch (RemoteException e) {
-                        Log.e(TAG, "Caught exception stopping FaceLock: " + e.toString());
-                    }
-                    mFaceLockServiceRunning = false;
-                }
-            }
-        }
-    }
-
-    // Implements the FaceLock service callback interface defined in AIDL
-    private final IFaceLockCallback mFaceLockCallback = new IFaceLockCallback.Stub() {
-
-        // Stops the FaceLock UI and indicates that the phone should be unlocked
-        @Override
-        public void unlock() {
-            if (DEBUG) Log.d(TAG, "FaceLock unlock()");
-            showFaceLockArea(); // Keep fallback covered
-            stopAndUnbindFromFaceLock();
-
-            mKeyguardScreenCallback.keyguardDone(true);
-            mKeyguardScreenCallback.reportSuccessfulUnlockAttempt();
-        }
-
-        // Stops the FaceLock UI and exposes the backup method without unlocking
-        // This means the user has cancelled out
-        @Override
-        public void cancel() {
-            if (DEBUG) Log.d(TAG, "FaceLock cancel()");
-            hideFaceLockArea(); // Expose fallback
-            stopAndUnbindFromFaceLock();
-            mKeyguardScreenCallback.pokeWakelock(BACKUP_LOCK_TIMEOUT);
-        }
-
-        // Stops the FaceLock UI and exposes the backup method without unlocking
-        // This means FaceLock failed to recognize them
-        @Override
-        public void reportFailedAttempt() {
-            if (DEBUG) Log.d(TAG, "FaceLock reportFailedAttempt()");
-            mFailedFaceUnlockAttempts++;
-            hideFaceLockArea(); // Expose fallback
-            stopAndUnbindFromFaceLock();
-            mKeyguardScreenCallback.pokeWakelock(BACKUP_LOCK_TIMEOUT);
-        }
-
-        // Removes the black area that covers the backup unlock method
-        @Override
-        public void exposeFallback() {
-            if (DEBUG) Log.d(TAG, "FaceLock exposeFallback()");
-            hideFaceLockArea(); // Expose fallback
-        }
-
-        // Allows the Face Unlock service to poke the wake lock to keep the lockscreen alive
-        @Override
-        public void pokeWakelock() {
-            if (DEBUG) Log.d(TAG, "FaceLock pokeWakelock()");
-            mKeyguardScreenCallback.pokeWakelock();
-        }
-    };
 }
+

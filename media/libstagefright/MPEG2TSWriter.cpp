@@ -42,20 +42,11 @@ struct MPEG2TSWriter::SourceInfo : public AHandler {
     unsigned streamType() const;
     unsigned incrementContinuityCounter();
 
-    void readMore();
-
     enum {
         kNotifyStartFailed,
         kNotifyBuffer,
         kNotifyReachedEOS,
     };
-
-    sp<ABuffer> lastAccessUnit();
-    int64_t lastAccessUnitTimeUs();
-    void setLastAccessUnit(const sp<ABuffer> &accessUnit);
-
-    void setEOSReceived();
-    bool eosReceived() const;
 
 protected:
     virtual void onMessageReceived(const sp<AMessage> &msg);
@@ -76,16 +67,13 @@ private:
 
     sp<ABuffer> mAACBuffer;
 
-    sp<ABuffer> mLastAccessUnit;
-    bool mEOSReceived;
-
     unsigned mStreamType;
     unsigned mContinuityCounter;
 
     void extractCodecSpecificData();
 
-    bool appendAACFrames(MediaBuffer *buffer);
-    bool flushAACFrames();
+    void appendAACFrames(MediaBuffer *buffer);
+    void flushAACFrames();
 
     void postAVCFrame(MediaBuffer *buffer);
 
@@ -95,7 +83,6 @@ private:
 MPEG2TSWriter::SourceInfo::SourceInfo(const sp<MediaSource> &source)
     : mSource(source),
       mLooper(new ALooper),
-      mEOSReceived(false),
       mStreamType(0),
       mContinuityCounter(0) {
     mLooper->setName("MPEG2TSWriter source");
@@ -245,7 +232,6 @@ void MPEG2TSWriter::SourceInfo::extractCodecSpecificData() {
     sp<AMessage> notify = mNotify->dup();
     notify->setInt32("what", kNotifyBuffer);
     notify->setObject("buffer", out);
-    notify->setInt32("oob", true);
     notify->post();
 }
 
@@ -274,13 +260,11 @@ void MPEG2TSWriter::SourceInfo::postAVCFrame(MediaBuffer *buffer) {
     notify->post();
 }
 
-bool MPEG2TSWriter::SourceInfo::appendAACFrames(MediaBuffer *buffer) {
-    bool accessUnitPosted = false;
-
+void MPEG2TSWriter::SourceInfo::appendAACFrames(MediaBuffer *buffer) {
     if (mAACBuffer != NULL
             && mAACBuffer->size() + 7 + buffer->range_length()
                     > mAACBuffer->capacity()) {
-        accessUnitPosted = flushAACFrames();
+        flushAACFrames();
     }
 
     if (mAACBuffer == NULL) {
@@ -340,13 +324,11 @@ bool MPEG2TSWriter::SourceInfo::appendAACFrames(MediaBuffer *buffer) {
     ptr += buffer->range_length();
 
     mAACBuffer->setRange(0, ptr - mAACBuffer->data());
-
-    return accessUnitPosted;
 }
 
-bool MPEG2TSWriter::SourceInfo::flushAACFrames() {
+void MPEG2TSWriter::SourceInfo::flushAACFrames() {
     if (mAACBuffer == NULL) {
-        return false;
+        return;
     }
 
     sp<AMessage> notify = mNotify->dup();
@@ -355,12 +337,6 @@ bool MPEG2TSWriter::SourceInfo::flushAACFrames() {
     notify->post();
 
     mAACBuffer.clear();
-
-    return true;
-}
-
-void MPEG2TSWriter::SourceInfo::readMore() {
-    (new AMessage(kWhatRead, id()))->post();
 }
 
 void MPEG2TSWriter::SourceInfo::onMessageReceived(const sp<AMessage> &msg) {
@@ -377,7 +353,7 @@ void MPEG2TSWriter::SourceInfo::onMessageReceived(const sp<AMessage> &msg) {
 
             extractCodecSpecificData();
 
-            readMore();
+            (new AMessage(kWhatRead, id()))->post();
             break;
         }
 
@@ -412,9 +388,7 @@ void MPEG2TSWriter::SourceInfo::onMessageReceived(const sp<AMessage> &msg) {
                            buffer->range_length());
                 } else if (buffer->range_length() > 0) {
                     if (mStreamType == 0x0f) {
-                        if (!appendAACFrames(buffer)) {
-                            msg->post();
-                        }
+                        appendAACFrames(buffer);
                     } else {
                         postAVCFrame(buffer);
                     }
@@ -424,7 +398,7 @@ void MPEG2TSWriter::SourceInfo::onMessageReceived(const sp<AMessage> &msg) {
                 buffer = NULL;
             }
 
-            // Do not read more data until told to.
+            msg->post();
             break;
         }
 
@@ -433,41 +407,10 @@ void MPEG2TSWriter::SourceInfo::onMessageReceived(const sp<AMessage> &msg) {
     }
 }
 
-sp<ABuffer> MPEG2TSWriter::SourceInfo::lastAccessUnit() {
-    return mLastAccessUnit;
-}
-
-void MPEG2TSWriter::SourceInfo::setLastAccessUnit(
-        const sp<ABuffer> &accessUnit) {
-    mLastAccessUnit = accessUnit;
-}
-
-int64_t MPEG2TSWriter::SourceInfo::lastAccessUnitTimeUs() {
-    if (mLastAccessUnit == NULL) {
-        return -1;
-    }
-
-    int64_t timeUs;
-    CHECK(mLastAccessUnit->meta()->findInt64("timeUs", &timeUs));
-
-    return timeUs;
-}
-
-void MPEG2TSWriter::SourceInfo::setEOSReceived() {
-    CHECK(!mEOSReceived);
-    mEOSReceived = true;
-}
-
-bool MPEG2TSWriter::SourceInfo::eosReceived() const {
-    return mEOSReceived;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 MPEG2TSWriter::MPEG2TSWriter(int fd)
-    : mFile(fdopen(dup(fd), "wb")),
-      mWriteCookie(NULL),
-      mWriteFunc(NULL),
+    : mFile(fdopen(fd, "wb")),
       mStarted(false),
       mNumSourcesDone(0),
       mNumTSPacketsWritten(0),
@@ -477,21 +420,6 @@ MPEG2TSWriter::MPEG2TSWriter(int fd)
 
 MPEG2TSWriter::MPEG2TSWriter(const char *filename)
     : mFile(fopen(filename, "wb")),
-      mWriteCookie(NULL),
-      mWriteFunc(NULL),
-      mStarted(false),
-      mNumSourcesDone(0),
-      mNumTSPacketsWritten(0),
-      mNumTSPacketsBeforeMeta(0) {
-    init();
-}
-
-MPEG2TSWriter::MPEG2TSWriter(
-        void *cookie,
-        ssize_t (*write)(void *cookie, const void *data, size_t size))
-    : mFile(NULL),
-      mWriteCookie(cookie),
-      mWriteFunc(write),
       mStarted(false),
       mNumSourcesDone(0),
       mNumTSPacketsWritten(0),
@@ -500,7 +428,7 @@ MPEG2TSWriter::MPEG2TSWriter(
 }
 
 void MPEG2TSWriter::init() {
-    CHECK(mFile != NULL || mWriteFunc != NULL);
+    CHECK(mFile != NULL);
 
     mLooper = new ALooper;
     mLooper->setName("MPEG2TSWriter");
@@ -519,10 +447,8 @@ MPEG2TSWriter::~MPEG2TSWriter() {
     mLooper->unregisterHandler(mReflector->id());
     mLooper->stop();
 
-    if (mFile != NULL) {
-        fclose(mFile);
-        mFile = NULL;
-    }
+    fclose(mFile);
+    mFile = NULL;
 }
 
 status_t MPEG2TSWriter::addSource(const sp<MediaSource> &source) {
@@ -601,89 +527,15 @@ void MPEG2TSWriter::onMessageReceived(const sp<AMessage> &msg) {
 
             if (what == SourceInfo::kNotifyReachedEOS
                     || what == SourceInfo::kNotifyStartFailed) {
-                sp<SourceInfo> source = mSources.editItemAt(sourceIndex);
-                source->setEOSReceived();
-
-                sp<ABuffer> buffer = source->lastAccessUnit();
-                source->setLastAccessUnit(NULL);
-
-                if (buffer != NULL) {
-                    writeTS();
-                    writeAccessUnit(sourceIndex, buffer);
-                }
-
                 ++mNumSourcesDone;
             } else if (what == SourceInfo::kNotifyBuffer) {
                 sp<RefBase> obj;
                 CHECK(msg->findObject("buffer", &obj));
 
-                sp<ABuffer> buffer = static_cast<ABuffer *>(obj.get());
-
-                int32_t oob;
-                if (msg->findInt32("oob", &oob) && oob) {
-                    // This is codec specific data delivered out of band.
-                    // It can be written out immediately.
-                    writeTS();
-                    writeAccessUnit(sourceIndex, buffer);
-                    break;
-                }
-
-                // We don't just write out data as we receive it from
-                // the various sources. That would essentially write them
-                // out in random order (as the thread scheduler determines
-                // how the messages are dispatched).
-                // Instead we gather an access unit for all tracks and
-                // write out the one with the smallest timestamp, then
-                // request more data for the written out track.
-                // Rinse, repeat.
-                // If we don't have data on any track we don't write
-                // anything just yet.
-
-                sp<SourceInfo> source = mSources.editItemAt(sourceIndex);
-
-                CHECK(source->lastAccessUnit() == NULL);
-                source->setLastAccessUnit(buffer);
-
-                LOGV("lastAccessUnitTimeUs[%d] = %.2f secs",
-                     sourceIndex, source->lastAccessUnitTimeUs() / 1E6);
-
-                int64_t minTimeUs = -1;
-                size_t minIndex = 0;
-
-                for (size_t i = 0; i < mSources.size(); ++i) {
-                    const sp<SourceInfo> &source = mSources.editItemAt(i);
-
-                    if (source->eosReceived()) {
-                        continue;
-                    }
-
-                    int64_t timeUs = source->lastAccessUnitTimeUs();
-                    if (timeUs < 0) {
-                        minTimeUs = -1;
-                        break;
-                    } else if (minTimeUs < 0 || timeUs < minTimeUs) {
-                        minTimeUs = timeUs;
-                        minIndex = i;
-                    }
-                }
-
-                if (minTimeUs < 0) {
-                    LOGV("not a all tracks have valid data.");
-                    break;
-                }
-
-                LOGV("writing access unit at time %.2f secs (index %d)",
-                     minTimeUs / 1E6, minIndex);
-
-                source = mSources.editItemAt(minIndex);
-
-                buffer = source->lastAccessUnit();
-                source->setLastAccessUnit(NULL);
-
                 writeTS();
-                writeAccessUnit(minIndex, buffer);
 
-                source->readMore();
+                sp<ABuffer> buffer = static_cast<ABuffer *>(obj.get());
+                writeAccessUnit(sourceIndex, buffer);
             }
             break;
         }
@@ -737,7 +589,7 @@ void MPEG2TSWriter::writeProgramAssociationTable() {
     static const unsigned kContinuityCounter = 5;
     buffer->data()[3] |= kContinuityCounter;
 
-    CHECK_EQ(internalWrite(buffer->data(), buffer->size()), buffer->size());
+    CHECK_EQ(fwrite(buffer->data(), 1, buffer->size(), mFile), buffer->size());
 }
 
 void MPEG2TSWriter::writeProgramMap() {
@@ -813,7 +665,7 @@ void MPEG2TSWriter::writeProgramMap() {
     *ptr++ = 0x00;
     *ptr++ = 0x00;
 
-    CHECK_EQ(internalWrite(buffer->data(), buffer->size()), buffer->size());
+    CHECK_EQ(fwrite(buffer->data(), 1, buffer->size(), mFile), buffer->size());
 }
 
 void MPEG2TSWriter::writeAccessUnit(
@@ -909,7 +761,7 @@ void MPEG2TSWriter::writeAccessUnit(
 
     memcpy(ptr, accessUnit->data(), copy);
 
-    CHECK_EQ(internalWrite(buffer->data(), buffer->size()), buffer->size());
+    CHECK_EQ(fwrite(buffer->data(), 1, buffer->size(), mFile), buffer->size());
 
     size_t offset = copy;
     while (offset < accessUnit->size()) {
@@ -942,7 +794,7 @@ void MPEG2TSWriter::writeAccessUnit(
         }
 
         memcpy(ptr, accessUnit->data() + offset, copy);
-        CHECK_EQ(internalWrite(buffer->data(), buffer->size()),
+        CHECK_EQ(fwrite(buffer->data(), 1, buffer->size(), mFile),
                  buffer->size());
 
         offset += copy;
@@ -956,14 +808,6 @@ void MPEG2TSWriter::writeTS() {
 
         mNumTSPacketsBeforeMeta = mNumTSPacketsWritten + 2500;
     }
-}
-
-ssize_t MPEG2TSWriter::internalWrite(const void *data, size_t size) {
-    if (mFile != NULL) {
-        return fwrite(data, 1, size, mFile);
-    }
-
-    return (*mWriteFunc)(mWriteCookie, data, size);
 }
 
 }  // namespace android

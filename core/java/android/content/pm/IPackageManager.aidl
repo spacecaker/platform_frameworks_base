@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2007, The Android Open Source Project
+** This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -30,15 +31,13 @@ import android.content.pm.IPackageMoveObserver;
 import android.content.pm.IPackageStatsObserver;
 import android.content.pm.InstrumentationInfo;
 import android.content.pm.PackageInfo;
-import android.content.pm.ManifestDigest;
 import android.content.pm.ParceledListSlice;
 import android.content.pm.ProviderInfo;
 import android.content.pm.PermissionGroupInfo;
 import android.content.pm.PermissionInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
-import android.content.pm.UserInfo;
-import android.content.pm.VerifierDeviceIdentity;
+import android.content.pm.ThemeInfo;
 import android.net.Uri;
 import android.content.IntentSender;
 
@@ -121,6 +120,8 @@ interface IPackageManager {
      */
     ParceledListSlice getInstalledPackages(int flags, in String lastRead);
 
+    List<PackageInfo> getInstalledThemePackages();
+
     /**
      * This implements getInstalledApplications via a "last returned row"
      * mechanism that is not exposed in the API. This is to get around the IPC
@@ -174,8 +175,6 @@ interface IPackageManager {
 
     void finishPackageInstall(int token);
 
-    void setInstallerPackageName(in String targetPackage, in String installerPackageName);
-
     /**
      * Delete a package.
      *
@@ -225,12 +224,6 @@ interface IPackageManager {
      */
     int getApplicationEnabledSetting(in String packageName);
     
-    /**
-     * Set whether the given package should be considered stopped, making
-     * it not visible to implicit intents that filter out stopped packages.
-     */
-    void setPackageStoppedState(String packageName, boolean stopped);
-
     /**
      * Free storage by deleting LRU sorted list of cache files across
      * all applications. If the currently available free storage
@@ -321,13 +314,7 @@ interface IPackageManager {
     boolean isSafeMode();
     void systemReady();
     boolean hasSystemUidErrors();
-
-    /**
-     * Ask the package manager to perform boot-time dex-opt of all
-     * existing packages.
-     */
-    void performBootDexOpt();
-
+    
     /**
      * Ask the package manager to perform dex-opt (if needed) on the given
      * package, if it already hasn't done mode.  Only does this if running
@@ -352,16 +339,8 @@ interface IPackageManager {
     boolean setInstallLocation(int loc);
     int getInstallLocation();
 
-    UserInfo createUser(in String name, int flags);
-    boolean removeUser(int userId);
+    String[] getRevokedPermissions(String packageName);
 
-    void installPackageWithVerification(in Uri packageURI, in IPackageInstallObserver observer,
-            int flags, in String installerPackageName, in Uri verificationURI,
-            in ManifestDigest manifestDigest);
+    void setRevokedPermissions(String packageName, in String[] perms);
 
-    void verifyPendingInstall(int id, int verificationCode);
-
-    VerifierDeviceIdentity getVerifierDeviceIdentity();
-
-    boolean isFirstBoot();
 }

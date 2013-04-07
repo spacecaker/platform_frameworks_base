@@ -286,25 +286,25 @@ generate_write_to_parcel(Type* t, StatementBlock* addTo, Variable* v,
 
 static void
 generate_create_from_parcel(Type* t, StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable** cl)
+                            Variable* parcel)
 {
     if (v->dimension == 0) {
-        t->CreateFromParcel(addTo, v, parcel, cl);
+        t->CreateFromParcel(addTo, v, parcel);
     }
     if (v->dimension == 1) {
-        t->CreateArrayFromParcel(addTo, v, parcel, cl);
+        t->CreateArrayFromParcel(addTo, v, parcel);
     }
 }
 
 static void
 generate_read_from_parcel(Type* t, StatementBlock* addTo, Variable* v,
-                            Variable* parcel, Variable** cl)
+                            Variable* parcel)
 {
     if (v->dimension == 0) {
-        t->ReadFromParcel(addTo, v, parcel, cl);
+        t->ReadFromParcel(addTo, v, parcel);
     }
     if (v->dimension == 1) {
-        t->ReadArrayFromParcel(addTo, v, parcel, cl);
+        t->ReadArrayFromParcel(addTo, v, parcel);
     }
 }
 
@@ -362,7 +362,6 @@ generate_method(const method_type* method, Class* interface,
             "enforceInterface", 1, new LiteralExpression("DESCRIPTOR")));
 
     // args
-    Variable* cl = NULL;
     VariableFactory stubArgs("_arg");
     arg = method->args;
     while (arg != NULL) {
@@ -374,7 +373,7 @@ generate_method(const method_type* method, Class* interface,
 
         if (convert_direction(arg->direction.data) & IN_PARAMETER) {
             generate_create_from_parcel(t, c->statements, v,
-                    stubClass->transact_data, &cl);
+                    stubClass->transact_data);
         } else {
             if (arg->type.dimension == 0) {
                 c->statements->Add(new Assignment(
@@ -532,7 +531,7 @@ generate_method(const method_type* method, Class* interface,
     if (_reply != NULL) {
         if (_result != NULL) {
             generate_create_from_parcel(proxy->returnType,
-                    tryStatement->statements, _result, _reply, &cl);
+                                    tryStatement->statements, _result, _reply);
         }
 
         // the out/inout parameters
@@ -542,7 +541,7 @@ generate_method(const method_type* method, Class* interface,
             Variable* v = new Variable(t, arg->name.data, arg->type.dimension);
             if (convert_direction(arg->direction.data) & OUT_PARAMETER) {
                 generate_read_from_parcel(t, tryStatement->statements,
-                                            v, _reply, &cl);
+                                            v, _reply);
             }
             arg = arg->next;
         }

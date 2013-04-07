@@ -26,10 +26,6 @@
 #include <utils/Errors.h>
 #include <utils/Log.h>
 
-#include <cutils/bitops.h>
-
-#include <system/audio.h>
-
 #include "AudioMixer.h"
 
 namespace android {
@@ -65,7 +61,6 @@ AudioMixer::AudioMixer(size_t frameCount, uint32_t sampleRate)
         t->channelCount = 2;
         t->enabled = 0;
         t->format = 16;
-        t->channelMask = AUDIO_CHANNEL_OUT_STEREO;
         t->buffer.raw = 0;
         t->bufferProvider = 0;
         t->hook = 0;
@@ -185,18 +180,13 @@ status_t AudioMixer::setParameter(int target, int name, void *value)
 
     switch (target) {
     case TRACK:
-        if (name == CHANNEL_MASK) {
-            uint32_t mask = (uint32_t)value;
-            if (mState.tracks[ mActiveTrack ].channelMask != mask) {
-                uint8_t channelCount = popcount(mask);
-                if ((channelCount <= MAX_NUM_CHANNELS) && (channelCount)) {
-                    mState.tracks[ mActiveTrack ].channelMask = mask;
-                    mState.tracks[ mActiveTrack ].channelCount = channelCount;
-                    LOGV("setParameter(TRACK, CHANNEL_MASK, %x)", mask);
+        if (name == CHANNEL_COUNT) {
+            if ((uint32_t(valueInt) <= MAX_NUM_CHANNELS) && (valueInt)) {
+                if (mState.tracks[ mActiveTrack ].channelCount != valueInt) {
+                    mState.tracks[ mActiveTrack ].channelCount = valueInt;
+                    LOGV("setParameter(TRACK, CHANNEL_COUNT, %d)", valueInt);
                     invalidateState(1<<mActiveTrack);
-                    return NO_ERROR;
                 }
-            } else {
                 return NO_ERROR;
             }
         }
@@ -229,12 +219,6 @@ status_t AudioMixer::setParameter(int target, int name, void *value)
                 }
                 return NO_ERROR;
             }
-        }
-        if (name == RESET) {
-            track_t& track = mState.tracks[ mActiveTrack ];
-            track.resetResampler();
-            invalidateState(1<<mActiveTrack);
-            return NO_ERROR;
         }
         break;
     case RAMP_VOLUME:
@@ -305,13 +289,6 @@ bool AudioMixer::track_t::doesResample() const
     return resampler != 0;
 }
 
-void AudioMixer::track_t::resetResampler()
-{
-    if (resampler != 0) {
-        resampler->reset();
-    }
-}
-
 inline
 void AudioMixer::track_t::adjustVolumeRamp(bool aux)
 {
@@ -331,23 +308,6 @@ void AudioMixer::track_t::adjustVolumeRamp(bool aux)
     }
 }
 
-size_t AudioMixer::track_t::getUnreleasedFrames()
-{
-    if (resampler != NULL) {
-        return resampler->getUnreleasedFrames();
-    }
-    return 0;
-}
-
-size_t AudioMixer::getUnreleasedFrames(int name)
-{
-    name -= TRACK0;
-    if (uint32_t(name) < MAX_NUM_TRACKS) {
-        track_t& track(mState.tracks[name]);
-        return track.getUnreleasedFrames();
-    }
-    return 0;
-}
 
 status_t AudioMixer::setBufferProvider(AudioBufferProvider* buffer)
 {

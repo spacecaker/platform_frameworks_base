@@ -83,7 +83,7 @@ public class RotateDrawable extends Drawable implements Drawable.Callback {
         float px = st.mPivotXRel ? (w * st.mPivotX) : st.mPivotX;
         float py = st.mPivotYRel ? (h * st.mPivotY) : st.mPivotY;
 
-        canvas.rotate(st.mCurrentDegrees, px + bounds.left, py + bounds.top);
+        canvas.rotate(st.mCurrentDegrees, px, py);
 
         st.mDrawable.draw(canvas);
 
@@ -117,23 +117,20 @@ public class RotateDrawable extends Drawable implements Drawable.Callback {
     }
 
     public void invalidateDrawable(Drawable who) {
-        final Callback callback = getCallback();
-        if (callback != null) {
-            callback.invalidateDrawable(this);
+        if (mCallback != null) {
+            mCallback.invalidateDrawable(this);
         }
     }
 
     public void scheduleDrawable(Drawable who, Runnable what, long when) {
-        final Callback callback = getCallback();
-        if (callback != null) {
-            callback.scheduleDrawable(this, what, when);
+        if (mCallback != null) {
+            mCallback.scheduleDrawable(this, what, when);
         }
     }
 
     public void unscheduleDrawable(Drawable who, Runnable what) {
-        final Callback callback = getCallback();
-        if (callback != null) {
-            callback.unscheduleDrawable(this, what);
+        if (mCallback != null) {
+            mCallback.unscheduleDrawable(this, what);
         }
     }
 
@@ -234,6 +231,8 @@ public class RotateDrawable extends Drawable implements Drawable.Callback {
                 com.android.internal.R.styleable.RotateDrawable_fromDegrees, 0.0f);
         float toDegrees = a.getFloat(
                 com.android.internal.R.styleable.RotateDrawable_toDegrees, 360.0f);
+
+        toDegrees = Math.max(fromDegrees, toDegrees);
 
         int res = a.getResourceId(
                 com.android.internal.R.styleable.RotateDrawable_drawable, 0);

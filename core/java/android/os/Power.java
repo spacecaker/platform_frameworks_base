@@ -104,12 +104,4 @@ public class Power
     }
 
     private static native void rebootNative(String reason) throws IOException ;
-
-    /**
-     * Activate/DeActivate Unstable Memory block
-     *
-     * @param on Whether you want Activate(true) or DeActive(False)
-     * @hide
-     */
-    public static native int SetUnstableMemoryState(boolean on);
 }

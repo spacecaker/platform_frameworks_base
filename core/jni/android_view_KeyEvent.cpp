@@ -30,8 +30,7 @@ namespace android {
 static struct {
     jclass clazz;
 
-    jmethodID obtain;
-    jmethodID recycle;
+    jmethodID ctor;
 
     jfieldID mDeviceId;
     jfieldID mSource;
@@ -49,8 +48,7 @@ static struct {
 // ----------------------------------------------------------------------------
 
 jobject android_view_KeyEvent_fromNative(JNIEnv* env, const KeyEvent* event) {
-    jobject eventObj = env->CallStaticObjectMethod(gKeyEventClassInfo.clazz,
-            gKeyEventClassInfo.obtain,
+    return env->NewObject(gKeyEventClassInfo.clazz, gKeyEventClassInfo.ctor,
             nanoseconds_to_milliseconds(event->getDownTime()),
             nanoseconds_to_milliseconds(event->getEventTime()),
             event->getAction(),
@@ -60,18 +58,10 @@ jobject android_view_KeyEvent_fromNative(JNIEnv* env, const KeyEvent* event) {
             event->getDeviceId(),
             event->getScanCode(),
             event->getFlags(),
-            event->getSource(),
-            NULL);
-    if (env->ExceptionCheck()) {
-        LOGE("An exception occurred while obtaining a key event.");
-        LOGE_EX(env);
-        env->ExceptionClear();
-        return NULL;
-    }
-    return eventObj;
+            event->getSource());
 }
 
-status_t android_view_KeyEvent_toNative(JNIEnv* env, jobject eventObj,
+void android_view_KeyEvent_toNative(JNIEnv* env, jobject eventObj,
         KeyEvent* event) {
     jint deviceId = env->GetIntField(eventObj, gKeyEventClassInfo.mDeviceId);
     jint source = env->GetIntField(eventObj, gKeyEventClassInfo.mSource);
@@ -87,18 +77,6 @@ status_t android_view_KeyEvent_toNative(JNIEnv* env, jobject eventObj,
     event->initialize(deviceId, source, action, flags, keyCode, scanCode, metaState, repeatCount,
             milliseconds_to_nanoseconds(downTime),
             milliseconds_to_nanoseconds(eventTime));
-    return OK;
-}
-
-status_t android_view_KeyEvent_recycle(JNIEnv* env, jobject eventObj) {
-    env->CallVoidMethod(eventObj, gKeyEventClassInfo.recycle);
-    if (env->ExceptionCheck()) {
-        LOGW("An exception occurred while recycling a key event.");
-        LOGW_EX(env);
-        env->ExceptionClear();
-        return UNKNOWN_ERROR;
-    }
-    return OK;
 }
 
 static jboolean native_isSystemKey(JNIEnv* env, jobject clazz, jint keyCode) {
@@ -108,7 +86,6 @@ static jboolean native_isSystemKey(JNIEnv* env, jobject clazz, jint keyCode) {
 static jboolean native_hasDefaultAction(JNIEnv* env, jobject clazz, jint keyCode) {
     return KeyEvent::hasDefaultAction(keyCode);
 }
-
 
 // ----------------------------------------------------------------------------
 
@@ -122,10 +99,6 @@ static const JNINativeMethod g_methods[] = {
         LOG_FATAL_IF(! var, "Unable to find class " className); \
         var = jclass(env->NewGlobalRef(var));
 
-#define GET_STATIC_METHOD_ID(var, clazz, methodName, fieldDescriptor) \
-        var = env->GetStaticMethodID(clazz, methodName, fieldDescriptor); \
-        LOG_FATAL_IF(! var, "Unable to find static method" methodName);
-
 #define GET_METHOD_ID(var, clazz, methodName, fieldDescriptor) \
         var = env->GetMethodID(clazz, methodName, fieldDescriptor); \
         LOG_FATAL_IF(! var, "Unable to find method" methodName);
@@ -136,11 +109,9 @@ static const JNINativeMethod g_methods[] = {
 
 int register_android_view_KeyEvent(JNIEnv* env) {
     FIND_CLASS(gKeyEventClassInfo.clazz, "android/view/KeyEvent");
-
-    GET_STATIC_METHOD_ID(gKeyEventClassInfo.obtain, gKeyEventClassInfo.clazz,
-            "obtain", "(JJIIIIIIIILjava/lang/String;)Landroid/view/KeyEvent;");
-    GET_METHOD_ID(gKeyEventClassInfo.recycle, gKeyEventClassInfo.clazz,
-            "recycle", "()V");
+        
+    GET_METHOD_ID(gKeyEventClassInfo.ctor, gKeyEventClassInfo.clazz,
+            "<init>", "(JJIIIIIIII)V");
 
     GET_FIELD_ID(gKeyEventClassInfo.mDeviceId, gKeyEventClassInfo.clazz,
             "mDeviceId", "I");

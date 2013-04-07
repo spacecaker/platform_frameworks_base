@@ -245,13 +245,6 @@ public class GestureDetector {
      */
     private VelocityTracker mVelocityTracker;
 
-    /**
-     * Consistency verifier for debugging purposes.
-     */
-    private final InputEventConsistencyVerifier mInputEventConsistencyVerifier =
-            InputEventConsistencyVerifier.isInstrumentationEnabled() ?
-                    new InputEventConsistencyVerifier(this, 0) : null;
-
     private class GestureHandler extends Handler {
         GestureHandler() {
             super();
@@ -450,10 +443,6 @@ public class GestureDetector {
      *              else false.
      */
     public boolean onTouchEvent(MotionEvent ev) {
-        if (mInputEventConsistencyVerifier != null) {
-            mInputEventConsistencyVerifier.onTouchEvent(ev, 0);
-        }
-
         final int action = ev.getAction();
         final float y = ev.getY();
         final float x = ev.getX();
@@ -590,14 +579,8 @@ public class GestureDetector {
             mHandler.removeMessages(SHOW_PRESS);
             mHandler.removeMessages(LONG_PRESS);
             break;
-
         case MotionEvent.ACTION_CANCEL:
             cancel();
-            break;
-        }
-
-        if (!handled && mInputEventConsistencyVerifier != null) {
-            mInputEventConsistencyVerifier.onUnhandledEvent(ev, 0);
         }
         return handled;
     }
@@ -610,8 +593,6 @@ public class GestureDetector {
         mVelocityTracker = null;
         mIsDoubleTapping = false;
         mStillDown = false;
-        mAlwaysInTapRegion = false;
-        mAlwaysInBiggerTapRegion = false;
         if (mInLongPress) {
             mInLongPress = false;
         }

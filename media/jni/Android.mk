@@ -8,11 +8,7 @@ LOCAL_SRC_FILES:= \
     android_media_MediaMetadataRetriever.cpp \
     android_media_ResampleInputStream.cpp \
     android_media_MediaProfiles.cpp \
-    android_media_AmrInputStream.cpp \
-    android_media_Utils.cpp \
-    android_mtp_MtpDatabase.cpp \
-    android_mtp_MtpDevice.cpp \
-    android_mtp_MtpServer.cpp \
+    android_media_AmrInputStream.cpp
 
 LOCAL_SHARED_LIBRARIES := \
     libandroid_runtime \
@@ -23,23 +19,24 @@ LOCAL_SHARED_LIBRARIES := \
     libskia \
     libui \
     libcutils \
-    libgui \
+    libsurfaceflinger_client \
     libstagefright \
-    libcamera_client \
-    libsqlite \
-    libmtp \
-    libusbhost \
-    libexif
+    libcamera_client
+
+LOCAL_STATIC_LIBRARIES :=
+
+ifeq ($(strip $(BOARD_USES_HW_MEDIASCANNER)),true)
+  LOCAL_SHARED_LIBRARIES += libhwmediaplugin
+  LOCAL_CFLAGS += -DUSE_BOARD_MEDIASCANNER
+endif
 
 LOCAL_C_INCLUDES += \
-    external/jhead \
     external/tremor/Tremor \
     frameworks/base/core/jni \
     frameworks/base/media/libmedia \
     frameworks/base/media/libstagefright/codecs/amrnb/enc/src \
     frameworks/base/media/libstagefright/codecs/amrnb/common \
     frameworks/base/media/libstagefright/codecs/amrnb/common/include \
-    frameworks/base/media/mtp \
     $(PV_INCLUDES) \
     $(JNI_H_INCLUDE) \
     $(call include-path-for, corecg graphics)
@@ -49,6 +46,10 @@ LOCAL_CFLAGS +=
 LOCAL_LDLIBS := -lpthread
 
 LOCAL_MODULE:= libmedia_jni
+
+ifeq ($(strip $(BOARD_USES_HW_MEDIARECORDER)),true)
+    LOCAL_CFLAGS += -DUSE_BOARD_MEDIARECORDER
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 

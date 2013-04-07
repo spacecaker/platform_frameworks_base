@@ -1,5 +1,4 @@
 #include "SkBitmap.h"
-#include "SkPixelRef.h"
 #include "SkImageEncoder.h"
 #include "SkColorPriv.h"
 #include "GraphicsJNI.h"
@@ -12,8 +11,6 @@
 #include "CreateJavaOutputStreamAdaptor.h"
 
 #include <jni.h>
-
-#include <Caches.h>
 
 #if 0
     #define TRACE_BITMAP(code)  code
@@ -99,8 +96,6 @@ bool GraphicsJNI::SetPixels(JNIEnv* env, jintArray srcColors,
         src += srcStride;
         dst = (char*)dst + dstBitmap.rowBytes();
     }
-
-    dstBitmap.notifyPixelsChanged();
 
     env->ReleaseIntArrayElements(srcColors, const_cast<jint*>(array),
                                  JNI_ABORT);
@@ -213,6 +208,11 @@ static ToColorProc ChooseToColorProc(const SkBitmap& src) {
 static jobject Bitmap_creator(JNIEnv* env, jobject, jintArray jColors,
                               int offset, int stride, int width, int height,
                               SkBitmap::Config config, jboolean isMutable) {
+    if (width <= 0 || height <= 0) {
+        doThrowIAE(env, "width and height must be > 0");
+        return NULL;
+    }
+
     if (NULL != jColors) {
         size_t n = env->GetArrayLength(jColors);
         if (n < SkAbs32(stride) * (size_t)height) {
@@ -224,9 +224,7 @@ static jobject Bitmap_creator(JNIEnv* env, jobject, jintArray jColors,
     SkBitmap bitmap;
 
     bitmap.setConfig(config, width, height);
-
-    jbyteArray buff = GraphicsJNI::allocateJavaPixelRef(env, &bitmap, NULL);
-    if (NULL == buff) {
+    if (!GraphicsJNI::setJavaPixelRef(env, &bitmap, NULL, true)) {
         return NULL;
     }
 
@@ -235,38 +233,28 @@ static jobject Bitmap_creator(JNIEnv* env, jobject, jintArray jColors,
                                0, 0, width, height, bitmap);
     }
 
-    return GraphicsJNI::createBitmap(env, new SkBitmap(bitmap), buff, isMutable, NULL);
+    return GraphicsJNI::createBitmap(env, new SkBitmap(bitmap), isMutable,
+                                     NULL);
 }
 
 static jobject Bitmap_copy(JNIEnv* env, jobject, const SkBitmap* src,
                            SkBitmap::Config dstConfig, jboolean isMutable) {
     SkBitmap            result;
-    JavaPixelAllocator  allocator(env);
+    JavaPixelAllocator  allocator(env, true);
 
     if (!src->copyTo(&result, dstConfig, &allocator)) {
         return NULL;
     }
 
-    return GraphicsJNI::createBitmap(env, new SkBitmap(result), allocator.getStorageObj(), isMutable, NULL);
+    return GraphicsJNI::createBitmap(env, new SkBitmap(result), isMutable,
+                                     NULL);
 }
 
 static void Bitmap_destructor(JNIEnv* env, jobject, SkBitmap* bitmap) {
-#ifdef USE_OPENGL_RENDERER
-    if (android::uirenderer::Caches::hasInstance()) {
-        android::uirenderer::Caches::getInstance().resourceCache.destructor(bitmap);
-        return;
-    }
-#endif // USE_OPENGL_RENDERER
     delete bitmap;
 }
 
 static void Bitmap_recycle(JNIEnv* env, jobject, SkBitmap* bitmap) {
-#ifdef USE_OPENGL_RENDERER
-    if (android::uirenderer::Caches::hasInstance()) {
-        android::uirenderer::Caches::getInstance().resourceCache.recycle(bitmap);
-        return;
-    }
-#endif // USE_OPENGL_RENDERER
     bitmap->setPixels(NULL, NULL);
 }
 
@@ -329,10 +317,6 @@ static int Bitmap_config(JNIEnv* env, jobject, SkBitmap* bitmap) {
     return bitmap->config();
 }
 
-static int Bitmap_getGenerationId(JNIEnv* env, jobject, SkBitmap* bitmap) {
-    return bitmap->getGenerationID();
-}
-
 static jboolean Bitmap_hasAlpha(JNIEnv* env, jobject, SkBitmap* bitmap) {
     return !bitmap->isOpaque();
 }
@@ -382,31 +366,20 @@ static jobject Bitmap_createFromParcel(JNIEnv* env, jobject, jobject parcel) {
         }
     }
 
-    jbyteArray buffer = GraphicsJNI::allocateJavaPixelRef(env, bitmap, ctable);
-    if (NULL == buffer) {
-        SkSafeUnref(ctable);
+    if (!GraphicsJNI::setJavaPixelRef(env, bitmap, ctable, true)) {
+        ctable->safeUnref();
         delete bitmap;
         return NULL;
     }
 
-    SkSafeUnref(ctable);
+    ctable->safeUnref();
 
     size_t size = bitmap->getSize();
-
-    android::Parcel::ReadableBlob blob;
-    android::status_t status = p->readBlob(size, &blob);
-    if (status) {
-        doThrowRE(env, "Could not read bitmap from parcel blob.");
-        delete bitmap;
-        return NULL;
-    }
-
     bitmap->lockPixels();
-    memcpy(bitmap->getPixels(), blob.data(), size);
+    memcpy(bitmap->getPixels(), p->readInplace(size), size);
     bitmap->unlockPixels();
 
-    blob.release();
-    return GraphicsJNI::createBitmap(env, bitmap, buffer, isMutable, NULL, density);
+    return GraphicsJNI::createBitmap(env, bitmap, isMutable, NULL, density);
 }
 
 static jboolean Bitmap_writeToParcel(JNIEnv* env, jobject,
@@ -441,24 +414,9 @@ static jboolean Bitmap_writeToParcel(JNIEnv* env, jobject,
     }
 
     size_t size = bitmap->getSize();
-
-    android::Parcel::WritableBlob blob;
-    android::status_t status = p->writeBlob(size, &blob);
-    if (status) {
-        doThrowRE(env, "Could not write bitmap to parcel blob.");
-        return false;
-    }
-
     bitmap->lockPixels();
-    const void* pSrc =  bitmap->getPixels();
-    if (pSrc == NULL) {
-        memset(blob.data(), 0, size);
-    } else {
-        memcpy(blob.data(), pSrc, size);
-    }
+    memcpy(p->writeInplace(size), bitmap->getPixels(), size);
     bitmap->unlockPixels();
-
-    blob.release();
     return true;
 }
 
@@ -467,16 +425,8 @@ static jobject Bitmap_extractAlpha(JNIEnv* env, jobject clazz,
                                    jintArray offsetXY) {
     SkIPoint  offset;
     SkBitmap* dst = new SkBitmap;
-    JavaPixelAllocator allocator(env);
 
-    src->extractAlpha(dst, paint, &allocator, &offset);
-    // If Skia can't allocate pixels for destination bitmap, it resets
-    // it, that is set its pixels buffer to NULL, and zero width and height.
-    if (dst->getPixels() == NULL && src->getPixels() != NULL) {
-        delete dst;
-        doThrowOOME(env, "failed to allocate pixels for alpha");
-        return NULL;
-    }
+    src->extractAlpha(dst, paint, &offset);
     if (offsetXY != 0 && env->GetArrayLength(offsetXY) >= 2) {
         int* array = env->GetIntArrayElements(offsetXY, NULL);
         array[0] = offset.fX;
@@ -484,7 +434,7 @@ static jobject Bitmap_extractAlpha(JNIEnv* env, jobject clazz,
         env->ReleaseIntArrayElements(offsetXY, array, 0);
     }
 
-    return GraphicsJNI::createBitmap(env, dst, allocator.getStorageObj(), true, NULL);
+    return GraphicsJNI::createBitmap(env, dst, true, NULL);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -547,7 +497,6 @@ static void Bitmap_setPixel(JNIEnv* env, jobject, const SkBitmap* bitmap,
     }
 
     proc(bitmap->getAddr(x, y), &color, 1, x, y);
-    bitmap->notifyPixelsChanged();
 }
 
 static void Bitmap_setPixels(JNIEnv* env, jobject, const SkBitmap* bitmap,
@@ -579,7 +528,6 @@ static void Bitmap_copyPixelsFromBuffer(JNIEnv* env, jobject,
         android::AutoBufferPointer abp(env, jbuffer, JNI_FALSE);
         // the java side has already checked that buffer is large enough
         memcpy(dst, abp.pointer(), bitmap->getSize());
-        bitmap->notifyPixelsChanged();
     }
 }
 
@@ -662,7 +610,6 @@ static JNINativeMethod gBitmapMethods[] = {
         (void*)Bitmap_writeToParcel },
     {   "nativeExtractAlpha",       "(II[I)Landroid/graphics/Bitmap;",
         (void*)Bitmap_extractAlpha },
-    {   "nativeGenerationId",       "(I)I", (void*)Bitmap_getGenerationId },
     {   "nativeGetPixel",           "(III)I", (void*)Bitmap_getPixel },
     {   "nativeGetPixels",          "(I[IIIIIII)V", (void*)Bitmap_getPixels },
     {   "nativeSetPixel",           "(IIII)V", (void*)Bitmap_setPixel },
@@ -677,8 +624,10 @@ static JNINativeMethod gBitmapMethods[] = {
 
 #define kClassPathName  "android/graphics/Bitmap"
 
+int register_android_graphics_Bitmap(JNIEnv* env);
 int register_android_graphics_Bitmap(JNIEnv* env)
 {
     return android::AndroidRuntime::registerNativeMethods(env, kClassPathName,
                                 gBitmapMethods, SK_ARRAY_COUNT(gBitmapMethods));
 }
+

@@ -23,8 +23,6 @@
 #include <utils/misc.h>
 #include <signal.h>
 
-#include <cutils/properties.h>
-
 #include <binder/IPCThreadState.h>
 #include <utils/threads.h>
 #include <utils/Atomic.h>
@@ -37,12 +35,12 @@
 #include <ui/Region.h>
 #include <ui/DisplayInfo.h>
 #include <ui/FramebufferNativeWindow.h>
+#include <ui/EGLUtils.h>
 
 #include <surfaceflinger/ISurfaceComposer.h>
 #include <surfaceflinger/ISurfaceComposerClient.h>
 
 #include <core/SkBitmap.h>
-#include <core/SkStream.h>
 #include <images/SkImageDecoder.h>
 
 #include <GLES/gl.h>
@@ -50,10 +48,6 @@
 #include <EGL/eglext.h>
 
 #include "BootAnimation.h"
-
-#define USER_BOOTANIMATION_FILE "/data/local/bootanimation.zip"
-#define SYSTEM_BOOTANIMATION_FILE "/system/media/bootanimation.zip"
-#define SYSTEM_ENCRYPTED_BOOTANIMATION_FILE "/system/media/bootanimation-encrypted.zip"
 
 namespace android {
 
@@ -65,6 +59,7 @@ BootAnimation::BootAnimation() : Thread(false)
 }
 
 BootAnimation::~BootAnimation() {
+    mSession->dispose();
 }
 
 void BootAnimation::onFirstRef() {
@@ -151,15 +146,9 @@ status_t BootAnimation::initTexture(void* buffer, size_t len)
     //StopWatch watch("blah");
 
     SkBitmap bitmap;
-    SkMemoryStream  stream(buffer, len);
-    SkImageDecoder* codec = SkImageDecoder::Factory(&stream);
-    codec->setDitherImage(false);
-    if (codec) {
-        codec->decode(&stream, &bitmap,
-                SkBitmap::kRGB_565_Config,
-                SkImageDecoder::kDecodePixels_Mode);
-        delete codec;
-    }
+    SkImageDecoder::DecodeMemory(buffer, len,
+            &bitmap, SkBitmap::kRGB_565_Config,
+            SkImageDecoder::kDecodePixels_Mode);
 
     // ensure we can call getPixels(). No need to call unlock, since the
     // bitmap will go out of scope when we return from this method.
@@ -218,19 +207,15 @@ status_t BootAnimation::readyToRun() {
 
     // create the native surface
     sp<SurfaceControl> control = session()->createSurface(
-            0, dinfo.w, dinfo.h, PIXEL_FORMAT_RGB_565);
-
-    SurfaceComposerClient::openGlobalTransaction();
+            getpid(), 0, dinfo.w, dinfo.h, PIXEL_FORMAT_RGB_565);
+    session()->openTransaction();
     control->setLayer(0x40000000);
-    SurfaceComposerClient::closeGlobalTransaction();
+    session()->closeTransaction();
 
     sp<Surface> s = control->getSurface();
 
     // initialize opengl and egl
     const EGLint attribs[] = {
-            EGL_RED_SIZE,   8,
-            EGL_GREEN_SIZE, 8,
-            EGL_BLUE_SIZE,  8,
             EGL_DEPTH_SIZE, 0,
             EGL_NONE
     };
@@ -243,7 +228,7 @@ status_t BootAnimation::readyToRun() {
     EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 
     eglInitialize(display, 0, 0);
-    eglChooseConfig(display, attribs, &config, 1, &numConfigs);
+    EGLUtils::selectConfigForNativeWindow(display, attribs, s.get(), &config);
     surface = eglCreateWindowSurface(display, config, s.get(), NULL);
     context = eglCreateContext(display, config, NULL, NULL);
     eglQuerySurface(display, surface, EGL_WIDTH, &w);
@@ -260,25 +245,13 @@ status_t BootAnimation::readyToRun() {
     mFlingerSurfaceControl = control;
     mFlingerSurface = s;
 
-    mAndroidAnimation = true;
-
-    // If the device has encryption turned on or is in process 
-    // of being encrypted we show the encrypted boot animation.
-    char decrypt[PROPERTY_VALUE_MAX];
-    property_get("vold.decrypt", decrypt, "");
-
-    bool encryptedAnimation = atoi(decrypt) != 0 || !strcmp("trigger_restart_min_framework", decrypt);
-
-    if ((encryptedAnimation &&
-            (access(SYSTEM_ENCRYPTED_BOOTANIMATION_FILE, R_OK) == 0) &&
-            (mZip.open(SYSTEM_ENCRYPTED_BOOTANIMATION_FILE) == NO_ERROR)) ||
-
-            ((access(USER_BOOTANIMATION_FILE, R_OK) == 0) &&
-            (mZip.open(USER_BOOTANIMATION_FILE) == NO_ERROR)) ||
-
-            ((access(SYSTEM_BOOTANIMATION_FILE, R_OK) == 0) &&
-            (mZip.open(SYSTEM_BOOTANIMATION_FILE) == NO_ERROR))) {
-        mAndroidAnimation = false;
+    mAndroidAnimation = false;
+    status_t err = mZip.open("/data/local/bootanimation.zip");
+    if (err != NO_ERROR) {
+        err = mZip.open("/system/media/bootanimation.zip");
+        if (err != NO_ERROR) {
+            mAndroidAnimation = true;
+        }
     }
 
     return NO_ERROR;
@@ -312,7 +285,6 @@ bool BootAnimation::android()
     glShadeModel(GL_FLAT);
     glDisable(GL_DITHER);
     glDisable(GL_SCISSOR_TEST);
-    glClearColor(0,0,0,1);
     glClear(GL_COLOR_BUFFER_BIT);
     eglSwapBuffers(mDisplay, mSurface);
 
@@ -322,6 +294,9 @@ bool BootAnimation::android()
     const GLint xc = (mWidth  - mAndroid[0].w) / 2;
     const GLint yc = (mHeight - mAndroid[0].h) / 2;
     const Rect updateRect(xc, yc, xc + mAndroid[0].w, yc + mAndroid[0].h);
+
+    // draw and update only what we need
+    mFlingerSurface->setSwapRectangle(updateRect);
 
     glScissor(updateRect.left, mHeight - updateRect.bottom, updateRect.width(),
             updateRect.height());
@@ -447,7 +422,6 @@ bool BootAnimation::movie()
     glDisable(GL_DITHER);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
-    glClearColor(0,0,0,1);
     glClear(GL_COLOR_BUFFER_BIT);
 
     eglSwapBuffers(mDisplay, mSurface);

@@ -575,19 +575,12 @@ exactly_one_interface(const char* filename, const document_item_type* items, con
 
 // ==========================================================
 void
-generate_dep_file(const Options& options, const document_item_type* items)
+generate_dep_file(const Options& options)
 {
-    /* we open the file in binary mode to ensure that the same output is
-     * generated on all platforms !!
-     */
-    FILE* to = NULL;
-    if (options.autoDepFile) {
-        string fileName = options.outputFileName + ".d";
-        to = fopen(fileName.c_str(), "wb");
-    } else {
-        to = fopen(options.depFileName.c_str(), "wb");
-    }
-
+   /* we open the file in binary mode to ensure that the same output is
+    * generated on all platforms !!
+    */
+    FILE* to = fopen(options.depFileName.c_str(), "wb");
     if (to == NULL) {
         return;
     }
@@ -598,12 +591,7 @@ generate_dep_file(const Options& options, const document_item_type* items)
         slash = "";
     }
 
-    if (items->item_type == INTERFACE_TYPE) {
-        fprintf(to, "%s: \\\n", options.outputFileName.c_str());
-    } else {
-        // parcelable: there's no output file.
-        fprintf(to, " : \\\n");
-    }
+    fprintf(to, "%s: \\\n", options.outputFileName.c_str());
     fprintf(to, "  %s %s\n", options.inputFileName.c_str(), slash);
 
     while (import) {
@@ -623,60 +611,44 @@ generate_dep_file(const Options& options, const document_item_type* items)
 
 // ==========================================================
 static string
-generate_outputFileName2(const Options& options, const buffer_type& name, const char* package)
+generate_outputFileName(const Options& options, const document_item_type* items)
 {
     string result;
 
-    // create the path to the destination folder based on the
-    // interface package name
-    result = options.outputBaseFolder;
-    result += OS_PATH_SEPARATOR;
-
-    string packageStr = package;
-    size_t len = packageStr.length();
-    for (size_t i=0; i<len; i++) {
-        if (packageStr[i] == '.') {
-            packageStr[i] = OS_PATH_SEPARATOR;
-        }
-    }
-
-    result += packageStr;
-
-    // add the filename by replacing the .aidl extension to .java
-    const char* p = strchr(name.data, '.');
-    len = p ? p-name.data : strlen(name.data);
-
-    result += OS_PATH_SEPARATOR;
-    result.append(name.data, len);
-    result += ".java";
-
-    return result;
-}
-
-// ==========================================================
-static string
-generate_outputFileName(const Options& options, const document_item_type* items)
-{
     // items has already been checked to have only one interface.
     if (items->item_type == INTERFACE_TYPE) {
         interface_type* type = (interface_type*)items;
 
-        return generate_outputFileName2(options, type->name, type->package);
-    } else if (items->item_type == PARCELABLE_TYPE) {
-        parcelable_type* type = (parcelable_type*)items;
-        return generate_outputFileName2(options, type->name, type->package);
+        // create the path to the destination folder based on the
+        // interface package name
+        result = options.outputBaseFolder;
+        result += OS_PATH_SEPARATOR;
+
+        string package = type->package;
+        size_t len = package.length();
+        for (size_t i=0; i<len; i++) {
+            if (package[i] == '.') {
+                package[i] = OS_PATH_SEPARATOR;
+            }
+        }
+
+        result += package;
+        
+        // add the filename by replacing the .aidl extension to .java
+        const char* p = strchr(type->name.data, '.');
+        len = p ? p-type->name.data : strlen(type->name.data);
+
+        result += OS_PATH_SEPARATOR;
+        result.append(type->name.data, len);
+        result += ".java";
     }
 
-    // I don't think we can come here, but safer than returning NULL.
-    string result;
     return result;
 }
 
-
-
 // ==========================================================
 static void
-check_outputFilePath(const string& path) {
+check_outputFileName(const string& path) {
     size_t len = path.length();
     for (size_t i=0; i<len ; i++) {
         if (path[i] == OS_PATH_SEPARATOR) {
@@ -784,7 +756,7 @@ parse_preprocessed_file(const string& filename)
 
 // ==========================================================
 static int
-compile_aidl(Options& options)
+compile_aidl(const Options& options)
 {
     int err = 0, N;
 
@@ -878,30 +850,27 @@ compile_aidl(Options& options)
         return 1;
     }
 
-    // if needed, generate the outputFileName from the outputBaseFolder
-    if (options.outputFileName.length() == 0 &&
-            options.outputBaseFolder.length() > 0) {
-        options.outputFileName = generate_outputFileName(options, mainDoc);
-    }
-
-    // if we were asked to, generate a make dependency file
-    // unless it's a parcelable *and* it's supposed to fail on parcelable
-    if ((options.autoDepFile || options.depFileName != "") &&
-            !(onlyParcelable && options.failOnParcelable)) {
-        // make sure the folders of the output file all exists
-        check_outputFilePath(options.outputFileName);
-        generate_dep_file(options, mainDoc);
-    }
-
     // they didn't ask to fail on parcelables, so just exit quietly.
     if (onlyParcelable && !options.failOnParcelable) {
         return 0;
     }
 
-    // make sure the folders of the output file all exists
-    check_outputFilePath(options.outputFileName);
+    // if we were asked to, generate a make dependency file
+    if (options.depFileName != "") {
+        generate_dep_file(options);
+    }
 
-    err = generate_java(options.outputFileName, options.inputFileName.c_str(),
+    // if needed, generate the outputFileName from the outputBaseFolder
+    string outputFileName = options.outputFileName;
+    if (outputFileName.length() == 0 &&
+            options.outputBaseFolder.length() > 0) {
+        outputFileName = generate_outputFileName(options, mainDoc);
+    }
+    
+    // make sure the folders of the output file all exists
+    check_outputFileName(outputFileName);
+
+    err = generate_java(outputFileName, options.inputFileName.c_str(),
                         (interface_type*)mainDoc);
 
     return err;
@@ -979,6 +948,8 @@ preprocess_aidl(const Options& options)
 int
 main(int argc, const char **argv)
 {
+    int err = 0;
+
     Options options;
     int result = parse_options(argc, argv, &options);
     if (result) {

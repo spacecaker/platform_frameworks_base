@@ -31,6 +31,7 @@ import android.view.MotionEvent;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.InputMethodSession;
+import android.view.inputmethod.EditorInfo;
 
 class IInputMethodSessionWrapper extends IInputMethodSession.Stub
         implements HandlerCaller.Callback {
@@ -47,7 +48,6 @@ class IInputMethodSessionWrapper extends IInputMethodSession.Stub
     private static final int DO_APP_PRIVATE_COMMAND = 100;
     private static final int DO_TOGGLE_SOFT_INPUT = 105;
     private static final int DO_FINISH_SESSION = 110;
-    private static final int DO_VIEW_CLICKED = 115;
 
     HandlerCaller mCaller;
     InputMethodSession mInputMethodSession;
@@ -77,8 +77,6 @@ class IInputMethodSessionWrapper extends IInputMethodSession.Stub
     }
 
     public void executeMessage(Message msg) {
-        if (mInputMethodSession == null) return;
-
         switch (msg.what) {
             case DO_FINISH_INPUT:
                 mInputMethodSession.finishInput();
@@ -134,10 +132,6 @@ class IInputMethodSessionWrapper extends IInputMethodSession.Stub
                 mInputMethodSession = null;
                 return;
             }
-            case DO_VIEW_CLICKED: {
-                mInputMethodSession.viewClicked(msg.arg1 == 1);
-                return;
-            }
         }
         Log.w(TAG, "Unhandled message code: " + msg.what);
     }
@@ -172,11 +166,7 @@ class IInputMethodSessionWrapper extends IInputMethodSession.Stub
                 oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd));
     }
-
-    public void viewClicked(boolean focusChanged) {
-        mCaller.executeOrSendMessage(mCaller.obtainMessageI(DO_VIEW_CLICKED, focusChanged ? 1 : 0));
-    }
-
+    
     public void updateCursor(Rect newCursor) {
         mCaller.executeOrSendMessage(mCaller.obtainMessageO(DO_UPDATE_CURSOR,
                 newCursor));

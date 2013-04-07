@@ -51,7 +51,7 @@ struct WAVSource : public MediaSource {
             const sp<MetaData> &meta,
             uint16_t waveFormat,
             int32_t bitsPerSample,
-            off64_t offset, size_t size);
+            off_t offset, size_t size);
 
     virtual status_t start(MetaData *params = NULL);
     virtual status_t stop();
@@ -72,11 +72,11 @@ private:
     int32_t mSampleRate;
     int32_t mNumChannels;
     int32_t mBitsPerSample;
-    off64_t mOffset;
+    off_t mOffset;
     size_t mSize;
     bool mStarted;
     MediaBufferGroup *mGroup;
-    off64_t mCurrentPos;
+    off_t mCurrentPos;
 
     WAVSource(const WAVSource &);
     WAVSource &operator=(const WAVSource &);
@@ -139,7 +139,7 @@ status_t WAVExtractor::init() {
 
     size_t totalSize = U32_LE_AT(&header[4]);
 
-    off64_t offset = 12;
+    off_t offset = 12;
     size_t remainingSize = totalSize;
     while (remainingSize >= 8) {
         uint8_t chunkHeader[8];
@@ -251,7 +251,7 @@ WAVSource::WAVSource(
         const sp<MetaData> &meta,
         uint16_t waveFormat,
         int32_t bitsPerSample,
-        off64_t offset, size_t size)
+        off_t offset, size_t size)
     : mDataSource(dataSource),
       mMeta(meta),
       mWaveFormat(waveFormat),
@@ -264,8 +264,6 @@ WAVSource::WAVSource(
       mGroup(NULL) {
     CHECK(mMeta->findInt32(kKeySampleRate, &mSampleRate));
     CHECK(mMeta->findInt32(kKeyChannelCount, &mNumChannels));
-
-    mMeta->setInt32(kKeyMaxInputSize, kMaxFrameSize);
 }
 
 WAVSource::~WAVSource() {
@@ -318,9 +316,16 @@ status_t WAVSource::read(
     *out = NULL;
 
     int64_t seekTimeUs;
+#ifdef OMAP_ENHANCEMENT
+    size_t bytesPerSample = mBitsPerSample >> 3;
+#endif
     ReadOptions::SeekMode mode;
     if (options != NULL && options->getSeekTo(&seekTimeUs, &mode)) {
-        int64_t pos = (seekTimeUs * mSampleRate) / 1000000 * mNumChannels * (mBitsPerSample >> 3);
+#ifdef OMAP_ENHANCEMENT
+        int64_t pos = (seekTimeUs * mSampleRate) / 1000000 * mNumChannels * bytesPerSample;
+#else
+        int64_t pos = (seekTimeUs * mSampleRate) / 1000000 * mNumChannels * 2;
+#endif
         if (pos > mSize) {
             pos = mSize;
         }
@@ -337,7 +342,7 @@ status_t WAVSource::read(
         mBitsPerSample == 8 ? kMaxFrameSize / 2 : kMaxFrameSize;
 
     size_t maxBytesAvailable =
-        (mCurrentPos - mOffset >= (off64_t)mSize)
+        (mCurrentPos - mOffset >= (off_t)mSize)
             ? 0 : mSize - (mCurrentPos - mOffset);
 
     if (maxBytesToRead > maxBytesAvailable) {
@@ -355,6 +360,12 @@ status_t WAVSource::read(
         return ERROR_END_OF_STREAM;
     }
 
+#ifdef OMAP_ENHANCEMENT
+    int64_t offsetPos = n;
+#else
+    mCurrentPos += n;
+#endif
+
     buffer->set_range(0, n);
 
     if (mWaveFormat == WAVE_FORMAT_PCM) {
@@ -370,9 +381,7 @@ status_t WAVSource::read(
 
             int16_t *dst = (int16_t *)tmp->data();
             const uint8_t *src = (const uint8_t *)buffer->data();
-            ssize_t numBytes = n;
-
-            while (numBytes-- > 0) {
+            while (n-- > 0) {
                 *dst++ = ((int16_t)(*src) - 128) * 256;
                 ++src;
             }
@@ -400,15 +409,19 @@ status_t WAVSource::read(
         }
     }
 
+
+#ifndef OMAP_ENHANCEMENT
     size_t bytesPerSample = mBitsPerSample >> 3;
+#endif
 
     buffer->meta_data()->setInt64(
             kKeyTime,
             1000000LL * (mCurrentPos - mOffset)
                 / (mNumChannels * bytesPerSample) / mSampleRate);
-
+#ifdef OMAP_ENHANCEMENT
+    mCurrentPos += offsetPos;
+#endif
     buffer->meta_data()->setInt32(kKeyIsSyncFrame, 1);
-    mCurrentPos += n;
 
     *out = buffer;
 
@@ -429,13 +442,8 @@ bool SniffWAV(
         return false;
     }
 
-    sp<MediaExtractor> extractor = new WAVExtractor(source);
-    if (extractor->countTracks() == 0) {
-        return false;
-    }
-
     *mimeType = MEDIA_MIMETYPE_CONTAINER_WAV;
-    *confidence = 0.6f;
+    *confidence = 0.3f;
 
     return true;
 }

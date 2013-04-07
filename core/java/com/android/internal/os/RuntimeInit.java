@@ -23,15 +23,20 @@ import android.os.Debug;
 import android.os.IBinder;
 import android.os.Process;
 import android.os.SystemProperties;
+import android.util.Config;
 import android.util.Log;
 import android.util.Slog;
+
 import com.android.internal.logging.AndroidConfig;
-import com.android.server.NetworkManagementSocketTagger;
+
 import dalvik.system.VMRuntime;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.TimeZone;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.LogManager;
+import java.util.TimeZone;
+
 import org.apache.harmony.luni.internal.util.TimezoneGetter;
 
 /**
@@ -41,7 +46,6 @@ import org.apache.harmony.luni.internal.util.TimezoneGetter;
  */
 public class RuntimeInit {
     private final static String TAG = "AndroidRuntime";
-    private final static boolean DEBUG = false;
 
     /** true if commonInit() has been called */
     private static boolean initialized;
@@ -86,14 +90,14 @@ public class RuntimeInit {
     }
 
     private static final void commonInit() {
-        if (DEBUG) Slog.d(TAG, "Entered RuntimeInit!");
+        if (Config.LOGV) Slog.d(TAG, "Entered RuntimeInit!");
 
         /* set default handler; this applies to all threads in the VM */
         Thread.setDefaultUncaughtExceptionHandler(new UncaughtHandler());
 
         int hasQwerty = getQwertyKeyboard();
 
-        if (DEBUG) Slog.d(TAG, ">>>>> qwerty keyboard = " + hasQwerty);
+        if (Config.LOGV) Slog.d(TAG, ">>>>> qwerty keyboard = " + hasQwerty);
         if (hasQwerty == 1) {
             System.setProperty("qwerty", "1");
         }
@@ -124,11 +128,6 @@ public class RuntimeInit {
          */
         String userAgent = getDefaultUserAgent();
         System.setProperty("http.agent", userAgent);
-
-        /*
-         * Wire socket tagging to traffic stats.
-         */
-        NetworkManagementSocketTagger.install();
 
         /*
          * If we're running in an emulator launched with "-trace", put the
@@ -185,6 +184,11 @@ public class RuntimeInit {
      */
     private static void invokeStaticMain(String className, String[] argv)
             throws ZygoteInit.MethodAndArgsCaller {
+
+        // We want to be fairly aggressive about heap utilization, to avoid
+        // holding on to a lot of memory that isn't needed.
+        VMRuntime.getRuntime().setTargetHeapUtilization(0.75f);
+
         Class<?> cl;
 
         try {
@@ -222,13 +226,6 @@ public class RuntimeInit {
     }
 
     public static final void main(String[] argv) {
-        if (argv.length == 2 && argv[1].equals("application")) {
-            if (DEBUG) Slog.d(TAG, "RuntimeInit: Starting application");
-            redirectLogStreams();
-        } else {
-            if (DEBUG) Slog.d(TAG, "RuntimeInit: Starting tool");
-        }
-
         commonInit();
 
         /*
@@ -237,7 +234,7 @@ public class RuntimeInit {
          */
         finishInit();
 
-        if (DEBUG) Slog.d(TAG, "Leaving RuntimeInit!");
+        if (Config.LOGV) Slog.d(TAG, "Leaving RuntimeInit!");
     }
 
     public static final native void finishInit();
@@ -249,70 +246,51 @@ public class RuntimeInit {
      *
      * Current recognized args:
      * <ul>
+     *   <li> --nice-name=<i>nice name to appear in ps</i>
      *   <li> <code> [--] &lt;start class name&gt;  &lt;args&gt;
      * </ul>
      *
-     * @param targetSdkVersion target SDK version
      * @param argv arg strings
      */
-    public static final void zygoteInit(int targetSdkVersion, String[] argv)
+    public static final void zygoteInit(String[] argv)
             throws ZygoteInit.MethodAndArgsCaller {
-        if (DEBUG) Slog.d(TAG, "RuntimeInit: Starting application from zygote");
-
-        redirectLogStreams();
+        // TODO: Doing this here works, but it seems kind of arbitrary. Find
+        // a better place. The goal is to set it up for applications, but not
+        // tools like am.
+        System.setOut(new AndroidPrintStream(Log.INFO, "System.out"));
+        System.setErr(new AndroidPrintStream(Log.WARN, "System.err"));
 
         commonInit();
         zygoteInitNative();
 
-        applicationInit(targetSdkVersion, argv);
-    }
+        int curArg = 0;
+        for ( /* curArg */ ; curArg < argv.length; curArg++) {
+            String arg = argv[curArg];
 
-    /**
-     * The main function called when an application is started through a
-     * wrapper process.
-     *
-     * When the wrapper starts, the runtime starts {@link RuntimeInit#main}
-     * which calls {@link WrapperInit#main} which then calls this method.
-     * So we don't need to call commonInit() here.
-     *
-     * @param targetSdkVersion target SDK version
-     * @param argv arg strings
-     */
-    public static void wrapperInit(int targetSdkVersion, String[] argv)
-            throws ZygoteInit.MethodAndArgsCaller {
-        if (DEBUG) Slog.d(TAG, "RuntimeInit: Starting application from wrapper");
+            if (arg.equals("--")) {
+                curArg++;
+                break;
+            } else if (!arg.startsWith("--")) {
+                break;
+            } else if (arg.startsWith("--nice-name=")) {
+                String niceName = arg.substring(arg.indexOf('=') + 1);
+                Process.setArgV0(niceName);
+            }
+        }
 
-        applicationInit(targetSdkVersion, argv);
-    }
-
-    private static void applicationInit(int targetSdkVersion, String[] argv)
-            throws ZygoteInit.MethodAndArgsCaller {
-        // We want to be fairly aggressive about heap utilization, to avoid
-        // holding on to a lot of memory that isn't needed.
-        VMRuntime.getRuntime().setTargetHeapUtilization(0.75f);
-        VMRuntime.getRuntime().setTargetSdkVersion(targetSdkVersion);
-
-        final Arguments args;
-        try {
-            args = new Arguments(argv);
-        } catch (IllegalArgumentException ex) {
-            Slog.e(TAG, ex.getMessage());
+        if (curArg == argv.length) {
+            Slog.e(TAG, "Missing classname argument to RuntimeInit!");
             // let the process exit
             return;
         }
 
         // Remaining arguments are passed to the start class's static main
-        invokeStaticMain(args.startClass, args.startArgs);
-    }
 
-    /**
-     * Redirect System.out and System.err to the Android log.
-     */
-    public static void redirectLogStreams() {
-        System.out.close();
-        System.setOut(new AndroidPrintStream(Log.INFO, "System.out"));
-        System.err.close();
-        System.setErr(new AndroidPrintStream(Log.WARN, "System.err"));
+        String startClass = argv[curArg++];
+        String[] startArgs = new String[argv.length - curArg];
+
+        System.arraycopy(argv, curArg, startArgs, 0, startArgs.length);
+        invokeStaticMain(startClass, startArgs);
     }
 
     public static final native void zygoteInitNative();
@@ -353,6 +331,9 @@ public class RuntimeInit {
         }
     }
 
+    /** Counter used to prevent reentrancy in {@link #reportException}. */
+    private static final AtomicInteger sInReportException = new AtomicInteger();
+
     /**
      * Set the object identifying this application/process, for reporting VM
      * errors.
@@ -371,56 +352,5 @@ public class RuntimeInit {
     static {
         // Register handlers for DDM messages.
         android.ddm.DdmRegister.registerHandlers();
-    }
-
-    /**
-     * Handles argument parsing for args related to the runtime.
-     *
-     * Current recognized args:
-     * <ul>
-     *   <li> <code> [--] &lt;start class name&gt;  &lt;args&gt;
-     * </ul>
-     */
-    static class Arguments {
-        /** first non-option argument */
-        String startClass;
-
-        /** all following arguments */
-        String[] startArgs;
-
-        /**
-         * Constructs instance and parses args
-         * @param args runtime command-line args
-         * @throws IllegalArgumentException
-         */
-        Arguments(String args[]) throws IllegalArgumentException {
-            parseArgs(args);
-        }
-
-        /**
-         * Parses the commandline arguments intended for the Runtime.
-         */
-        private void parseArgs(String args[])
-                throws IllegalArgumentException {
-            int curArg = 0;
-            for (; curArg < args.length; curArg++) {
-                String arg = args[curArg];
-
-                if (arg.equals("--")) {
-                    curArg++;
-                    break;
-                } else if (!arg.startsWith("--")) {
-                    break;
-                }
-            }
-
-            if (curArg == args.length) {
-                throw new IllegalArgumentException("Missing classname argument to RuntimeInit!");
-            }
-
-            startClass = args[curArg++];
-            startArgs = new String[args.length - curArg];
-            System.arraycopy(args, curArg, startArgs, 0, startArgs.length);
-        }
     }
 }

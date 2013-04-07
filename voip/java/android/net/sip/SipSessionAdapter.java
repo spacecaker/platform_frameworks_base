@@ -42,10 +42,6 @@ public class SipSessionAdapter extends ISipSessionListener.Stub {
     public void onCallBusy(ISipSession session) {
     }
 
-    public void onCallTransferring(ISipSession session,
-            String sessionDescription) {
-    }
-
     public void onCallChangeFailed(ISipSession session, int errorCode,
             String message) {
     }

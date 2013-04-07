@@ -16,6 +16,8 @@
 
 package android.graphics;
 
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.test.suitebuilder.annotation.SmallTest;
 import junit.framework.TestCase;
 
@@ -40,10 +42,6 @@ public class BitmapTest extends TestCase {
         assertEquals("rowbytes", 200, bm2.getRowBytes());
         assertEquals("rowbytes", 200, bm3.getRowBytes());
         
-        assertEquals("byteCount", 80000, bm1.getByteCount());
-        assertEquals("byteCount", 40000, bm2.getByteCount());
-        assertEquals("byteCount", 40000, bm3.getByteCount());
-
         assertEquals("height", 200, bm1.getHeight());
         assertEquals("height", 200, bm2.getHeight());
         assertEquals("height", 200, bm3.getHeight());

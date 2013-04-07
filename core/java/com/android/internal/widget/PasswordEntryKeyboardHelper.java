@@ -26,12 +26,10 @@ import android.os.SystemClock;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.HapticFeedbackConstants;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewRootImpl;
+import android.view.ViewRoot;
 import com.android.internal.R;
 
 public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
@@ -49,60 +47,23 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
     private PasswordEntryKeyboard mSymbolsKeyboard;
     private PasswordEntryKeyboard mSymbolsKeyboardShifted;
     private PasswordEntryKeyboard mNumericKeyboard;
-    private final Context mContext;
-    private final View mTargetView;
-    private final KeyboardView mKeyboardView;
+    private Context mContext;
+    private View mTargetView;
+    private KeyboardView mKeyboardView;
     private long[] mVibratePattern;
-    private boolean mEnableHaptics = false;
+    private Vibrator mVibrator;
 
     public PasswordEntryKeyboardHelper(Context context, KeyboardView keyboardView, View targetView) {
-        this(context, keyboardView, targetView, true);
-    }
-
-    public PasswordEntryKeyboardHelper(Context context, KeyboardView keyboardView, View targetView,
-            boolean useFullScreenWidth) {
         mContext = context;
         mTargetView = targetView;
         mKeyboardView = keyboardView;
-        if (useFullScreenWidth
-                || mKeyboardView.getLayoutParams().width == ViewGroup.LayoutParams.MATCH_PARENT) {
-            createKeyboards();
-        } else {
-            createKeyboardsWithSpecificSize(mKeyboardView.getLayoutParams().width,
-                    mKeyboardView.getLayoutParams().height);
-        }
+        createKeyboards();
         mKeyboardView.setOnKeyboardActionListener(this);
-    }
-
-    public void setEnableHaptics(boolean enabled) {
-        mEnableHaptics = enabled;
+        mVibrator = new Vibrator();
     }
 
     public boolean isAlpha() {
         return mKeyboardMode == KEYBOARD_MODE_ALPHA;
-    }
-
-    private void createKeyboardsWithSpecificSize(int viewWidth, int viewHeight) {
-        mNumericKeyboard = new PasswordEntryKeyboard(mContext, R.xml.password_kbd_numeric,
-                viewWidth, viewHeight);
-        mQwertyKeyboard = new PasswordEntryKeyboard(mContext,
-                R.xml.password_kbd_qwerty, R.id.mode_normal, viewWidth, viewHeight);
-        mQwertyKeyboard.enableShiftLock();
-
-        mQwertyKeyboardShifted = new PasswordEntryKeyboard(mContext,
-                R.xml.password_kbd_qwerty_shifted,
-                R.id.mode_normal, viewWidth, viewHeight);
-        mQwertyKeyboardShifted.enableShiftLock();
-        mQwertyKeyboardShifted.setShifted(true); // always shifted.
-
-        mSymbolsKeyboard = new PasswordEntryKeyboard(mContext, R.xml.password_kbd_symbols,
-                viewWidth, viewHeight);
-        mSymbolsKeyboard.enableShiftLock();
-
-        mSymbolsKeyboardShifted = new PasswordEntryKeyboard(mContext,
-                R.xml.password_kbd_symbols_shift, viewWidth, viewHeight);
-        mSymbolsKeyboardShifted.enableShiftLock();
-        mSymbolsKeyboardShifted.setShifted(true); // always shifted
     }
 
     private void createKeyboards() {
@@ -134,8 +95,7 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
                 final boolean visiblePassword = Settings.System.getInt(
                         mContext.getContentResolver(),
                         Settings.System.TEXT_SHOW_PASSWORD, 1) != 0;
-                final boolean enablePreview = false; // TODO: grab from configuration
-                mKeyboardView.setPreviewEnabled(visiblePassword && enablePreview);
+                mKeyboardView.setPreviewEnabled(visiblePassword);
                 break;
             case KEYBOARD_MODE_NUMERIC:
                 mKeyboardView.setKeyboard(mNumericKeyboard);
@@ -148,7 +108,7 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
 
     private void sendKeyEventsToTarget(int character) {
         Handler handler = mTargetView.getHandler();
-        KeyEvent[] events = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD).getEvents(
+        KeyEvent[] events = KeyCharacterMap.load(KeyCharacterMap.ALPHA).getEvents(
                 new char[] { (char) character });
         if (events != null) {
             final int N = events.length;
@@ -156,7 +116,7 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
                 KeyEvent event = events[i];
                 event = KeyEvent.changeFlags(event, event.getFlags()
                         | KeyEvent.FLAG_SOFT_KEYBOARD | KeyEvent.FLAG_KEEP_TOUCH_MODE);
-                handler.sendMessage(handler.obtainMessage(ViewRootImpl.DISPATCH_KEY, event));
+                handler.sendMessage(handler.obtainMessage(ViewRoot.DISPATCH_KEY, event));
             }
         }
     }
@@ -164,13 +124,11 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
     public void sendDownUpKeyEvents(int keyEventCode) {
         long eventTime = SystemClock.uptimeMillis();
         Handler handler = mTargetView.getHandler();
-        handler.sendMessage(handler.obtainMessage(ViewRootImpl.DISPATCH_KEY_FROM_IME,
-                new KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, keyEventCode, 0, 0,
-                        KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+        handler.sendMessage(handler.obtainMessage(ViewRoot.DISPATCH_KEY_FROM_IME,
+                new KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, keyEventCode, 0, 0, 0, 0,
                     KeyEvent.FLAG_SOFT_KEYBOARD|KeyEvent.FLAG_KEEP_TOUCH_MODE)));
-        handler.sendMessage(handler.obtainMessage(ViewRootImpl.DISPATCH_KEY_FROM_IME,
-                new KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyEventCode, 0, 0,
-                        KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+        handler.sendMessage(handler.obtainMessage(ViewRoot.DISPATCH_KEY_FROM_IME,
+                new KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyEventCode, 0, 0, 0, 0,
                         KeyEvent.FLAG_SOFT_KEYBOARD|KeyEvent.FLAG_KEEP_TOUCH_MODE)));
     }
 
@@ -232,9 +190,8 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
         }
     }
 
-    public void handleBackspace() {
+    private void handleBackspace() {
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL);
-        performHapticFeedback();
     }
 
     private void handleShift() {
@@ -277,14 +234,8 @@ public class PasswordEntryKeyboardHelper implements OnKeyboardActionListener {
     }
 
     public void onPress(int primaryCode) {
-        performHapticFeedback();
-    }
-
-    private void performHapticFeedback() {
-        if (mEnableHaptics) {
-            mKeyboardView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY,
-                    HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
-                    | HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+        if (mVibratePattern != null) {
+            mVibrator.vibrate(mVibratePattern, -1);
         }
     }
 

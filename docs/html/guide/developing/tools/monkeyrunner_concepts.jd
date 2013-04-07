@@ -1,6 +1,4 @@
 page.title=monkeyrunner
-parent.title=Tools
-parent.link=index.html
 @jd:body
 
 <div id="qv-wrapper">
@@ -112,23 +110,14 @@ device = MonkeyRunner.waitForConnection()
 # to see if the installation worked.
 device.installPackage('myproject/bin/MyApplication.apk')
 
-# sets a variable with the package's internal name
-package = 'com.example.android.myapplication'
-
-# sets a variable with the name of an Activity in the package
-activity = 'com.example.android.myapplication.MainActivity'
-
-# sets the name of the component to start
-runComponent = package + '/' + activity
-
-# Runs the component
-device.startActivity(component=runComponent)
+# Runs an activity in the application
+device.startActivity(component='com.example.android.myapplication.MainActivity')
 
 # Presses the Menu button
-device.press('KEYCODE_MENU', MonkeyDevice.DOWN_AND_UP)
+device.press('KEYCODE_MENU','DOWN_AND_UP')
 
 # Takes a screenshot
-result = device.takeSnapshot()
+result = device.takeSnapShot
 
 # Writes the screenshot to a file
 result.writeToFile('myproject/shot1.png','png')
@@ -236,7 +225,7 @@ Table 1 explains the flags and arguments.
     You can generate an API reference for monkeyrunner by running:
 </p>
 <pre>
-monkeyrunner help.py &lt;format&gt; &lt;outfile&gt;
+monkeyrunner &lt;format&gt; help.py &lt;outfile&gt;
 </pre>
 <p>
 The arguments are:

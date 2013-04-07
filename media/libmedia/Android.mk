@@ -1,15 +1,4 @@
 LOCAL_PATH:= $(call my-dir)
-
-include $(CLEAR_VARS)
-
-LOCAL_SRC_FILES:= \
-    AudioParameter.cpp
-
-LOCAL_MODULE:= libmedia_helper
-LOCAL_MODULE_TAGS := optional
-
-include $(BUILD_STATIC_LIBRARY)
-
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
@@ -26,7 +15,6 @@ LOCAL_SRC_FILES:= \
     IMediaRecorderClient.cpp \
     IMediaPlayer.cpp \
     IMediaRecorder.cpp \
-    IStreamSource.cpp \
     Metadata.cpp \
     mediarecorder.cpp \
     IMediaMetadataRetriever.cpp \
@@ -44,45 +32,42 @@ LOCAL_SRC_FILES:= \
     IEffectClient.cpp \
     AudioEffect.cpp \
     Visualizer.cpp \
-    MemoryLeakTrackUtil.cpp \
     fixedfft.cpp.arm
 
-ifeq ($(BOARD_USES_LIBMEDIA_WITH_AUDIOPARAMETER),true)
-    LOCAL_SRC_FILES+= \
-        AudioParameter.cpp
+LOCAL_SHARED_LIBRARIES := \
+	libui libcutils libutils libbinder libsonivox libicuuc libexpat libsurfaceflinger_client libcamera_client
+
+LOCAL_MODULE:= libmedia
+
+ifeq ($(TARGET_OS)-$(TARGET_SIMULATOR),linux-true)
+LOCAL_LDLIBS += -ldl -lpthread
 endif
 
-ifeq ($(BOARD_USES_AUDIO_LEGACY),true)
-    LOCAL_SRC_FILES+= \
-        AudioParameter.cpp
-
-    LOCAL_CFLAGS += -DUSES_AUDIO_LEGACY
+ifneq ($(TARGET_SIMULATOR),true)
+LOCAL_SHARED_LIBRARIES += libdl
 endif
 
 ifeq ($(BOARD_USE_KINETO_COMPATIBILITY),true)
-    LOCAL_CFLAGS += -DUSE_KINETO_COMPATIBILITY
+LOCAL_CFLAGS += -DUSE_KINETO_COMPATIBILITY
 endif
 
-ifeq ($(BOARD_USE_SAMSUNG_SEPARATEDSTREAM),true)
-    LOCAL_CFLAGS += -DUSE_SAMSUNG_SEPARATEDSTREAM
+ifeq ($(BOARD_USES_SAMSUNG_SEPARATED_STREAM),true)
+LOCAL_CFLAGS += -DUSES_SAMSUNG_SEPARATED_STREAM
 endif
-
-LOCAL_SHARED_LIBRARIES := \
-    libui libcutils libutils libbinder libsonivox libicuuc libexpat \
-    libcamera_client libstagefright_foundation \
-    libgui libdl
-
-
-LOCAL_WHOLE_STATIC_LIBRARY := libmedia_helper
-
-LOCAL_MODULE:= libmedia
 
 LOCAL_C_INCLUDES := \
     $(JNI_H_INCLUDE) \
     $(call include-path-for, graphics corecg) \
     $(TOP)/frameworks/base/include/media/stagefright/openmax \
     external/icu4c/common \
-    external/expat/lib \
-    system/media/audio_effects/include
+    external/expat/lib
+
+ifeq ($(OMAP_ENHANCEMENT),true)
+
+LOCAL_SRC_FILES += OverlayRenderer.cpp
+
+LOCAL_C_INCLUDES += $(TOP)/hardware/ti/omap3/liboverlay
+
+endif
 
 include $(BUILD_SHARED_LIBRARY)

@@ -25,8 +25,7 @@ typedef struct {
   char name[256];
   int sync;
   int handcodeApi;
-  int direct;
-  int nocontext;
+  int handcodePlay;
   int paramCount;
   VarType ret;
   VarType params[16];

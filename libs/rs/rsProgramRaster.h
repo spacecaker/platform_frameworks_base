@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2011 The Android Open Source Project
+ * Copyright (C) 2009 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,65 +17,50 @@
 #ifndef ANDROID_RS_PROGRAM_RASTER_H
 #define ANDROID_RS_PROGRAM_RASTER_H
 
-#include "rsProgramBase.h"
+#include "rsProgram.h"
 
 // ---------------------------------------------------------------------------
 namespace android {
 namespace renderscript {
 
 class ProgramRasterState;
-/*****************************************************************************
- * CAUTION
- *
- * Any layout changes for this class may require a corresponding change to be
- * made to frameworks/compile/libbcc/lib/ScriptCRT/rs_core.c, which contains
- * a partial copy of the information below.
- *
- *****************************************************************************/
-class ProgramRaster : public ProgramBase {
+
+class ProgramRaster : public Program
+{
 public:
-    struct Hal {
-        mutable void *drv;
-
-        struct State {
-            bool pointSprite;
-            RsCullMode cull;
-        };
-        State state;
-    };
-    Hal mHal;
-
-    virtual void setup(const Context *, ProgramRasterState *);
-    virtual void serialize(OStream *stream) const;
-    virtual RsA3DClassID getClassId() const { return RS_A3D_CLASS_ID_PROGRAM_RASTER; }
-    static ProgramRaster *createFromStream(Context *rsc, IStream *stream);
-
-    static ObjectBaseRef<ProgramRaster> getProgramRaster(Context *rsc,
-                                                         bool pointSprite,
-                                                         RsCullMode cull);
-protected:
-    virtual void preDestroy() const;
+    ProgramRaster(Context *rsc,
+                  bool pointSmooth,
+                  bool lineSmooth,
+                  bool pointSprite);
     virtual ~ProgramRaster();
 
-private:
-    ProgramRaster(Context *rsc,
-                  bool pointSprite,
-                  RsCullMode cull);
+    virtual void setupGL(const Context *, ProgramRasterState *);
+    virtual void setupGL2(const Context *, ProgramRasterState *);
+
+    void setLineWidth(float w);
+    void setPointSize(float s);
+
+protected:
+    bool mPointSmooth;
+    bool mLineSmooth;
+    bool mPointSprite;
+
+    float mPointSize;
+    float mLineWidth;
+
 
 };
 
-class ProgramRasterState {
+class ProgramRasterState
+{
 public:
     ProgramRasterState();
     ~ProgramRasterState();
-    void init(Context *rsc);
+    void init(Context *rsc, int32_t w, int32_t h);
     void deinit(Context *rsc);
 
     ObjectBaseRef<ProgramRaster> mDefault;
     ObjectBaseRef<ProgramRaster> mLast;
-
-    // Cache of all existing raster programs.
-    Vector<ProgramRaster *> mRasterPrograms;
 };
 
 

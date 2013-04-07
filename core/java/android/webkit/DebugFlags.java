@@ -32,6 +32,8 @@ class DebugFlags {
     public static final boolean CALLBACK_PROXY = false;
     public static final boolean COOKIE_MANAGER = false;
     public static final boolean COOKIE_SYNC_MANAGER = false;
+    public static final boolean DRAG_TRACKER = false;
+    public static final String DRAG_TRACKER_LOGTAG = "skia";
     public static final boolean FRAME_LOADER = false;
     public static final boolean J_WEB_CORE_JAVA_BRIDGE = false;// HIGHLY VERBOSE
     public static final boolean LOAD_LISTENER = false;
@@ -45,9 +47,5 @@ class DebugFlags {
     public static final boolean WEB_TEXT_VIEW = false;
     public static final boolean WEB_VIEW = false;
     public static final boolean WEB_VIEW_CORE = false;
-    /*
-     * Set to true to allow the WebTextView to draw on top of the web page in a
-     * different color with no background so you can see how the two line up.
-     */
-    public static final boolean DRAW_WEBTEXTVIEW = false;
+
 }

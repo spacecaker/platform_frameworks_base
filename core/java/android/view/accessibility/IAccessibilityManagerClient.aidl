@@ -24,5 +24,6 @@ package android.view.accessibility;
  */
 oneway interface IAccessibilityManagerClient {
 
-    void setState(int stateFlags);
+    void setEnabled(boolean enabled);
+
 }

@@ -1,19 +1,3 @@
-/*
- * Copyright (C) 2010 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 #define LOG_TAG "CameraServiceTest"
 
 #include <stdio.h>
@@ -29,6 +13,7 @@
 #include <camera/ICamera.h>
 #include <camera/ICameraClient.h>
 #include <camera/ICameraService.h>
+#include <ui/Overlay.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
@@ -310,6 +295,15 @@ public:
     virtual status_t registerBuffers(const BufferHeap& buffers);
     virtual void postBuffer(ssize_t offset);
     virtual void unregisterBuffers();
+    virtual sp<OverlayRef> createOverlay(
+            uint32_t w, uint32_t h, int32_t format, int32_t orientation);
+#ifdef OMAP_ENHANCEMENT
+    virtual sp<OverlayRef> createOverlay(
+            uint32_t w, uint32_t h, int32_t format, int32_t orientation, int isS3D);
+    virtual void setDisplayId(int dpy);
+    virtual int requestOverlayClone(bool enable);
+#endif
+
     virtual sp<GraphicBuffer> requestBuffer(int bufferIdx, int usage);
     virtual status_t setBufferCount(int bufferCount);
 
@@ -377,6 +371,33 @@ void MSurface::waitUntil(int c0, int c1, int c2) {
         mCond.wait(mLock);
     }
 }
+
+sp<OverlayRef> MSurface::createOverlay(uint32_t w, uint32_t h, int32_t format,
+        int32_t orientation) {
+    // Not implemented.
+    ASSERT(0);
+    return NULL;
+}
+
+#ifdef OMAP_ENHANCEMENT
+sp<OverlayRef> MSurface::createOverlay(uint32_t w, uint32_t h, int32_t format,
+        int32_t orientation, int isS3D) {
+    // We don't expect this to be called in current hardware.
+    ASSERT(0);
+    sp<OverlayRef> dummy;
+    return dummy;
+}
+
+void MSurface::setDisplayId(int dpy)
+{
+return;
+}
+
+int MSurface::requestOverlayClone(bool enable)
+{
+return -1;
+}
+#endif
 
 //
 //  Utilities to use the Holder service
@@ -820,10 +841,10 @@ public:
             ASSERT(c->previewEnabled() == true);
             sleep(2);
             c->stopPreview();
-            if ((v & CAMERA_FRAME_CALLBACK_FLAG_ENABLE_MASK) == 0) {
+            if ((v & FRAME_CALLBACK_FLAG_ENABLE_MASK) == 0) {
                 cc->assertData(CAMERA_MSG_PREVIEW_FRAME, MCameraClient::EQ, 0);
             } else {
-                if ((v & CAMERA_FRAME_CALLBACK_FLAG_ONE_SHOT_MASK) == 0) {
+                if ((v & FRAME_CALLBACK_FLAG_ONE_SHOT_MASK) == 0) {
                     cc->assertData(CAMERA_MSG_PREVIEW_FRAME, MCameraClient::GE, 10);
                 } else {
                     cc->assertData(CAMERA_MSG_PREVIEW_FRAME, MCameraClient::EQ, 1);
@@ -839,7 +860,7 @@ public:
         ASSERT(c->recordingEnabled() == false);
         sp<MSurface> surface = new MSurface();
         ASSERT(c->setPreviewDisplay(surface) == NO_ERROR);
-        c->setPreviewCallbackFlag(CAMERA_FRAME_CALLBACK_FLAG_ENABLE_MASK);
+        c->setPreviewCallbackFlag(FRAME_CALLBACK_FLAG_ENABLE_MASK);
         cc->setReleaser(c.get());
         c->startRecording();
         ASSERT(c->recordingEnabled() == true);
@@ -860,7 +881,7 @@ public:
 
         CameraParameters param(c->getParameters());
         param.setPreviewSize(w, h);
-        c->setPreviewCallbackFlag(CAMERA_FRAME_CALLBACK_FLAG_ENABLE_MASK);
+        c->setPreviewCallbackFlag(FRAME_CALLBACK_FLAG_ENABLE_MASK);
         c->setParameters(param.flatten());
 
         c->startPreview();

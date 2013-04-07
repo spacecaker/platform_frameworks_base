@@ -22,6 +22,7 @@
 #include <utils/Vector.h>
 #include <utils/KeyedVector.h>
 #include <media/AudioTrack.h>
+#include <cutils/atomic.h>
 
 namespace android {
 
@@ -142,8 +143,7 @@ public:
 
 private:
     static void callback(int event, void* user, void *info);
-    void process(int event, void *info, unsigned long toggle);
-    bool doStop_l();
+    void process(int event, void *info);
 
     SoundPool*          mSoundPool;
     AudioTrack*         mAudioTrack;
@@ -185,7 +185,7 @@ public:
     void sampleLoaded(int sampleID);
 
     // called from AudioTrack thread
-    void done_l(SoundChannel* channel);
+    void done(SoundChannel* channel);
 
     // callback function
     void setCallback(SoundPoolCallback* callback, void* user);
@@ -198,14 +198,13 @@ private:
     sp<Sample> findSample(int sampleID) { return mSamples.valueFor(sampleID); }
     SoundChannel* findChannel (int channelID);
     SoundChannel* findNextChannel (int channelID);
-    SoundChannel* allocateChannel_l(int priority);
-    void moveToFront_l(SoundChannel* channel);
+    SoundChannel* allocateChannel(int priority);
+    void moveToFront(SoundChannel* channel);
     void notify(SoundPoolEvent event);
     void dump();
 
     // restart thread
     void addToRestartList(SoundChannel* channel);
-    void addToStopList(SoundChannel* channel);
     static int beginThread(void* arg);
     int run();
     void quit();
@@ -217,7 +216,6 @@ private:
     SoundChannel*           mChannelPool;
     List<SoundChannel*>     mChannels;
     List<SoundChannel*>     mRestart;
-    List<SoundChannel*>     mStop;
     DefaultKeyedVector< int, sp<Sample> >   mSamples;
     int                     mMaxChannels;
     int                     mStreamType;

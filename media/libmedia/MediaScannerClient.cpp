@@ -62,7 +62,7 @@ void MediaScannerClient::beginFile()
     mValues = new StringArray;
 }
 
-status_t MediaScannerClient::addStringTag(const char* name, const char* value)
+bool MediaScannerClient::addStringTag(const char* name, const char* value)
 {
     if (mLocaleEncoding != kEncodingNone) {
         // don't bother caching strings that are all ASCII.
@@ -82,7 +82,7 @@ status_t MediaScannerClient::addStringTag(const char* name, const char* value)
             // save the strings for later so they can be used for native encoding detection
             mNames->push_back(name);
             mValues->push_back(value);
-            return OK;
+            return true;
         }
         // else fall through
     }
@@ -200,21 +200,38 @@ void MediaScannerClient::endFile()
 {
     if (mLocaleEncoding != kEncodingNone) {
         int size = mNames->size();
-        uint32_t encoding = kEncodingAll;
+        uint32_t tmpEnc;
+        uint32_t encodings = kEncodingAll;
 
-        // compute a bit mask containing all possible encodings
-        for (int i = 0; i < mNames->size(); i++)
-            encoding &= possibleEncodings(mValues->getEntry(i));
+        // guess proper encoding for non-ASCII values
+        int i = 0;
+        while (mNames->getEntry(i) != NULL) {
+            tmpEnc = possibleEncodings(mValues->getEntry(i));
 
-        // if the locale encoding matches, then assume we have a native encoding.
-        if (encoding & mLocaleEncoding)
-            convertValues(mLocaleEncoding);
+            if (mLocaleEncoding == kEncodingEUCKR && tmpEnc == kEncodingNone) {
+                // there are some Korean mp3s which use EUC-KR and utf-8 together in their tag
+                // this case means the value's encoding is utf-8. so, don't count them
+                if (!handleStringTag(mNames->getEntry(i), mValues->getEntry(i)))
+                    break;
+                mNames->erase(i);
+                mValues->erase(i);
+            } else {
+                // to find more accurate encoding,
+                // compute a bit mask containing all possible encodings
+                encodings &= tmpEnc;
+                i += 1;
+            }
+        }
 
-        // finally, push all name/value pairs to the client
-        for (int i = 0; i < mNames->size(); i++) {
-            status_t status = handleStringTag(mNames->getEntry(i), mValues->getEntry(i));
-            if (status) {
-                break;
+        if (mNames->size() > 0) {
+            // if the locale encoding matches, then assume we have a native encoding
+            if (encodings & mLocaleEncoding)
+                convertValues(mLocaleEncoding);
+
+            // finally, push all name/value pairs to the client
+            for (int i = 0; i < mNames->size(); i++) {
+                if (!handleStringTag(mNames->getEntry(i), mValues->getEntry(i)))
+                    break;
             }
         }
     }

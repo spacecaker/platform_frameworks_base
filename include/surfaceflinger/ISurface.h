@@ -27,23 +27,100 @@
 
 #include <ui/PixelFormat.h>
 
+#include <hardware/hardware.h>
+#include <hardware/gralloc.h>
+
 namespace android {
 
 typedef int32_t    SurfaceID;
 
-class ISurfaceTexture;
+class IMemoryHeap;
+class OverlayRef;
+class GraphicBuffer;
 
 class ISurface : public IInterface
 {
 protected:
     enum {
-        GET_SURFACE_TEXTURE = IBinder::FIRST_CALL_TRANSACTION,
+        REGISTER_BUFFERS = IBinder::FIRST_CALL_TRANSACTION,
+        UNREGISTER_BUFFERS,
+        POST_BUFFER, // one-way transaction
+        CREATE_OVERLAY,
+        REQUEST_BUFFER,
+        SET_BUFFER_COUNT,
+#ifdef OMAP_ENHANCEMENT
+        CREATE_OVERLAY_S3D,
+        SET_DISPLAY_ID,
+        REQUEST_OVERLAY_CLONE
+#endif
     };
 
 public: 
     DECLARE_META_INTERFACE(Surface);
 
-    virtual sp<ISurfaceTexture> getSurfaceTexture() const = 0;
+    /*
+     * requests a new buffer for the given index. If w, h, or format are
+     * null the buffer is created with the parameters assigned to the
+     * surface it is bound to. Otherwise the buffer's parameters are
+     * set to those specified.
+     */
+    virtual sp<GraphicBuffer> requestBuffer(int bufferIdx,
+            uint32_t w, uint32_t h, uint32_t format, uint32_t usage) = 0;
+
+    /*
+     * sets the number of buffers dequeuable for this surface.
+     */
+    virtual status_t setBufferCount(int bufferCount) = 0;
+    
+    // ------------------------------------------------------------------------
+    // Deprecated...
+    // ------------------------------------------------------------------------
+
+    class BufferHeap {
+    public:
+        enum {
+            /* rotate source image */
+            ROT_0     = 0,
+            ROT_90    = HAL_TRANSFORM_ROT_90,
+            ROT_180   = HAL_TRANSFORM_ROT_180,
+            ROT_270   = HAL_TRANSFORM_ROT_270,
+        };
+        BufferHeap();
+        
+        BufferHeap(uint32_t w, uint32_t h,
+                int32_t hor_stride, int32_t ver_stride, 
+                PixelFormat format, const sp<IMemoryHeap>& heap);
+        
+        BufferHeap(uint32_t w, uint32_t h,
+                int32_t hor_stride, int32_t ver_stride, 
+                PixelFormat format, uint32_t transform, uint32_t flags,
+                const sp<IMemoryHeap>& heap);
+        
+        ~BufferHeap(); 
+        
+        uint32_t w;
+        uint32_t h;
+        int32_t hor_stride;
+        int32_t ver_stride;
+        PixelFormat format;
+        uint32_t transform;
+        uint32_t flags;
+        sp<IMemoryHeap> heap;
+    };
+    
+    virtual status_t registerBuffers(const BufferHeap& buffers) = 0;
+    virtual void postBuffer(ssize_t offset) = 0; // one-way
+    virtual void unregisterBuffers() = 0;
+    
+    virtual sp<OverlayRef> createOverlay(
+            uint32_t w, uint32_t h, int32_t format, int32_t orientation) = 0;
+#ifdef OMAP_ENHANCEMENT
+    virtual sp<OverlayRef> createOverlay(
+            uint32_t w, uint32_t h, int32_t format, int32_t orientation, int isS3D) = 0;
+    virtual void setDisplayId(int displayId) = 0;
+    virtual int  requestOverlayClone(bool enable) = 0;
+#endif
+
 };
 
 // ----------------------------------------------------------------------------

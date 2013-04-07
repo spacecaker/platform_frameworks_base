@@ -23,8 +23,6 @@ import android.app.backup.IRestoreSession;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 
-import java.util.HashSet;
-
 public final class Bmgr {
     IBackupManager mBmgr;
     IRestoreSession mRestore;
@@ -47,6 +45,7 @@ public final class Bmgr {
     }
 
     public void run(String[] args) {
+        boolean validCommand = false;
         if (args.length < 1) {
             showUsage();
             return;
@@ -151,13 +150,20 @@ public final class Bmgr {
     }
 
     private void doBackup() {
+        boolean isFull = false;
         String pkg = nextArg();
-        if (pkg == null) {
+        if ("-f".equals(pkg)) {
+            isFull = true;
+            pkg = nextArg();
+        }
+
+        if (pkg == null || pkg.startsWith("-")) {
             showUsage();
             return;
         }
 
         try {
+            // !!! TODO: handle full backup
             mBmgr.dataChanged(pkg);
         } catch (RemoteException e) {
             System.err.println(e.toString());
@@ -330,13 +336,7 @@ public final class Bmgr {
         } else {
             try {
                 long token = Long.parseLong(arg, 16);
-                HashSet<String> filter = null;
-                while ((arg = nextArg()) != null) {
-                    if (filter == null) filter = new HashSet<String>();
-                    filter.add(arg);
-                }
-
-                doRestoreAll(token, filter);
+                doRestoreAll(token);
             } catch (NumberFormatException e) {
                 showUsage();
                 return;
@@ -371,7 +371,7 @@ public final class Bmgr {
         }
     }
 
-    private void doRestoreAll(long token, HashSet<String> filter) {
+    private void doRestoreAll(long token) {
         RestoreObserver observer = new RestoreObserver();
 
         try {
@@ -386,19 +386,11 @@ public final class Bmgr {
             if (err == 0) {
                 observer.waitForCompletion();
                 sets = observer.sets;
-                if (sets != null) {
-                    for (RestoreSet s : sets) {
-                        if (s.token == token) {
-                            System.out.println("Scheduling restore: " + s.name);
-                            if (filter == null) {
-                                didRestore = (mRestore.restoreAll(token, observer) == 0);
-                            } else {
-                                String[] names = new String[filter.size()];
-                                filter.toArray(names);
-                                didRestore = (mRestore.restoreSome(token, observer, names) == 0);
-                            }
-                            break;
-                        }
+                for (RestoreSet s : sets) {
+                    if (s.token == token) {
+                        System.out.println("Scheduling restore: " + s.name);
+                        didRestore = (mRestore.restoreAll(token, observer) == 0);
+                        break;
                     }
                 }
             }
@@ -443,7 +435,6 @@ public final class Bmgr {
         System.err.println("       bmgr list sets");
         System.err.println("       bmgr transport WHICH");
         System.err.println("       bmgr restore TOKEN");
-        System.err.println("       bmgr restore TOKEN PACKAGE...");
         System.err.println("       bmgr restore PACKAGE");
         System.err.println("       bmgr run");
         System.err.println("       bmgr wipe PACKAGE");
@@ -471,18 +462,12 @@ public final class Bmgr {
         System.err.println("The 'transport' command designates the named transport as the currently");
         System.err.println("active one.  This setting is persistent across reboots.");
         System.err.println("");
-        System.err.println("The 'restore' command when given just a restore token initiates a full-system");
+        System.err.println("The 'restore' command when given a restore token initiates a full-system");
         System.err.println("restore operation from the currently active transport.  It will deliver");
         System.err.println("the restore set designated by the TOKEN argument to each application");
         System.err.println("that had contributed data to that restore set.");
         System.err.println("");
-        System.err.println("The 'restore' command when given a token and one or more package names");
-        System.err.println("initiates a restore operation of just those given packages from the restore");
-        System.err.println("set designated by the TOKEN argument.  It is effectively the same as the");
-        System.err.println("'restore' operation supplying only a token, but applies a filter to the");
-        System.err.println("set of applications to be restored.");
-        System.err.println("");
-        System.err.println("The 'restore' command when given just a package name intiates a restore of");
+        System.err.println("The 'restore' command when given a package name intiates a restore of");
         System.err.println("just that one package according to the restore set selection algorithm");
         System.err.println("used by the RestoreSession.restorePackage() method.");
         System.err.println("");

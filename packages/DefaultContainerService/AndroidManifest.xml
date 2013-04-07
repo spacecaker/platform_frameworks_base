@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-        package="com.android.defcontainer" coreApp="true">
+        package="com.android.defcontainer">
     <uses-permission android:name="android.permission.ACCESS_DOWNLOAD_MANAGER"/>
     <uses-permission android:name="android.permission.ACCESS_ALL_DOWNLOADS"/>
     <uses-permission android:name="android.permission.ASEC_ACCESS"/>
@@ -9,8 +9,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.ACCESS_CACHE_FILESYSTEM" />
 
-    <application android:label="@string/service_name"
-                 android:allowBackup="false">
+    <application android:label="@string/service_name">
 
         <service android:name=".DefaultContainerService"
                  android:enabled="true"

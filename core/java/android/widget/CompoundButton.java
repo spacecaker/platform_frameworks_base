@@ -28,7 +28,6 @@ import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.ViewDebug;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
 
 /**
  * <p>
@@ -209,16 +208,22 @@ public abstract class CompoundButton extends Button implements Checkable {
     }
 
     @Override
-    public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
-        super.onInitializeAccessibilityEvent(event);
-        event.setChecked(mChecked);
-    }
+    public boolean dispatchPopulateAccessibilityEvent(AccessibilityEvent event) {
+        boolean populated = super.dispatchPopulateAccessibilityEvent(event);
 
-    @Override
-    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
-        super.onInitializeAccessibilityNodeInfo(info);
-        info.setCheckable(true);
-        info.setChecked(mChecked);
+        if (!populated) {
+            int resourceId = 0;
+            if (mChecked) {
+                resourceId = R.string.accessibility_compound_button_selected;
+            } else {
+                resourceId = R.string.accessibility_compound_button_unselected;
+            }
+            String state = getResources().getString(resourceId);
+            event.getText().add(state);
+            event.setChecked(mChecked);
+        }
+
+        return populated;
     }
 
     @Override
@@ -272,12 +277,6 @@ public abstract class CompoundButton extends Button implements Checkable {
     @Override
     protected boolean verifyDrawable(Drawable who) {
         return super.verifyDrawable(who) || who == mButtonDrawable;
-    }
-
-    @Override
-    public void jumpDrawablesToCurrentState() {
-        super.jumpDrawablesToCurrentState();
-        if (mButtonDrawable != null) mButtonDrawable.jumpToCurrentState();
     }
 
     static class SavedState extends BaseSavedState {

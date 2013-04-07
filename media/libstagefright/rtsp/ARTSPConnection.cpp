@@ -20,8 +20,6 @@
 
 #include "ARTSPConnection.h"
 
-#include <cutils/properties.h>
-
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
@@ -34,31 +32,23 @@
 #include <openssl/md5.h>
 #include <sys/socket.h>
 
-#include "HTTPBase.h"
-
 namespace android {
 
 // static
 const int64_t ARTSPConnection::kSelectTimeoutUs = 1000ll;
 
-ARTSPConnection::ARTSPConnection(bool uidValid, uid_t uid)
-    : mUIDValid(uidValid),
-      mUID(uid),
-      mState(DISCONNECTED),
+ARTSPConnection::ARTSPConnection()
+    : mState(DISCONNECTED),
       mAuthType(NONE),
       mSocket(-1),
       mConnectionID(0),
       mNextCSeq(0),
       mReceiveResponseEventPending(false) {
-    MakeUserAgent(&mUserAgent);
 }
 
 ARTSPConnection::~ARTSPConnection() {
     if (mSocket >= 0) {
         LOGE("Connection is still open, closing the socket.");
-        if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-        }
         close(mSocket);
         mSocket = -1;
     }
@@ -187,13 +177,10 @@ bool ARTSPConnection::ParseURL(
     return true;
 }
 
-static status_t MakeSocketBlocking(int s, bool blocking) {
+static void MakeSocketBlocking(int s, bool blocking) {
     // Make socket non-blocking.
     int flags = fcntl(s, F_GETFL, 0);
-
-    if (flags == -1) {
-        return UNKNOWN_ERROR;
-    }
+    CHECK_NE(flags, -1);
 
     if (blocking) {
         flags &= ~O_NONBLOCK;
@@ -201,18 +188,13 @@ static status_t MakeSocketBlocking(int s, bool blocking) {
         flags |= O_NONBLOCK;
     }
 
-    flags = fcntl(s, F_SETFL, flags);
-
-    return flags == -1 ? UNKNOWN_ERROR : OK;
+    CHECK_NE(fcntl(s, F_SETFL, flags), -1);
 }
 
 void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
     ++mConnectionID;
 
     if (mState != DISCONNECTED) {
-        if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-        }
         close(mSocket);
         mSocket = -1;
 
@@ -261,11 +243,6 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
 
     mSocket = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (mUIDValid) {
-        HTTPBase::RegisterSocketUserTag(mSocket, mUID,
-                                        (uint32_t)*(uint32_t*) "RTSP");
-    }
-
     MakeSocketBlocking(mSocket, false);
 
     struct sockaddr_in remote;
@@ -291,9 +268,6 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
         reply->setInt32("result", -errno);
         mState = DISCONNECTED;
 
-        if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-        }
         close(mSocket);
         mSocket = -1;
     } else {
@@ -307,32 +281,24 @@ void ARTSPConnection::onConnect(const sp<AMessage> &msg) {
     reply->post();
 }
 
-void ARTSPConnection::performDisconnect() {
-    if (mUIDValid) {
-        HTTPBase::UnRegisterSocketUserTag(mSocket);
-    }
-    close(mSocket);
-    mSocket = -1;
-
-    flushPendingRequests();
-
-    mUser.clear();
-    mPass.clear();
-    mAuthType = NONE;
-    mNonce.clear();
-
-    mState = DISCONNECTED;
-}
-
 void ARTSPConnection::onDisconnect(const sp<AMessage> &msg) {
     if (mState == CONNECTED || mState == CONNECTING) {
-        performDisconnect();
+        close(mSocket);
+        mSocket = -1;
+
+        flushPendingRequests();
     }
 
     sp<AMessage> reply;
     CHECK(msg->findMessage("reply", &reply));
 
     reply->setInt32("result", OK);
+    mState = DISCONNECTED;
+
+    mUser.clear();
+    mPass.clear();
+    mAuthType = NONE;
+    mNonce.clear();
 
     reply->post();
 }
@@ -381,9 +347,6 @@ void ARTSPConnection::onCompleteConnection(const sp<AMessage> &msg) {
         reply->setInt32("result", -err);
 
         mState = DISCONNECTED;
-        if (mUIDValid) {
-            HTTPBase::UnRegisterSocketUserTag(mSocket);
-        }
         close(mSocket);
         mSocket = -1;
     } else {
@@ -415,7 +378,6 @@ void ARTSPConnection::onSendRequest(const sp<AMessage> &msg) {
     reply->setString("original-request", request.c_str(), request.size());
 
     addAuthentication(&request);
-    addUserAgent(&request);
 
     // Find the boundary between headers and the body.
     ssize_t i = request.find("\r\n\r\n");
@@ -437,25 +399,21 @@ void ARTSPConnection::onSendRequest(const sp<AMessage> &msg) {
             send(mSocket, request.c_str() + numBytesSent,
                  request.size() - numBytesSent, 0);
 
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
+        if (n == 0) {
+            // Server closed the connection.
+            LOGE("Server unexpectedly closed the connection.");
 
-        if (n <= 0) {
-            performDisconnect();
-
-            if (n == 0) {
-                // Server closed the connection.
-                LOGE("Server unexpectedly closed the connection.");
-
-                reply->setInt32("result", ERROR_IO);
-                reply->post();
-            } else {
-                LOGE("Error sending rtsp request. (%s)", strerror(errno));
-                reply->setInt32("result", -errno);
-                reply->post();
+            reply->setInt32("result", ERROR_IO);
+            reply->post();
+            return;
+        } else if (n < 0) {
+            if (errno == EINTR) {
+                continue;
             }
 
+            LOGE("Error sending rtsp request.");
+            reply->setInt32("result", -errno);
+            reply->post();
             return;
         }
 
@@ -526,22 +484,17 @@ status_t ARTSPConnection::receive(void *data, size_t size) {
     size_t offset = 0;
     while (offset < size) {
         ssize_t n = recv(mSocket, (uint8_t *)data + offset, size - offset, 0);
-
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
-
-        if (n <= 0) {
-            performDisconnect();
-
-            if (n == 0) {
-                // Server closed the connection.
-                LOGE("Server unexpectedly closed the connection.");
-                return ERROR_IO;
-            } else {
-                LOGE("Error reading rtsp response. (%s)", strerror(errno));
-                return -errno;
+        if (n == 0) {
+            // Server closed the connection.
+            LOGE("Server unexpectedly closed the connection.");
+            return ERROR_IO;
+        } else if (n < 0) {
+            if (errno == EINTR) {
+                continue;
             }
+
+            LOGE("Error reading rtsp response.");
+            return -errno;
         }
 
         offset += (size_t)n;
@@ -659,7 +612,6 @@ bool ARTSPConnection::receiveRTSPReponse() {
     }
 
     AString line;
-    ssize_t lastDictIndex = -1;
     for (;;) {
         if (!receiveLine(&line)) {
             break;
@@ -669,21 +621,7 @@ bool ARTSPConnection::receiveRTSPReponse() {
             break;
         }
 
-        LOGV("line: '%s'", line.c_str());
-
-        if (line.c_str()[0] == ' ' || line.c_str()[0] == '\t') {
-            // Support for folded header values.
-
-            if (lastDictIndex < 0) {
-                // First line cannot be a continuation of the previous one.
-                return false;
-            }
-
-            AString &value = response->mHeaders.editValueAt(lastDictIndex);
-            value.append(line);
-
-            continue;
-        }
+        LOGV("line: %s", line.c_str());
 
         ssize_t colonPos = line.find(":");
         if (colonPos < 0) {
@@ -696,12 +634,9 @@ bool ARTSPConnection::receiveRTSPReponse() {
         key.tolower();
 
         line.erase(0, colonPos + 1);
+        line.trim();
 
-        lastDictIndex = response->mHeaders.add(key, line);
-    }
-
-    for (size_t i = 0; i < response->mHeaders.size(); ++i) {
-        response->mHeaders.editValueAt(i).trim();
+        response->mHeaders.add(key, line);
     }
 
     unsigned long contentLength = 0;
@@ -718,8 +653,24 @@ bool ARTSPConnection::receiveRTSPReponse() {
     if (contentLength > 0) {
         response->mContent = new ABuffer(contentLength);
 
-        if (receive(response->mContent->data(), contentLength) != OK) {
-            return false;
+        size_t numBytesRead = 0;
+        while (numBytesRead < contentLength) {
+            ssize_t n = recv(
+                    mSocket, response->mContent->data() + numBytesRead,
+                    contentLength - numBytesRead, 0);
+
+            if (n == 0) {
+                // Server closed the connection.
+                TRESPASS();
+            } else if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+
+                TRESPASS();
+            }
+
+            numBytesRead += (size_t)n;
         }
     }
 
@@ -786,20 +737,17 @@ bool ARTSPConnection::handleServerRequest(const sp<ARTSPResponse> &request) {
             send(mSocket, response.c_str() + numBytesSent,
                  response.size() - numBytesSent, 0);
 
-        if (n < 0 && errno == EINTR) {
-            continue;
-        }
+        if (n == 0) {
+            // Server closed the connection.
+            LOGE("Server unexpectedly closed the connection.");
 
-        if (n <= 0) {
-            if (n == 0) {
-                // Server closed the connection.
-                LOGE("Server unexpectedly closed the connection.");
-            } else {
-                LOGE("Error sending rtsp response (%s).", strerror(errno));
+            return false;
+        } else if (n < 0) {
+            if (errno == EINTR) {
+                continue;
             }
 
-            performDisconnect();
-
+            LOGE("Error sending rtsp response.");
             return false;
         }
 
@@ -1029,29 +977,6 @@ void ARTSPConnection::addAuthentication(AString *request) {
 
     request->insert(fragment, i + 2);
 #endif
-}
-
-// static
-void ARTSPConnection::MakeUserAgent(AString *userAgent) {
-    userAgent->clear();
-    userAgent->setTo("User-Agent: stagefright/1.1 (Linux;Android ");
-
-#if (PROPERTY_VALUE_MAX < 8)
-#error "PROPERTY_VALUE_MAX must be at least 8"
-#endif
-
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.build.version.release", value, "Unknown");
-    userAgent->append(value);
-    userAgent->append(")\r\n");
-}
-
-void ARTSPConnection::addUserAgent(AString *request) const {
-    // Find the boundary between headers and the body.
-    ssize_t i = request->find("\r\n\r\n");
-    CHECK_GE(i, 0);
-
-    request->insert(mUserAgent, i + 2);
 }
 
 }  // namespace android

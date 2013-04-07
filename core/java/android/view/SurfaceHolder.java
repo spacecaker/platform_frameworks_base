@@ -18,6 +18,10 @@ package android.view;
 
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import static android.view.WindowManager.LayoutParams.MEMORY_TYPE_NORMAL;
+import static android.view.WindowManager.LayoutParams.MEMORY_TYPE_HARDWARE;
+import static android.view.WindowManager.LayoutParams.MEMORY_TYPE_GPU;
+import static android.view.WindowManager.LayoutParams.MEMORY_TYPE_PUSH_BUFFERS;
 
 /**
  * Abstract interface to someone holding a display surface.  Allows you to
@@ -25,50 +29,39 @@ import android.graphics.Rect;
  * monitor changes to the surface.  This interface is typically available
  * through the {@link SurfaceView} class.
  * 
- * <p>When using this interface from a thread other than the one running
+ * <p>When using this interface from a thread different than the one running
  * its {@link SurfaceView}, you will want to carefully read the
- * methods
- * {@link #lockCanvas} and {@link Callback#surfaceCreated Callback.surfaceCreated()}.
+ * {@link #lockCanvas} and {@link Callback#surfaceCreated Callback.surfaceCreated}.
  */
 public interface SurfaceHolder {
-
-    /** @deprecated this is ignored, this value is set automatically when needed. */
-    @Deprecated
-    public static final int SURFACE_TYPE_NORMAL = 0;
-    /** @deprecated this is ignored, this value is set automatically when needed. */
-    @Deprecated
-    public static final int SURFACE_TYPE_HARDWARE = 1;
-    /** @deprecated this is ignored, this value is set automatically when needed. */
-    @Deprecated
-    public static final int SURFACE_TYPE_GPU = 2;
-    /** @deprecated this is ignored, this value is set automatically when needed. */
-    @Deprecated
-    public static final int SURFACE_TYPE_PUSH_BUFFERS = 3;
-
     /**
-     * Stereoscopic Side-by-Side Half 3D format
-     * @hide
+     * Surface type.
+     * 
+     * @see #SURFACE_TYPE_NORMAL
+     * @see #SURFACE_TYPE_PUSH_BUFFERS
      */
-    public static final int STEREOSCOPIC_3D_FORMAT_SIDE_BY_SIDE_HALF_L_R = 0x10000;
-    /**
-     * Stereoscopic Top Bottom 3D format
-     * @hide
+    
+    /** Surface type: creates a regular surface, usually in main, non
+     * contiguous, cached/buffered RAM. */
+    public static final int SURFACE_TYPE_NORMAL = MEMORY_TYPE_NORMAL;
+    /** Surface type: creates a suited to be used with DMA engines and
+     * hardware accelerators. 
+     * @deprecated this is ignored, this value is set automatically when needed.
      */
-    public static final int STEREOSCOPIC_3D_FORMAT_TOP_BOTTOM   = 0x20000;
-    /**
-     * Stereoscopic Interleaved 3D format
-     * @hide
+    @Deprecated
+    public static final int SURFACE_TYPE_HARDWARE = MEMORY_TYPE_HARDWARE;
+    /** Surface type: creates a surface suited to be used with the GPU 
+     * @deprecated this is ignored, this value is set automatically when needed.
      */
-    public static final int STEREOSCOPIC_3D_FORMAT_INTERLEAVED  = 0x40000;
-    /**
-     * Stereoscopic Side-by-Side Full 3D format
-     * @hide
-     */
-    public static final int STEREOSCOPIC_3D_FORMAT_SIDE_BY_SIDE_R_L = 0x80000;
+    @Deprecated
+    public static final int SURFACE_TYPE_GPU = MEMORY_TYPE_GPU;
+    /** Surface type: creates a "push" surface, that is a surface that 
+     * doesn't owns its buffers. With such a surface lockCanvas will fail. */
+    public static final int SURFACE_TYPE_PUSH_BUFFERS = MEMORY_TYPE_PUSH_BUFFERS;
 
     /**
      * Exception that is thrown from {@link #lockCanvas} when called on a Surface
-     * whose type is SURFACE_TYPE_PUSH_BUFFERS.
+     * whose is SURFACE_TYPE_PUSH_BUFFERS.
      */
     public static class BadSurfaceTypeException extends RuntimeException {
         public BadSurfaceTypeException() {
@@ -84,7 +77,7 @@ public interface SurfaceHolder {
      * changes to the surface.  When used with a {@link SurfaceView}, the
      * Surface being held is only available between calls to
      * {@link #surfaceCreated(SurfaceHolder)} and
-     * {@link #surfaceDestroyed(SurfaceHolder)}.  The Callback is set with
+     * {@link #surfaceDestroyed(SurfaceHolder).  The Callback is set with
      * {@link SurfaceHolder#addCallback SurfaceHolder.addCallback} method.
      */
     public interface Callback {
@@ -132,7 +125,7 @@ public interface SurfaceHolder {
         /**
          * Called when the application needs to redraw the content of its
          * surface, after it is resized or for some other reason.  By not
-         * returning from here until the redraw is complete, you can ensure that
+         * returning here until the redraw is complete, you can ensure that
          * the user will not see your surface in a bad state (at its new
          * size before it has been correctly drawn that way).  This will
          * typically be preceeded by a call to {@link #surfaceChanged}.
@@ -144,7 +137,7 @@ public interface SurfaceHolder {
 
     /**
      * Add a Callback interface for this holder.  There can several Callback
-     * interfaces associated with a holder.
+     * interfaces associated to a holder.
      * 
      * @param callback The new Callback interface.
      */
@@ -167,11 +160,10 @@ public interface SurfaceHolder {
     public boolean isCreating();
     
     /**
-     * Sets the surface's type.
-     *  
-     * @deprecated this is ignored, this value is set automatically when needed.
+     * Sets the surface's type. 
+     * 
+     * @param type The surface's memory type.
      */
-    @Deprecated
     public void setType(int type);
 
     /**
@@ -209,7 +201,7 @@ public interface SurfaceHolder {
      * surface is displayed.  The default is false, allowing it to turn off.
      * This is safe to call from any thread.
      * 
-     * @param screenOn Set to true to force the screen to stay on, false
+     * @param screenOn Supply to true to force the screen to stay on, false
      * to allow it to turn off.
      */
     public void setKeepScreenOn(boolean screenOn);
@@ -217,14 +209,14 @@ public interface SurfaceHolder {
     /**
      * Start editing the pixels in the surface.  The returned Canvas can be used
      * to draw into the surface's bitmap.  A null is returned if the surface has
-     * not been created or otherwise cannot be edited.  You will usually need
+     * not been created or otherwise can not be edited.  You will usually need
      * to implement {@link Callback#surfaceCreated Callback.surfaceCreated}
      * to find out when the Surface is available for use.
      * 
      * <p>The content of the Surface is never preserved between unlockCanvas() and
      * lockCanvas(), for this reason, every pixel within the Surface area
      * must be written. The only exception to this rule is when a dirty
-     * rectangle is specified, in which case, non-dirty pixels will be
+     * rectangle is specified, in which case, non dirty pixels will be
      * preserved.
      * 
      * <p>If you call this repeatedly when the Surface is not ready (before
@@ -235,7 +227,7 @@ public interface SurfaceHolder {
      * <p>If null is not returned, this function internally holds a lock until
      * the corresponding {@link #unlockCanvasAndPost} call, preventing
      * {@link SurfaceView} from creating, destroying, or modifying the surface
-     * while it is being drawn.  This can be more convenient than accessing
+     * while it is being drawn.  This can be more convenience than accessing
      * the Surface directly, as you do not need to do special synchronization
      * with a drawing thread in {@link Callback#surfaceDestroyed
      * Callback.surfaceDestroyed}.
@@ -246,7 +238,7 @@ public interface SurfaceHolder {
 
     
     /**
-     * Just like {@link #lockCanvas()} but allows specification of a dirty rectangle.
+     * Just like {@link #lockCanvas()} but allows to specify a dirty rectangle.
      * Every
      * pixel within that rectangle must be written; however pixels outside
      * the dirty rectangle will be preserved by the next call to lockCanvas().

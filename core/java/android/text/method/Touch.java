@@ -35,48 +35,59 @@ public class Touch {
      * Y position.
      */
     public static void scrollTo(TextView widget, Layout layout, int x, int y) {
-        final int horizontalPadding = widget.getTotalPaddingLeft() + widget.getTotalPaddingRight();
-        final int availableWidth = widget.getWidth() - horizontalPadding;
+        int padding = widget.getTotalPaddingTop() +
+                      widget.getTotalPaddingBottom();
+        int top = layout.getLineForVertical(y);
+        int bottom = layout.getLineForVertical(y + widget.getHeight() -
+                                               padding);
 
-        final int top = layout.getLineForVertical(y);
-        Alignment a = layout.getParagraphAlignment(top);
-        boolean ltr = layout.getParagraphDirection(top) > 0;
+        int left = Integer.MAX_VALUE;
+        int right = 0;
+        Alignment a = null;
 
-        int left, right;
-        if (widget.getHorizontallyScrolling()) {
-            final int verticalPadding = widget.getTotalPaddingTop() + widget.getTotalPaddingBottom();
-            final int bottom = layout.getLineForVertical(y + widget.getHeight() - verticalPadding);
+        for (int i = top; i <= bottom; i++) {
+            left = (int) Math.min(left, layout.getLineLeft(i));
+            right = (int) Math.max(right, layout.getLineRight(i));
 
-            left = Integer.MAX_VALUE;
-            right = 0;
-
-            for (int i = top; i <= bottom; i++) {
-                left = (int) Math.min(left, layout.getLineLeft(i));
-                right = (int) Math.max(right, layout.getLineRight(i));
+            if (a == null) {
+                a = layout.getParagraphAlignment(i);
             }
-        } else {
-            left = 0;
-            right = availableWidth;
         }
 
-        final int actualWidth = right - left;
+        padding = widget.getTotalPaddingLeft() + widget.getTotalPaddingRight();
+        int width = widget.getWidth();
+        int diff = 0;
 
-        if (actualWidth < availableWidth) {
+        if (right - left < width - padding) {
             if (a == Alignment.ALIGN_CENTER) {
-                x = left - ((availableWidth - actualWidth) / 2);
-            } else if ((ltr && (a == Alignment.ALIGN_OPPOSITE)) || (a == Alignment.ALIGN_RIGHT)) {
-                // align_opposite does NOT mean align_right, we need the paragraph
-                // direction to resolve it to left or right
-                x = left - (availableWidth - actualWidth);
-            } else {
-                x = left;
+                diff = (width - padding - (right - left)) / 2;
+            } else if (a == Alignment.ALIGN_OPPOSITE) {
+                diff = width - padding - (right - left);
             }
-        } else {
-            x = Math.min(x, right - availableWidth);
-            x = Math.max(x, left);
         }
+
+        x = Math.min(x, right - (width - padding) - diff);
+        x = Math.max(x, left - diff);
 
         widget.scrollTo(x, y);
+    }
+
+    /**
+     * @hide
+     * Returns the maximum scroll value in x.
+     */
+    public static int getMaxScrollX(TextView widget, Layout layout, int y) {
+        int top = layout.getLineForVertical(y);
+        int bottom = layout.getLineForVertical(y + widget.getHeight()
+                - widget.getTotalPaddingTop() -widget.getTotalPaddingBottom());
+        int left = Integer.MAX_VALUE;
+        int right = 0;
+        for (int i = top; i <= bottom; i++) {
+            left = (int) Math.min(left, layout.getLineLeft(i));
+            right = (int) Math.max(right, layout.getLineRight(i));
+        }
+        return right - left - widget.getWidth() - widget.getTotalPaddingLeft()
+                - widget.getTotalPaddingRight();
     }
 
     /**
@@ -128,11 +139,10 @@ public class Touch {
 
                 if (ds[0].mFarEnough) {
                     ds[0].mUsed = true;
-                    boolean cap = (event.getMetaState() & KeyEvent.META_SHIFT_ON) != 0
-                            || MetaKeyKeyListener.getMetaState(buffer,
-                                    MetaKeyKeyListener.META_SHIFT_ON) == 1
-                            || MetaKeyKeyListener.getMetaState(buffer,
-                                    MetaKeyKeyListener.META_SELECTING) != 0;
+                    boolean cap = (MetaKeyKeyListener.getMetaState(buffer,
+                                   KeyEvent.META_SHIFT_ON) == 1) ||
+                                   (MetaKeyKeyListener.getMetaState(buffer,
+                                    MetaKeyKeyListener.META_SELECTING) != 0);
                     float dx;
                     float dy;
                     if (cap) {
@@ -150,10 +160,12 @@ public class Touch {
                     int nx = widget.getScrollX() + (int) dx;
                     int ny = widget.getScrollY() + (int) dy;
 
-                    int padding = widget.getTotalPaddingTop() + widget.getTotalPaddingBottom();
+                    int padding = widget.getTotalPaddingTop() +
+                                  widget.getTotalPaddingBottom();
                     Layout layout = widget.getLayout();
 
-                    ny = Math.min(ny, layout.getHeight() - (widget.getHeight() - padding));
+                    ny = Math.min(ny, layout.getHeight() - (widget.getHeight() -
+                                                            padding));
                     ny = Math.max(ny, 0);
         
                     int oldX = widget.getScrollX();
@@ -162,7 +174,8 @@ public class Touch {
                     scrollTo(widget, layout, nx, ny);
 
                     // If we actually scrolled, then cancel the up action.
-                    if (oldX != widget.getScrollX() || oldY != widget.getScrollY()) {
+                    if (oldX != widget.getScrollX()
+                            || oldY != widget.getScrollY()) {
                         widget.cancelLongPress();
                     }
 
@@ -174,24 +187,16 @@ public class Touch {
         return false;
     }
 
-    /**
-     * @param widget The text view.
-     * @param buffer The text buffer.
-     */
     public static int getInitialScrollX(TextView widget, Spannable buffer) {
         DragState[] ds = buffer.getSpans(0, buffer.length(), DragState.class);
         return ds.length > 0 ? ds[0].mScrollX : -1;
     }
-
-    /**
-     * @param widget The text view.
-     * @param buffer The text buffer.
-     */
+    
     public static int getInitialScrollY(TextView widget, Spannable buffer) {
         DragState[] ds = buffer.getSpans(0, buffer.length(), DragState.class);
         return ds.length > 0 ? ds[0].mScrollY : -1;
     }
-
+    
     private static class DragState implements NoCopySpan {
         public float mX;
         public float mY;

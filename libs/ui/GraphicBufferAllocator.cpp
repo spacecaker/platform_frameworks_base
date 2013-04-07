@@ -24,6 +24,8 @@
 
 #include <ui/GraphicBufferAllocator.h>
 
+#include <private/ui/sw_gralloc_handle.h>
+
 namespace android {
 // ---------------------------------------------------------------------------
 
@@ -54,31 +56,21 @@ void GraphicBufferAllocator::dump(String8& result) const
     Mutex::Autolock _l(sLock);
     KeyedVector<buffer_handle_t, alloc_rec_t>& list(sAllocList);
     size_t total = 0;
-    const size_t SIZE = 4096;
+    const size_t SIZE = 512;
     char buffer[SIZE];
     snprintf(buffer, SIZE, "Allocated buffers:\n");
     result.append(buffer);
     const size_t c = list.size();
     for (size_t i=0 ; i<c ; i++) {
         const alloc_rec_t& rec(list.valueAt(i));
-        if (rec.size) {
-            snprintf(buffer, SIZE, "%10p: %7.2f KiB | %4u (%4u) x %4u | %8X | 0x%08x\n",
-                    list.keyAt(i), rec.size/1024.0f,
-                    rec.w, rec.s, rec.h, rec.format, rec.usage);
-        } else {
-            snprintf(buffer, SIZE, "%10p: unknown     | %4u (%4u) x %4u | %8X | 0x%08x\n",
-                    list.keyAt(i),
-                    rec.w, rec.s, rec.h, rec.format, rec.usage);
-        }
+        snprintf(buffer, SIZE, "%10p: %7.2f KiB | %4u (%4u) x %4u | %2d | 0x%08x\n",
+            list.keyAt(i), rec.size/1024.0f, 
+            rec.w, rec.s, rec.h, rec.format, rec.usage);
         result.append(buffer);
         total += rec.size;
     }
-    snprintf(buffer, SIZE, "Total allocated (estimate): %.2f KB\n", total/1024.0f);
+    snprintf(buffer, SIZE, "Total allocated: %.2f KB\n", total/1024.0f);
     result.append(buffer);
-    if (mAllocDev->common.version >= 1 && mAllocDev->dump) {
-        mAllocDev->dump(mAllocDev, buffer, SIZE);
-        result.append(buffer);
-    }
 }
 
 void GraphicBufferAllocator::dumpToSystemLog()
@@ -98,15 +90,6 @@ status_t GraphicBufferAllocator::alloc(uint32_t w, uint32_t h, PixelFormat forma
 
     // we have a h/w allocator and h/w buffer is requested
     status_t err; 
-
-#ifdef MISSING_EGL_PIXEL_FORMAT_YV12
-    if (format == HAL_PIXEL_FORMAT_YV12) {
-	format = HAL_PIXEL_FORMAT_RGBX_8888;
-    }
-    if (usage & GRALLOC_USAGE_EXTERNAL_DISP) {
-	usage ^= GRALLOC_USAGE_EXTERNAL_DISP;
-    }
-#endif
     
     err = mAllocDev->alloc(mAllocDev, w, h, format, usage, handle, stride);
 
@@ -116,19 +99,13 @@ status_t GraphicBufferAllocator::alloc(uint32_t w, uint32_t h, PixelFormat forma
     if (err == NO_ERROR) {
         Mutex::Autolock _l(sLock);
         KeyedVector<buffer_handle_t, alloc_rec_t>& list(sAllocList);
-        int bpp = bytesPerPixel(format);
-        if (bpp < 0) {
-            // probably a HAL custom format. in any case, we don't know
-            // what its pixel size is.
-            bpp = 0;
-        }
         alloc_rec_t rec;
         rec.w = w;
         rec.h = h;
         rec.s = *stride;
         rec.format = format;
         rec.usage = usage;
-        rec.size = h * stride[0] * bpp;
+        rec.size = h * stride[0] * bytesPerPixel(format);
         list.add(*handle, rec);
     }
 
@@ -138,8 +115,11 @@ status_t GraphicBufferAllocator::alloc(uint32_t w, uint32_t h, PixelFormat forma
 status_t GraphicBufferAllocator::free(buffer_handle_t handle)
 {
     status_t err;
-
-    err = mAllocDev->free(mAllocDev, handle);
+    if (sw_gralloc_handle_t::validate(handle) < 0) {
+        err = mAllocDev->free(mAllocDev, handle);
+    } else {
+        err = sw_gralloc_handle_t::free((sw_gralloc_handle_t*)handle);
+    }
 
     LOGW_IF(err, "free(...) failed %d (%s)", err, strerror(-err));
     if (err == NO_ERROR) {

@@ -21,272 +21,99 @@
 
 #include <binder/MemoryHeapBase.h>
 #include <binder/MemoryHeapPmem.h>
-#include <media/stagefright/foundation/ADebug.h>
-#include <media/stagefright/MetaData.h>
-#include <surfaceflinger/Surface.h>
-#include <ui/android_native_buffer.h>
-#include <ui/GraphicBufferMapper.h>
-#include <gui/ISurfaceTexture.h>
+#include <media/stagefright/MediaDebug.h>
+#include <surfaceflinger/ISurface.h>
 
 namespace android {
 
-#ifdef QCOM_HARDWARE
-static const int QOMX_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka = 0x7FA30C03;
-static const int OMX_QCOM_COLOR_FormatYVU420SemiPlanar = 0x7FA30C00;
-#endif
-
 SoftwareRenderer::SoftwareRenderer(
-        const sp<ANativeWindow> &nativeWindow, const sp<MetaData> &meta)
-    : mConverter(NULL),
-      mYUVMode(None),
-      mNativeWindow(nativeWindow) {
-    int32_t tmp;
-    CHECK(meta->findInt32(kKeyColorFormat, &tmp));
-    mColorFormat = (OMX_COLOR_FORMATTYPE)tmp;
-
-    CHECK(meta->findInt32(kKeyWidth, &mWidth));
-    CHECK(meta->findInt32(kKeyHeight, &mHeight));
-
-    if (!meta->findRect(
-                kKeyCropRect,
-                &mCropLeft, &mCropTop, &mCropRight, &mCropBottom)) {
-        mCropLeft = mCropTop = 0;
-        mCropRight = mWidth - 1;
-        mCropBottom = mHeight - 1;
+        OMX_COLOR_FORMATTYPE colorFormat,
+        const sp<ISurface> &surface,
+        size_t displayWidth, size_t displayHeight,
+        size_t decodedWidth, size_t decodedHeight,
+        int32_t rotationDegrees)
+    : mInitCheck(NO_INIT),
+      mColorFormat(colorFormat),
+      mConverter(colorFormat, OMX_COLOR_Format16bitRGB565),
+      mISurface(surface),
+      mDisplayWidth(displayWidth),
+      mDisplayHeight(displayHeight),
+      mDecodedWidth(decodedWidth),
+      mDecodedHeight(decodedHeight),
+      mFrameSize(mDecodedWidth * mDecodedHeight * 2),  // RGB565
+      mIndex(0) {
+    mMemoryHeap = new MemoryHeapBase("/dev/pmem_adsp", 2 * mFrameSize);
+    if (mMemoryHeap->heapID() < 0) {
+        LOGI("Creating physical memory heap failed, reverting to regular heap.");
+        mMemoryHeap = new MemoryHeapBase(2 * mFrameSize);
+    } else {
+        sp<MemoryHeapPmem> pmemHeap = new MemoryHeapPmem(mMemoryHeap);
+        pmemHeap->slap();
+        mMemoryHeap = pmemHeap;
     }
 
-    mCropWidth = mCropRight - mCropLeft + 1;
-    mCropHeight = mCropBottom - mCropTop + 1;
+    CHECK(mISurface.get() != NULL);
+    CHECK(mDecodedWidth > 0);
+    CHECK(mDecodedHeight > 0);
+    CHECK(mMemoryHeap->heapID() >= 0);
+    CHECK(mConverter.isValid());
 
-    int32_t rotationDegrees;
-    if (!meta->findInt32(kKeyRotation, &rotationDegrees)) {
-        rotationDegrees = 0;
-    }
-
-    int halFormat;
-    size_t bufWidth, bufHeight;
-
-    switch (mColorFormat) {
-#ifndef MISSING_EGL_PIXEL_FORMAT_YV12
-        case OMX_COLOR_FormatYUV420Planar:
-        case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
-        {
-            halFormat = HAL_PIXEL_FORMAT_YV12;
-            bufWidth = (mCropWidth + 1) & ~1;
-            bufHeight = (mCropHeight + 1) & ~1;
-            break;
-        }
-#endif
-#ifdef QCOM_LEGACY_OMX
-        case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
-        {
-            halFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
-            bufWidth = (mCropWidth + 1) & ~1;
-            bufHeight = (mCropHeight + 1) & ~1;
-            mAlign = ((mWidth + 15) & -16) * ((mHeight + 15) & -16);
-            break;
-        }
-#endif
-
-        default:
-            halFormat = HAL_PIXEL_FORMAT_RGB_565;
-            bufWidth = mCropWidth;
-            bufHeight = mCropHeight;
-
-            mConverter = new ColorConverter(
-                    mColorFormat, OMX_COLOR_Format16bitRGB565);
-            CHECK(mConverter->isValid());
-            break;
-    }
-
-    LOGI("Buffer color format: 0x%X", mColorFormat);
-    LOGI("Video params: mWidth: %d, mHeight: %d, mCropWidth: %d, mCropHeight: %d, mCropTop: %d, mCropLeft: %d",
-         mWidth, mHeight, mCropWidth, mCropHeight, mCropTop, mCropLeft);
-
-    CHECK(mNativeWindow != NULL);
-    CHECK(mCropWidth > 0);
-    CHECK(mCropHeight > 0);
-    CHECK(mConverter == NULL || mConverter->isValid());
-
-    CHECK_EQ(0,
-            native_window_set_usage(
-            mNativeWindow.get(),
-            GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN
-            | GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_EXTERNAL_DISP));
-
-    CHECK_EQ(0,
-            native_window_set_scaling_mode(
-            mNativeWindow.get(),
-            NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW));
-
-    // Width must be multiple of 32???
-    CHECK_EQ(0, native_window_set_buffers_geometry(
-                mNativeWindow.get(),
-                bufWidth,
-                bufHeight,
-                halFormat));
-
-    uint32_t transform;
+    uint32_t orientation;
     switch (rotationDegrees) {
-        case 0: transform = 0; break;
-        case 90: transform = HAL_TRANSFORM_ROT_90; break;
-        case 180: transform = HAL_TRANSFORM_ROT_180; break;
-        case 270: transform = HAL_TRANSFORM_ROT_270; break;
-        default: transform = 0; break;
+        case 0: orientation = ISurface::BufferHeap::ROT_0; break;
+        case 90: orientation = ISurface::BufferHeap::ROT_90; break;
+        case 180: orientation = ISurface::BufferHeap::ROT_180; break;
+        case 270: orientation = ISurface::BufferHeap::ROT_270; break;
+        default: orientation = ISurface::BufferHeap::ROT_0; break;
     }
 
-    if (transform) {
-        CHECK_EQ(0, native_window_set_buffers_transform(
-                    mNativeWindow.get(), transform));
+    ISurface::BufferHeap bufferHeap(
+            mDisplayWidth, mDisplayHeight,
+            mDecodedWidth, mDecodedHeight,
+            PIXEL_FORMAT_RGB_565,
+            orientation, 0,
+            mMemoryHeap);
+
+    status_t err = mISurface->registerBuffers(bufferHeap);
+
+    if (err != OK) {
+        LOGW("ISurface failed to register buffers (0x%08x)", err);
     }
+
+    mInitCheck = err;
 }
 
 SoftwareRenderer::~SoftwareRenderer() {
-    delete mConverter;
-    mConverter = NULL;
+    mISurface->unregisterBuffers();
 }
 
-static int ALIGN(int x, int y) {
-    // y must be a power of 2.
-    return (x + y - 1) & ~(y - 1);
+status_t SoftwareRenderer::initCheck() const {
+    return mInitCheck;
 }
 
 void SoftwareRenderer::render(
         const void *data, size_t size, void *platformPrivate) {
-    ANativeWindowBuffer *buf;
-    int err;
-    if ((err = mNativeWindow->dequeueBuffer(mNativeWindow.get(), &buf)) != 0) {
-        LOGW("Surface::dequeueBuffer returned error %d", err);
+    if (mInitCheck != OK) {
         return;
     }
 
-    CHECK_EQ(0, mNativeWindow->lockBuffer(mNativeWindow.get(), buf));
+    size_t offset = mIndex * mFrameSize;
+    void *dst = (uint8_t *)mMemoryHeap->getBase() + offset;
 
-    GraphicBufferMapper &mapper = GraphicBufferMapper::get();
+    mConverter.convert(
+            mDecodedWidth, mDecodedHeight,
+            data, 0, dst, 2 * mDecodedWidth);
 
-    Rect bounds(mCropWidth, mCropHeight);
-
-    void *dst;
-    CHECK_EQ(0, mapper.lock(
-                buf->handle, GRALLOC_USAGE_SW_WRITE_OFTEN, bounds, &dst));
-
-    if (mConverter) {
-        mConverter->convert(
-                data,
-                mWidth, mHeight,
-                mCropLeft, mCropTop, mCropRight, mCropBottom,
-                dst,
-                buf->stride, buf->height,
-                0, 0, mCropWidth - 1, mCropHeight - 1);
-    } else if (mColorFormat == OMX_COLOR_FormatYUV420Planar) {
-        const uint8_t *src_y = (const uint8_t *)data;
-        const uint8_t *src_u = (const uint8_t *)data + mWidth * mHeight;
-        const uint8_t *src_v = src_u + (mWidth / 2 * mHeight / 2);
-
-#ifdef EXYNOS4210_ENHANCEMENTS
-        void *pYUVBuf[3];
-
-        CHECK_EQ(0, mapper.unlock(buf->handle));
-        CHECK_EQ(0, mapper.lock(
-                buf->handle, GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_YUV_ADDR, bounds, pYUVBuf));
-
-        size_t dst_c_stride = buf->stride / 2;
-        uint8_t *dst_y = (uint8_t *)pYUVBuf[0];
-        uint8_t *dst_v = (uint8_t *)pYUVBuf[1];
-        uint8_t *dst_u = (uint8_t *)pYUVBuf[2];
-#else
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-        size_t dst_y_size = buf->stride * buf->height;
-        size_t dst_c_size = dst_c_stride * buf->height / 2;
-        uint8_t *dst_y = (uint8_t *)dst;
-        uint8_t *dst_v = dst_y + dst_y_size;
-        uint8_t *dst_u = dst_v + dst_c_size;
-#endif
-
-        for (int y = 0; y < mCropHeight; ++y) {
-            memcpy(dst_y, src_y, mCropWidth);
-
-            src_y += mWidth;
-            dst_y += buf->stride;
-        }
-
-        for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
-            memcpy(dst_u, src_u, (mCropWidth + 1) / 2);
-            memcpy(dst_v, src_v, (mCropWidth + 1) / 2);
-
-            src_u += mWidth / 2;
-            src_v += mWidth / 2;
-            dst_u += dst_c_stride;
-            dst_v += dst_c_stride;
-        }
-#ifdef QCOM_LEGACY_OMX
-    } else if (mColorFormat == OMX_QCOM_COLOR_FormatYVU420SemiPlanar) {
-        // Legacy Qualcomm color format
-
-        uint8_t *src_y = (uint8_t *)data;
-        uint8_t *src_u = src_y + mAlign;
-        uint8_t *dst_y = (uint8_t *)dst;
-        uint8_t *dst_u = dst_y + buf->stride * buf->height;
-
-        // Legacy codec doesn't return crop params. Ignore it for speedup :)
-        memcpy(dst_y, src_y, mCropWidth * mCropHeight);
-        memcpy(dst_u, src_u, mCropWidth * mCropHeight / 2);
-
-        /*for(size_t y = 0; y < mCropHeight; ++y) {
-            memcpy(dst_y, src_y, mCropWidth);
-            dst_y += buf->stride;
-            src_y += mWidth;
-
-            if(y & 1) {
-                memcpy(dst_u, src_u, mCropWidth);
-                dst_u += buf->stride;
-                src_u += mWidth;
-            }
-        }*/
-#endif
-    } else {
-        CHECK_EQ(mColorFormat, OMX_TI_COLOR_FormatYUV420PackedSemiPlanar);
-
-        const uint8_t *src_y =
-            (const uint8_t *)data;
-
-        const uint8_t *src_uv =
-            (const uint8_t *)data + mWidth * (mHeight - mCropTop / 2);
-
-        uint8_t *dst_y = (uint8_t *)dst;
-
-        size_t dst_y_size = buf->stride * buf->height;
-        size_t dst_c_stride = ALIGN(buf->stride / 2, 16);
-        size_t dst_c_size = dst_c_stride * buf->height / 2;
-        uint8_t *dst_v = dst_y + dst_y_size;
-        uint8_t *dst_u = dst_v + dst_c_size;
-
-        for (int y = 0; y < mCropHeight; ++y) {
-            memcpy(dst_y, src_y, mCropWidth);
-
-            src_y += mWidth;
-            dst_y += buf->stride;
-        }
-
-        for (int y = 0; y < (mCropHeight + 1) / 2; ++y) {
-            size_t tmp = (mCropWidth + 1) / 2;
-            for (size_t x = 0; x < tmp; ++x) {
-                dst_u[x] = src_uv[2 * x];
-                dst_v[x] = src_uv[2 * x + 1];
-            }
-
-            src_uv += mWidth;
-            dst_u += dst_c_stride;
-            dst_v += dst_c_stride;
-        }
-    }
-
-    CHECK_EQ(0, mapper.unlock(buf->handle));
-
-    if ((err = mNativeWindow->queueBuffer(mNativeWindow.get(), buf)) != 0) {
-        LOGW("Surface::queueBuffer returned error %d", err);
-    }
-    buf = NULL;
+    mISurface->postBuffer(offset);
+    mIndex = 1 - mIndex;
 }
+
+#ifdef OMAP_ENHANCEMENT
+Vector< sp<IMemory> > SoftwareRenderer::getBuffers(){
+    // Not Implemented
+    Vector< sp<IMemory> > mDummy;
+    return mDummy;
+}
+#endif
 
 }  // namespace android

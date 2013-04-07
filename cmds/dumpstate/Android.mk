@@ -1,3 +1,5 @@
+ifneq ($(TARGET_SIMULATOR),true)
+
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -11,9 +13,6 @@ LOCAL_MODULE := dumpstate
 
 LOCAL_SHARED_LIBRARIES := libcutils
 
-ifdef BOARD_LIB_DUMPSTATE
-LOCAL_STATIC_LIBRARIES := $(BOARD_LIB_DUMPSTATE)
-LOCAL_CFLAGS += -DBOARD_HAS_DUMPSTATE
-endif
-
 include $(BUILD_EXECUTABLE)
+
+endif

@@ -25,24 +25,6 @@ import android.content.ComponentName;
  * correspond to the fields in the <code>&lt;appwidget-provider&gt;</code> xml tag.
  */
 public class AppWidgetProviderInfo implements Parcelable {
-
-    /**
-     * Widget is not resizable.
-     */
-    public static final int RESIZE_NONE             = 0;
-    /**
-     * Widget is resizable in the horizontal axis only.
-     */
-    public static final int RESIZE_HORIZONTAL       = 1;
-    /**
-     * Widget is resizable in the vertical axis only.
-     */
-    public static final int RESIZE_VERTICAL         = 2;
-    /**
-     * Widget is resizable in both the horizontal and vertical axes.
-     */
-    public static final int RESIZE_BOTH = RESIZE_HORIZONTAL | RESIZE_VERTICAL;
-
     /**
      * Identity of this AppWidget component.  This component should be a {@link
      * android.content.BroadcastReceiver}, and it will be sent the AppWidget intents
@@ -54,8 +36,7 @@ public class AppWidgetProviderInfo implements Parcelable {
     public ComponentName provider;
 
     /**
-     * The default height of the widget when added to a host, in dp. The widget will get
-     * at least this width, and will often be given more, depending on the host.
+     * Minimum width of the AppWidget, in dp.
      *
      * <p>This field corresponds to the <code>android:minWidth</code> attribute in
      * the AppWidget meta-data file.
@@ -63,31 +44,12 @@ public class AppWidgetProviderInfo implements Parcelable {
     public int minWidth;
 
     /**
-     * The default height of the widget when added to a host, in dp. The widget will get
-     * at least this height, and will often be given more, depending on the host.
+     * Minimum height of the AppWidget, in dp.
      *
      * <p>This field corresponds to the <code>android:minHeight</code> attribute in
      * the AppWidget meta-data file.
      */
     public int minHeight;
-
-    /**
-     * Minimum width (in dp) which the widget can be resized to. This field has no effect if it
-     * is greater than minWidth or if horizontal resizing isn't enabled (see {@link #resizeMode}).
-     *
-     * <p>This field corresponds to the <code>android:minResizeWidth</code> attribute in
-     * the AppWidget meta-data file.
-     */
-    public int minResizeWidth;
-
-    /**
-     * Minimum height (in dp) which the widget can be resized to. This field has no effect if it
-     * is greater than minHeight or if vertical resizing isn't enabled (see {@link #resizeMode}).
-     *
-     * <p>This field corresponds to the <code>android:minResizeHeight</code> attribute in
-     * the AppWidget meta-data file.
-     */
-    public int minResizeHeight;
 
     /**
      * How often, in milliseconds, that this AppWidget wants to be updated.
@@ -136,33 +98,18 @@ public class AppWidgetProviderInfo implements Parcelable {
      * the <code>&lt;receiver&gt;</code> element in the AndroidManifest.xml file.
      */
     public int icon;
-
+    
+    
     /**
-     * The view id of the AppWidget subview which should be auto-advanced by the widget's host.
+     * The previous name, if any, of the app widget receiver. If not supplied, it will be
+     * ignored.
      *
-     * <p>This field corresponds to the <code>android:autoAdvanceViewId</code> attribute in
-     * the AppWidget meta-data file.
+     * <p>This field corresponds to the <code>&lt;meta-data /&gt;</code> with the name
+     * <code>android.appwidget.oldName</code>.
+     * 
+     * @hide Pending API approval
      */
-    public int autoAdvanceViewId;
-
-    /**
-     * A preview of what the AppWidget will look like after it's configured.
-     * If not supplied, the AppWidget's icon will be used.
-     *
-     * <p>This field corresponds to the <code>android:previewImage</code> attribute in
-     * the <code>&lt;receiver&gt;</code> element in the AndroidManifest.xml file.
-     */
-	public int previewImage;
-
-    /**
-     * The rules by which a widget can be resized. See {@link #RESIZE_NONE},
-     * {@link #RESIZE_NONE}, {@link #RESIZE_HORIZONTAL},
-     * {@link #RESIZE_VERTICAL}, {@link #RESIZE_BOTH}.
-     *
-     * <p>This field corresponds to the <code>android:resizeMode</code> attribute in
-     * the AppWidget meta-data file.
-     */
-    public int resizeMode;
+    public String oldName;
 
     public AppWidgetProviderInfo() {
     }
@@ -176,8 +123,6 @@ public class AppWidgetProviderInfo implements Parcelable {
         }
         this.minWidth = in.readInt();
         this.minHeight = in.readInt();
-        this.minResizeWidth = in.readInt();
-        this.minResizeHeight = in.readInt();
         this.updatePeriodMillis = in.readInt();
         this.initialLayout = in.readInt();
         if (0 != in.readInt()) {
@@ -185,10 +130,8 @@ public class AppWidgetProviderInfo implements Parcelable {
         }
         this.label = in.readString();
         this.icon = in.readInt();
-        this.previewImage = in.readInt();
-        this.autoAdvanceViewId = in.readInt();
-        this.resizeMode = in.readInt();
     }
+
 
     public void writeToParcel(android.os.Parcel out, int flags) {
         if (this.provider != null) {
@@ -199,8 +142,6 @@ public class AppWidgetProviderInfo implements Parcelable {
         }
         out.writeInt(this.minWidth);
         out.writeInt(this.minHeight);
-        out.writeInt(this.minResizeWidth);
-        out.writeInt(this.minResizeHeight);
         out.writeInt(this.updatePeriodMillis);
         out.writeInt(this.initialLayout);
         if (this.configure != null) {
@@ -211,9 +152,6 @@ public class AppWidgetProviderInfo implements Parcelable {
         }
         out.writeString(this.label);
         out.writeInt(this.icon);
-        out.writeInt(this.previewImage);
-        out.writeInt(this.autoAdvanceViewId);
-        out.writeInt(this.resizeMode);
     }
 
     public int describeContents() {
@@ -241,3 +179,5 @@ public class AppWidgetProviderInfo implements Parcelable {
         return "AppWidgetProviderInfo(provider=" + this.provider + ")";
     }
 }
+
+

@@ -2,14 +2,13 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+ifneq ($(TARGET_SIMULATOR),true)
+
 # Build the unit tests.
 test_src_files := \
-	BlobCache_test.cpp \
 	ObbFile_test.cpp \
 	Looper_test.cpp \
-	String8_test.cpp \
-	Unicode_test.cpp \
-	ZipFileRO_test.cpp \
+	String8_test.cpp
 
 shared_libraries := \
 	libz \
@@ -42,3 +41,5 @@ $(foreach file,$(test_src_files), \
     $(eval LOCAL_MODULE_TAGS := $(module_tags)) \
     $(eval include $(BUILD_EXECUTABLE)) \
 )
+
+endif

@@ -2,10 +2,13 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifneq ($(TARGET_SIMULATOR),true)
+
 # Build the unit tests.
 test_src_files := \
     InputChannel_test.cpp \
-    InputEvent_test.cpp \
+    InputReader_test.cpp \
+    InputDispatcher_test.cpp \
     InputPublisherAndConsumer_test.cpp
 
 shared_libraries := \
@@ -17,8 +20,7 @@ shared_libraries := \
 	libhardware \
 	libhardware_legacy \
 	libui \
-	libstlport \
-	libskia
+	libstlport
 
 static_libraries := \
 	libgtest \
@@ -28,8 +30,7 @@ c_includes := \
     bionic \
     bionic/libstdc++/include \
     external/gtest/include \
-    external/stlport/stlport \
-    external/skia/include/core
+    external/stlport/stlport
 
 module_tags := eng tests
 
@@ -45,4 +46,6 @@ $(foreach file,$(test_src_files), \
 )
 
 # Build the manual test programs.
-include $(call all-makefiles-under, $(LOCAL_PATH))
+include $(call all-subdir-makefiles)
+
+endif

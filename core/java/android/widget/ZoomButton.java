@@ -29,8 +29,8 @@ public class ZoomButton extends ImageButton implements OnLongClickListener {
     private final Handler mHandler;
     private final Runnable mRunnable = new Runnable() {
         public void run() {
-            if (hasOnClickListeners() && mIsInLongpress && isEnabled()) {
-                callOnClick();
+            if ((mOnClickListener != null) && mIsInLongpress && isEnabled()) {
+                mOnClickListener.onClick(ZoomButton.this);
                 mHandler.postDelayed(this, mZoomSpeed);
             }
         }

@@ -48,7 +48,7 @@ public:
     
     static void killPicture(JNIEnv* env, jobject, SkPicture* picture) {
         SkASSERT(picture);
-        picture->unref();
+        delete picture;
     }
     
     static void draw(JNIEnv* env, jobject, SkCanvas* canvas,

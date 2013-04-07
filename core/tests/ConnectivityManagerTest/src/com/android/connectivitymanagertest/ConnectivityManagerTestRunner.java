@@ -19,7 +19,7 @@ package com.android.connectivitymanagertest;
 import android.os.Bundle;
 import android.test.InstrumentationTestRunner;
 import android.test.InstrumentationTestSuite;
-
+import android.util.Log;
 import com.android.connectivitymanagertest.functional.ConnectivityManagerMobileTest;
 import com.android.connectivitymanagertest.functional.WifiConnectionTest;
 
@@ -35,24 +35,10 @@ import junit.framework.TestSuite;
  */
 
 public class ConnectivityManagerTestRunner extends InstrumentationTestRunner {
-    public String TEST_SSID = null;
-
     @Override
     public TestSuite getAllTests() {
         TestSuite suite = new InstrumentationTestSuite(this);
-        if (!UtilHelper.isWifiOnly()) {
-            suite.addTestSuite(ConnectivityManagerMobileTest.class);
-        } else {
-            // create a new test suite
-            suite.setName("ConnectivityManagerWifiOnlyFunctionalTests");
-            String[] methodNames = {"testConnectToWifi", "testConnectToWifWithKnownAP",
-                    "testDisconnectWifi", "testDataConnectionOverAMWithWifi",
-                    "testDataConnectionWithWifiToAMToWifi", "testWifiStateChange"};
-            Class<ConnectivityManagerMobileTest> testClass = ConnectivityManagerMobileTest.class;
-            for (String method: methodNames) {
-                suite.addTest(TestSuite.createTest(testClass, method));
-            }
-        }
+        suite.addTestSuite(ConnectivityManagerMobileTest.class);
         suite.addTestSuite(WifiConnectionTest.class);
         return suite;
     }
@@ -70,4 +56,6 @@ public class ConnectivityManagerTestRunner extends InstrumentationTestRunner {
             TEST_SSID = testSSID;
         }
     }
+
+    public String TEST_SSID = null;
 }

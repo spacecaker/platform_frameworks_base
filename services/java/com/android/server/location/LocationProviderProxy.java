@@ -28,6 +28,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.os.WorkSource;
 import android.util.Log;
 
@@ -64,9 +65,7 @@ public class LocationProviderProxy implements LocationProviderInterface {
         mName = name;
         mIntent = new Intent(serviceName);
         mHandler = handler;
-        mContext.bindService(mIntent, mServiceConnection,
-                Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND
-                | Context.BIND_ALLOW_OOM_MANAGEMENT);
+        mContext.bindService(mIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
     }
 
     /**
@@ -77,9 +76,7 @@ public class LocationProviderProxy implements LocationProviderInterface {
         synchronized (mMutex) {
             mContext.unbindService(mServiceConnection);
             mServiceConnection = new Connection();
-            mContext.bindService(mIntent, mServiceConnection,
-                    Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND
-                    | Context.BIND_ALLOW_OOM_MANAGEMENT);
+            mContext.bindService(mIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
         }
     }
 
@@ -91,6 +88,7 @@ public class LocationProviderProxy implements LocationProviderInterface {
         private DummyLocationProvider mCachedAttributes;  // synchronized by mMutex
 
         public void onServiceConnected(ComponentName className, IBinder service) {
+            Log.d(TAG, "LocationProviderProxy.onServiceConnected " + className);
             synchronized (this) {
                 mProvider = ILocationProvider.Stub.asInterface(service);
                 if (mProvider != null) {
@@ -100,6 +98,7 @@ public class LocationProviderProxy implements LocationProviderInterface {
         }
 
         public void onServiceDisconnected(ComponentName className) {
+            Log.d(TAG, "LocationProviderProxy.onServiceDisconnected " + className);
             synchronized (this) {
                 mProvider = null;
             }

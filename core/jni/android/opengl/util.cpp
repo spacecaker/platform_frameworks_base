@@ -14,9 +14,7 @@
  ** limitations under the License.
  */
 
-#include "jni.h"
-#include "JNIHelp.h"
-
+#include <nativehelper/jni.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +37,10 @@
 #include "poly.h"
 
 namespace android {
+
+static jclass gIAEClass;
+static jclass gUOEClass;
+static jclass gAIOOBEClass;
 
 static inline
 void mx4transform(float x, float y, float z, float w, const float* pM, float* pDest) {
@@ -149,10 +151,6 @@ int visibilityTest(float* pWS, float* pPositions, int positionsLength,
     return result;
 }
 
-static void doThrowIAE(JNIEnv* env, const char* msg) {
-    jniThrowException(env, "java/lang/IllegalArgumentException", msg);
-}
-
 template<class JArray, class T>
 class ArrayHelper {
 public:
@@ -180,16 +178,16 @@ public:
 
     bool check() {
         if ( ! mRef) {
-            doThrowIAE(mEnv, "array == null");
+            mEnv->ThrowNew(gIAEClass, "array == null");
             return false;
         }
         if ( mOffset < 0) {
-            doThrowIAE(mEnv, "offset < 0");
+            mEnv->ThrowNew(gIAEClass, "offset < 0");
             return false;
         }
         mLength = mEnv->GetArrayLength(mRef) - mOffset;
         if (mLength < mMinSize ) {
-            doThrowIAE(mEnv, "length - offset < n");
+            mEnv->ThrowNew(gIAEClass, "length - offset < n");
             return false;
         }
         return true;
@@ -247,7 +245,7 @@ void util_computeBoundingSphere(JNIEnv *env, jclass clazz,
     sphere.bind();
 
     if ( positionsCount < 1 ) {
-        doThrowIAE(env, "positionsCount < 1");
+        env->ThrowNew(gIAEClass, "positionsCount < 1");
         return;
     }
 
@@ -452,7 +450,8 @@ int util_visibilityTest(JNIEnv *env, jclass clazz,
     }
 
     if (indices.mLength < indexCount) {
-        doThrowIAE(env, "length < offset + indexCount");
+        env->ThrowNew(gIAEClass, "length < offset + indexCount");
+        // Return value will be ignored, because an exception has been thrown.
         return -1;
     }
 
@@ -785,11 +784,11 @@ public:
         if (mBuffer) {
             mData = getPointer(mEnv, mBuffer, &mRemaining);
             if (mData == NULL) {
-                doThrowIAE(mEnv, errorMessage);
+                mEnv->ThrowNew(gIAEClass, errorMessage);
             }
             return mData != NULL;
         } else {
-            doThrowIAE(mEnv, errorMessage);
+            mEnv->ThrowNew(gIAEClass, errorMessage);
             return false;
         }
     }
@@ -825,16 +824,16 @@ private:
 static void etc1_encodeBlock(JNIEnv *env, jclass clazz,
         jobject in, jint validPixelMask, jobject out) {
     if (validPixelMask < 0 || validPixelMask > 15) {
-        doThrowIAE(env, "validPixelMask");
+        env->ThrowNew(gIAEClass, "validPixelMask");
         return;
     }
     BufferHelper inB(env, in);
     BufferHelper outB(env, out);
     if (inB.checkPointer("in") && outB.checkPointer("out")) {
         if (inB.remaining() < ETC1_DECODED_BLOCK_SIZE) {
-            doThrowIAE(env, "in's remaining data < DECODED_BLOCK_SIZE");
+            env->ThrowNew(gIAEClass, "in's remaining data < DECODED_BLOCK_SIZE");
         } else if (outB.remaining() < ETC1_ENCODED_BLOCK_SIZE) {
-            doThrowIAE(env, "out's remaining data < ENCODED_BLOCK_SIZE");
+            env->ThrowNew(gIAEClass, "out's remaining data < ENCODED_BLOCK_SIZE");
         } else {
             etc1_encode_block((etc1_byte*) inB.getData(), validPixelMask,
                     (etc1_byte*) outB.getData());
@@ -857,9 +856,9 @@ static void etc1_decodeBlock(JNIEnv *env, jclass clazz,
     BufferHelper outB(env, out);
     if (inB.checkPointer("in") && outB.checkPointer("out")) {
         if (inB.remaining() < ETC1_ENCODED_BLOCK_SIZE) {
-            doThrowIAE(env, "in's remaining data < ENCODED_BLOCK_SIZE");
+            env->ThrowNew(gIAEClass, "in's remaining data < ENCODED_BLOCK_SIZE");
         } else if (outB.remaining() < ETC1_DECODED_BLOCK_SIZE) {
-            doThrowIAE(env, "out's remaining data < DECODED_BLOCK_SIZE");
+            env->ThrowNew(gIAEClass, "out's remaining data < DECODED_BLOCK_SIZE");
         } else {
             etc1_decode_block((etc1_byte*) inB.getData(),
                     (etc1_byte*) outB.getData());
@@ -885,7 +884,7 @@ static void etc1_encodeImage(JNIEnv *env, jclass clazz,
         jobject in, jint width, jint height,
         jint pixelSize, jint stride, jobject out) {
     if (pixelSize < 2 || pixelSize > 3) {
-        doThrowIAE(env, "pixelSize must be 2 or 3");
+        env->ThrowNew(gIAEClass, "pixelSize must be 2 or 3");
         return;
     }
     BufferHelper inB(env, in);
@@ -894,9 +893,9 @@ static void etc1_encodeImage(JNIEnv *env, jclass clazz,
         jint imageSize = stride * height;
         jint encodedImageSize = etc1_get_encoded_data_size(width, height);
         if (inB.remaining() < imageSize) {
-            doThrowIAE(env, "in's remaining data < image size");
+            env->ThrowNew(gIAEClass, "in's remaining data < image size");
         } else if (outB.remaining() < encodedImageSize) {
-            doThrowIAE(env, "out's remaining data < encoded image size");
+            env->ThrowNew(gIAEClass, "out's remaining data < encoded image size");
         } else {
             int result = etc1_encode_image((etc1_byte*) inB.getData(),
                     width, height, pixelSize,
@@ -918,7 +917,7 @@ static void etc1_decodeImage(JNIEnv *env, jclass clazz,
         jint width, jint height,
         jint pixelSize, jint stride) {
     if (pixelSize < 2 || pixelSize > 3) {
-        doThrowIAE(env, "pixelSize must be 2 or 3");
+        env->ThrowNew(gIAEClass, "pixelSize must be 2 or 3");
         return;
     }
     BufferHelper inB(env, in);
@@ -927,9 +926,9 @@ static void etc1_decodeImage(JNIEnv *env, jclass clazz,
         jint imageSize = stride * height;
         jint encodedImageSize = etc1_get_encoded_data_size(width, height);
         if (inB.remaining() < encodedImageSize) {
-            doThrowIAE(env, "in's remaining data < encoded image size");
+            env->ThrowNew(gIAEClass, "in's remaining data < encoded image size");
         } else if (outB.remaining() < imageSize) {
-            doThrowIAE(env, "out's remaining data < image size");
+            env->ThrowNew(gIAEClass, "out's remaining data < image size");
         } else {
             int result = etc1_decode_image((etc1_byte*) inB.getData(),
                     (etc1_byte*) outB.getData(),
@@ -947,7 +946,7 @@ static void etc1_formatHeader(JNIEnv *env, jclass clazz,
     BufferHelper headerB(env, header);
     if (headerB.checkPointer("header") ){
         if (headerB.remaining() < ETC_PKM_HEADER_SIZE) {
-            doThrowIAE(env, "header's remaining data < ETC_PKM_HEADER_SIZE");
+            env->ThrowNew(gIAEClass, "header's remaining data < ETC_PKM_HEADER_SIZE");
         } else {
             etc1_pkm_format_header((etc1_byte*) headerB.getData(), width, height);
         }
@@ -963,7 +962,7 @@ static jboolean etc1_isValid(JNIEnv *env, jclass clazz,
     BufferHelper headerB(env, header);
     if (headerB.checkPointer("header") ){
         if (headerB.remaining() < ETC_PKM_HEADER_SIZE) {
-            doThrowIAE(env, "header's remaining data < ETC_PKM_HEADER_SIZE");
+            env->ThrowNew(gIAEClass, "header's remaining data < ETC_PKM_HEADER_SIZE");
         } else {
             result = etc1_pkm_is_valid((etc1_byte*) headerB.getData());
         }
@@ -980,7 +979,7 @@ static jint etc1_getWidth(JNIEnv *env, jclass clazz,
     BufferHelper headerB(env, header);
     if (headerB.checkPointer("header") ){
         if (headerB.remaining() < ETC_PKM_HEADER_SIZE) {
-            doThrowIAE(env, "header's remaining data < ETC_PKM_HEADER_SIZE");
+            env->ThrowNew(gIAEClass, "header's remaining data < ETC_PKM_HEADER_SIZE");
         } else {
             result = etc1_pkm_get_width((etc1_byte*) headerB.getData());
         }
@@ -997,7 +996,7 @@ static int etc1_getHeight(JNIEnv *env, jclass clazz,
     BufferHelper headerB(env, header);
     if (headerB.checkPointer("header") ){
         if (headerB.remaining() < ETC_PKM_HEADER_SIZE) {
-            doThrowIAE(env, "header's remaining data < ETC_PKM_HEADER_SIZE");
+            env->ThrowNew(gIAEClass, "header's remaining data < ETC_PKM_HEADER_SIZE");
         } else {
             result = etc1_pkm_get_height((etc1_byte*) headerB.getData());
         }
@@ -1009,12 +1008,22 @@ static int etc1_getHeight(JNIEnv *env, jclass clazz,
  * JNI registration
  */
 
+static void
+lookupClasses(JNIEnv* env) {
+    gIAEClass = (jclass) env->NewGlobalRef(
+            env->FindClass("java/lang/IllegalArgumentException"));
+    gUOEClass = (jclass) env->NewGlobalRef(
+            env->FindClass("java/lang/UnsupportedOperationException"));
+    gAIOOBEClass = (jclass) env->NewGlobalRef(
+            env->FindClass("java/lang/ArrayIndexOutOfBoundsException"));
+}
+
 static JNINativeMethod gMatrixMethods[] = {
     { "multiplyMM", "([FI[FI[FI)V", (void*)util_multiplyMM },
     { "multiplyMV", "([FI[FI[FI)V", (void*)util_multiplyMV },
 };
 
-static JNINativeMethod gVisibilityMethods[] = {
+static JNINativeMethod gVisiblityMethods[] = {
     { "computeBoundingSphere", "([FII[FI)V", (void*)util_computeBoundingSphere },
     { "frustumCullSpheres", "([FI[FII[III)I", (void*)util_frustumCullSpheres },
     { "visibilityTest", "([FI[FI[CII)I", (void*)util_visibilityTest },
@@ -1047,14 +1056,15 @@ typedef struct _ClassRegistrationInfo {
 } ClassRegistrationInfo;
 
 static ClassRegistrationInfo gClasses[] = {
-    {"android/opengl/Matrix", gMatrixMethods, NELEM(gMatrixMethods)},
-    {"android/opengl/Visibility", gVisibilityMethods, NELEM(gVisibilityMethods)},
-    {"android/opengl/GLUtils", gUtilsMethods, NELEM(gUtilsMethods)},
-    {"android/opengl/ETC1", gEtc1Methods, NELEM(gEtc1Methods)},
+        {"android/opengl/Matrix", gMatrixMethods, NELEM(gMatrixMethods)},
+        {"android/opengl/Visibility", gVisiblityMethods, NELEM(gVisiblityMethods)},
+        {"android/opengl/GLUtils", gUtilsMethods, NELEM(gUtilsMethods)},
+        {"android/opengl/ETC1", gEtc1Methods, NELEM(gEtc1Methods)},
 };
 
 int register_android_opengl_classes(JNIEnv* env)
 {
+    lookupClasses(env);
     nativeClassInitBuffer(env);
     int result = 0;
     for (int i = 0; i < NELEM(gClasses); i++) {
@@ -1070,3 +1080,4 @@ int register_android_opengl_classes(JNIEnv* env)
 }
 
 } // namespace android
+

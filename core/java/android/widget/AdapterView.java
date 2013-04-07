@@ -18,18 +18,18 @@ package android.widget;
 
 import android.content.Context;
 import android.database.DataSetObserver;
+import android.os.Handler;
 import android.os.Parcelable;
 import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.SparseArray;
 import android.view.ContextMenu;
-import android.view.ContextMenu.ContextMenuInfo;
 import android.view.SoundEffectConstants;
 import android.view.View;
 import android.view.ViewDebug;
 import android.view.ViewGroup;
+import android.view.ContextMenu.ContextMenuInfo;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
 
 
 /**
@@ -38,12 +38,6 @@ import android.view.accessibility.AccessibilityNodeInfo;
  * <p>
  * See {@link ListView}, {@link GridView}, {@link Spinner} and
  *      {@link Gallery} for commonly used subclasses of AdapterView.
- *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For more information about using AdapterView, read the
- * <a href="{@docRoot}guide/topics/ui/binding.html">Binding to Data with AdapterView</a>
- * developer guide.</p></div>
  */
 public abstract class AdapterView<T extends Adapter> extends ViewGroup {
 
@@ -178,7 +172,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
     int mItemCount;
 
     /**
-     * The number of items in the adapter before a data changed event occurred.
+     * The number of items in the adapter before a data changed event occured.
      */
     int mOldItemCount;
 
@@ -234,6 +228,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
         super(context, attrs, defStyle);
     }
 
+
     /**
      * Interface definition for a callback to be invoked when an item in this
      * AdapterView has been clicked.
@@ -286,9 +281,6 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
     public boolean performItemClick(View view, int position, long id) {
         if (mOnItemClickListener != null) {
             playSoundEffect(SoundEffectConstants.CLICK);
-            if (view != null) {
-                view.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_CLICKED);
-            }
             mOnItemClickListener.onItemClick(this, view, position, id);
             return true;
         }
@@ -346,10 +338,8 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
      */
     public interface OnItemSelectedListener {
         /**
-         * <p>Callback method to be invoked when an item in this view has been
-         * selected. This callback is invoked only when the newly selected
-         * position is different from the previously selected position or if
-         * there was no selected item.</p>
+         * Callback method to be invoked when an item in this view has been
+         * selected.
          *
          * Impelmenters can call getItemAtPosition(position) if they need to access the
          * data associated with the selected item.
@@ -568,7 +558,7 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
     /**
      * @return The number of items owned by the Adapter associated with this
      *         AdapterView. (This is the number of data items, which may be
-     *         larger than the number of visible views.)
+     *         larger than the number of visible view.)
      */
     @ViewDebug.CapturedViewProperty
     public int getCount() {
@@ -639,7 +629,6 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
     /**
      * Sets the view to show if the adapter is empty
      */
-    @android.view.RemotableViewMethod
     public void setEmptyView(View emptyView) {
         mEmptyView = emptyView;
 
@@ -888,60 +877,31 @@ public abstract class AdapterView<T extends Adapter> extends ViewGroup {
 
     @Override
     public boolean dispatchPopulateAccessibilityEvent(AccessibilityEvent event) {
-        View selectedView = getSelectedView();
-        if (selectedView != null && selectedView.getVisibility() == VISIBLE
-                && selectedView.dispatchPopulateAccessibilityEvent(event)) {
-            return true;
+        boolean populated = false;
+        // This is an exceptional case which occurs when a window gets the
+        // focus and sends a focus event via its focused child to announce
+        // current focus/selection. AdapterView fires selection but not focus
+        // events so we change the event type here.
+        if (event.getEventType() == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
+            event.setEventType(AccessibilityEvent.TYPE_VIEW_SELECTED);
         }
-        return false;
-    }
 
-    @Override
-    public boolean onRequestSendAccessibilityEvent(View child, AccessibilityEvent event) {
-        if (super.onRequestSendAccessibilityEvent(child, event)) {
-            // Add a record for ourselves as well.
-            AccessibilityEvent record = AccessibilityEvent.obtain();
-            onInitializeAccessibilityEvent(record);
-            // Populate with the text of the requesting child.
-            child.dispatchPopulateAccessibilityEvent(record);
-            event.appendRecord(record);
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
-        super.onInitializeAccessibilityNodeInfo(info);
-        info.setScrollable(isScrollableForAccessibility());
+        // we send selection events only from AdapterView to avoid
+        // generation of such event for each child
         View selectedView = getSelectedView();
         if (selectedView != null) {
-            info.setEnabled(selectedView.isEnabled());
+            populated = selectedView.dispatchPopulateAccessibilityEvent(event);
         }
-    }
 
-    @Override
-    public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
-        super.onInitializeAccessibilityEvent(event);
-        event.setScrollable(isScrollableForAccessibility());
-        View selectedView = getSelectedView();
-        if (selectedView != null) {
-            event.setEnabled(selectedView.isEnabled());
+        if (!populated) {
+            if (selectedView != null) {
+                event.setEnabled(selectedView.isEnabled());
+            }
+            event.setItemCount(getCount());
+            event.setCurrentItemIndex(getSelectedItemPosition());
         }
-        event.setCurrentItemIndex(getSelectedItemPosition());
-        event.setFromIndex(getFirstVisiblePosition());
-        event.setToIndex(getLastVisiblePosition());
-        event.setItemCount(getCount());
-    }
 
-    private boolean isScrollableForAccessibility() {
-        T adapter = getAdapter();
-        if (adapter != null) {
-            final int itemCount = adapter.getCount();
-            return itemCount > 0
-                && (getFirstVisiblePosition() > 0 || getLastVisiblePosition() < itemCount - 1);
-        }
-        return false;
+        return populated;
     }
 
     @Override

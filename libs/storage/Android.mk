@@ -13,4 +13,8 @@ LOCAL_STATIC_LIBRARIES := \
 
 LOCAL_MODULE:= libstorage
 
+ifeq ($(TARGET_SIMULATOR),true)
+    LOCAL_LDLIBS += -lpthread
+endif
+
 include $(BUILD_STATIC_LIBRARY)

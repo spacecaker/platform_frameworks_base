@@ -42,9 +42,9 @@ private:
     sp<DataSource> mSource;
     MediaBufferGroup *mGroup;
     bool mStarted;
-    off64_t mSize;
+    off_t mSize;
     int32_t mWidth, mHeight;
-    off64_t mOffset;
+    off_t mOffset;
 
     status_t parseJPEG();
 

@@ -16,12 +16,9 @@
 
 package com.android.internal.telephony;
 
-import android.net.LinkCapabilities;
-import android.net.LinkProperties;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.telephony.ServiceState;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
@@ -56,13 +53,8 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
     }
 
     public void notifyServiceState(Phone sender) {
-        ServiceState ss = sender.getServiceState();
-        if (ss == null) {
-            ss = new ServiceState();
-            ss.setStateOutOfService();
-        }
         try {
-            mRegistry.notifyServiceState(ss);
+            mRegistry.notifyServiceState(sender.getServiceState());
         } catch (RemoteException ex) {
             // system process is dead
         }
@@ -100,47 +92,26 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
         }
     }
 
-    public void notifyDataConnection(Phone sender, String reason, String apnType,
-            Phone.DataState state) {
-        doNotifyDataConnection(sender, reason, apnType, state);
-    }
-
-    private void doNotifyDataConnection(Phone sender, String reason, String apnType,
-            Phone.DataState state) {
-        // TODO
-        // use apnType as the key to which connection we're talking about.
-        // pass apnType back up to fetch particular for this one.
+    public void notifyDataConnection(Phone sender, String reason) {
         TelephonyManager telephony = TelephonyManager.getDefault();
-        LinkProperties linkProperties = null;
-        LinkCapabilities linkCapabilities = null;
-        boolean roaming = false;
-
-        if (state == Phone.DataState.CONNECTED) {
-            linkProperties = sender.getLinkProperties(apnType);
-            linkCapabilities = sender.getLinkCapabilities(apnType);
-        }
-        ServiceState ss = sender.getServiceState();
-        if (ss != null) roaming = ss.getRoaming();
-
         try {
             mRegistry.notifyDataConnection(
-                    convertDataState(state),
-                    sender.isDataConnectivityPossible(apnType), reason,
-                    sender.getActiveApnHost(apnType),
-                    apnType,
-                    linkProperties,
-                    linkCapabilities,
+                    convertDataState(sender.getDataConnectionState()),
+                    sender.isDataConnectivityPossible(), reason,
+                    sender.getActiveApn(),
+                    sender.getActiveApnTypes(),
+                    sender.getInterfaceName(null),
                     ((telephony!=null) ? telephony.getNetworkType() :
                     TelephonyManager.NETWORK_TYPE_UNKNOWN),
-                    roaming);
+                    sender.getGateway(null));
         } catch (RemoteException ex) {
             // system process is dead
         }
     }
 
-    public void notifyDataConnectionFailed(Phone sender, String reason, String apnType) {
+    public void notifyDataConnectionFailed(Phone sender, String reason) {
         try {
-            mRegistry.notifyDataConnectionFailed(reason, apnType);
+            mRegistry.notifyDataConnectionFailed(reason);
         } catch (RemoteException ex) {
             // system process is dead
         }
@@ -151,14 +122,6 @@ public class DefaultPhoneNotifier implements PhoneNotifier {
         sender.getCellLocation().fillInNotifierBundle(data);
         try {
             mRegistry.notifyCellLocation(data);
-        } catch (RemoteException ex) {
-            // system process is dead
-        }
-    }
-
-    public void notifyOtaspChanged(Phone sender, int otaspMode) {
-        try {
-            mRegistry.notifyOtaspChanged(otaspMode);
         } catch (RemoteException ex) {
             // system process is dead
         }

@@ -33,7 +33,7 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.ViewParent;
-import android.view.ViewRootImpl;
+import android.view.ViewRoot;
 import android.view.WindowManager;
 import android.view.View.OnClickListener;
 import android.view.WindowManager.LayoutParams;
@@ -66,9 +66,8 @@ import android.view.WindowManager.LayoutParams;
  * {@link #setZoomInEnabled(boolean)} and {@link #setZoomOutEnabled(boolean)}.
  * <p>
  * If you are using this with a custom View, please call
- * {@link #setVisible(boolean) setVisible(false)} from
- * {@link View#onDetachedFromWindow} and from {@link View#onVisibilityChanged}
- * when <code>visibility != View.VISIBLE</code>.
+ * {@link #setVisible(boolean) setVisible(false)} from the
+ * {@link View#onDetachedFromWindow}.
  *
  */
 public class ZoomButtonsController implements View.OnTouchListener {
@@ -501,7 +500,7 @@ public class ZoomButtonsController implements View.OnTouchListener {
 
         } else {
 
-            ViewRootImpl viewRoot = getOwnerViewRootImpl();
+            ViewRoot viewRoot = getOwnerViewRoot();
             if (viewRoot != null) {
                 viewRoot.dispatchKey(event);
             }
@@ -526,15 +525,15 @@ public class ZoomButtonsController implements View.OnTouchListener {
         }
     }
 
-    private ViewRootImpl getOwnerViewRootImpl() {
+    private ViewRoot getOwnerViewRoot() {
         View rootViewOfOwner = mOwnerView.getRootView();
         if (rootViewOfOwner == null) {
             return null;
         }
 
         ViewParent parentOfRootView = rootViewOfOwner.getParent();
-        if (parentOfRootView instanceof ViewRootImpl) {
-            return (ViewRootImpl) parentOfRootView;
+        if (parentOfRootView instanceof ViewRoot) {
+            return (ViewRoot) parentOfRootView;
         } else {
             return null;
         }

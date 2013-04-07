@@ -16,8 +16,6 @@
 
 package android.webkit;
 
-import android.net.ProxyProperties;
-import android.net.Uri;
 import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
@@ -40,6 +38,9 @@ final class JWebCoreJavaBridge extends Handler {
     // immediately.
     private boolean mHasInstantTimer;
 
+    // Reference count the pause/resume of timers
+    private int mPauseTimerRefCount;
+
     private boolean mTimerPaused;
     private boolean mHasDeferredTimers;
 
@@ -51,15 +52,12 @@ final class JWebCoreJavaBridge extends Handler {
     /* package */
     static final int REFRESH_PLUGINS = 100;
 
-    private HashMap<String, String> mContentUriToFilePathMap;
-
     /**
      * Construct a new JWebCoreJavaBridge to interface with
      * WebCore timers and cookies.
      */
     public JWebCoreJavaBridge() {
         nativeConstructor();
-
     }
 
     @Override
@@ -87,9 +85,11 @@ final class JWebCoreJavaBridge extends Handler {
      * Call native timer callbacks.
      */
     private void fireSharedTimer() { 
+        PerfChecker checker = new PerfChecker();
         // clear the flag so that sharedTimerFired() can set a new timer
         mHasInstantTimer = false;
         sharedTimerFired();
+        checker.responseAlert("sharedTimer");
     }
 
     /**
@@ -132,7 +132,7 @@ final class JWebCoreJavaBridge extends Handler {
      * Pause all timers.
      */
     public void pause() {
-        if (!mTimerPaused) {
+        if (--mPauseTimerRefCount == 0) {
             mTimerPaused = true;
             mHasDeferredTimers = false;
         }
@@ -142,7 +142,7 @@ final class JWebCoreJavaBridge extends Handler {
      * Resume all timers.
      */
     public void resume() {
-        if (mTimerPaused) {
+        if (++mPauseTimerRefCount == 1) {
            mTimerPaused = false;
            if (mHasDeferredTimers) {
                mHasDeferredTimers = false;
@@ -271,42 +271,6 @@ final class JWebCoreJavaBridge extends Handler {
         }
     }
 
-    // Called on the WebCore thread through JNI.
-    private String resolveFilePathForContentUri(String uri) {
-        if (mContentUriToFilePathMap != null) {
-            String fileName = mContentUriToFilePathMap.get(uri);
-            if (fileName != null) {
-                return fileName;
-            }
-        }
-
-        // Failsafe fallback to just use the last path segment.
-        // (See OpenableColumns documentation in the SDK)
-        Uri jUri = Uri.parse(uri);
-        return jUri.getLastPathSegment();
-    }
-
-    public void storeFilePathForContentUri(String path, String contentUri) {
-        if (mContentUriToFilePathMap == null) {
-            mContentUriToFilePathMap = new HashMap<String, String>();
-        }
-        mContentUriToFilePathMap.put(contentUri, path);
-    }
-
-    public void updateProxy(ProxyProperties proxyProperties) {
-        if (proxyProperties == null) {
-            nativeUpdateProxy("", "");
-            return;
-        }
-
-        String host = proxyProperties.getHost();
-        int port = proxyProperties.getPort();
-        if (port != 0)
-            host += ":" + port;
-
-        nativeUpdateProxy(host, proxyProperties.getExclusionList());
-    }
-
     private native void nativeConstructor();
     private native void nativeFinalize();
     private native void sharedTimerFired();
@@ -317,5 +281,4 @@ final class JWebCoreJavaBridge extends Handler {
     public native void addPackageNames(Set<String> packageNames);
     public native void addPackageName(String packageName);
     public native void removePackageName(String packageName);
-    public native void nativeUpdateProxy(String newProxy, String exclusionList);
 }

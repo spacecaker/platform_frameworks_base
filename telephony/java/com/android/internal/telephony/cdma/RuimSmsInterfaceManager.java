@@ -68,7 +68,8 @@ public class RuimSmsInterfaceManager extends IccSmsInterfaceManager {
                     ar = (AsyncResult)msg.obj;
                     synchronized (mLock) {
                         if (ar.exception == null) {
-                            mSms = buildValidRawData((ArrayList<byte[]>) ar.result);
+                            mSms  = (List<SmsRawData>)
+                                    buildValidRawData((ArrayList<byte[]>) ar.result);
                         } else {
                             if(DBG) log("Cannot load Sms records");
                             if (mSms != null)

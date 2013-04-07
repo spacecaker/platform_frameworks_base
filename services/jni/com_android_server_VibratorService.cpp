@@ -29,11 +29,6 @@
 namespace android
 {
 
-static jboolean vibratorExists(JNIEnv *env, jobject clazz)
-{
-    return vibrator_exists() > 0 ? JNI_TRUE : JNI_FALSE;
-}
-
 static void vibratorOn(JNIEnv *env, jobject clazz, jlong timeout_ms)
 {
     // LOGI("vibratorOn\n");
@@ -47,7 +42,6 @@ static void vibratorOff(JNIEnv *env, jobject clazz)
 }
 
 static JNINativeMethod method_table[] = {
-    { "vibratorExists", "()Z", (void*)vibratorExists },
     { "vibratorOn", "(J)V", (void*)vibratorOn },
     { "vibratorOff", "()V", (void*)vibratorOff }
 };

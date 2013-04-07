@@ -52,7 +52,7 @@ import java.util.Set;
  * 
  * {@hide}
  */
-public class AppSecurityPermissions  implements View.OnClickListener {
+public class AppSecurityPermissions  extends AppSecurityPermissionsBase {
 
     private enum State {
         NO_PERMS,
@@ -218,14 +218,15 @@ public class AppSecurityPermissions  implements View.OnClickListener {
         mShowMore.setClickable(true);
         mShowMore.setOnClickListener(this);
         mShowMore.setFocusable(true);
+        mShowMore.setBackgroundResource(android.R.drawable.list_selector_background);
 
         // Pick up from framework resources instead.
         mDefaultGrpLabel = mContext.getString(R.string.default_permission_group);
         mPermFormat = mContext.getString(R.string.permissions_format);
         mNormalIcon = mContext.getResources().getDrawable(R.drawable.ic_text_dot);
         mDangerousIcon = mContext.getResources().getDrawable(R.drawable.ic_bullet_key_permission);
-        mShowMaxIcon = mContext.getResources().getDrawable(R.drawable.expander_close_holo_dark);
-        mShowMinIcon = mContext.getResources().getDrawable(R.drawable.expander_open_holo_dark);
+        mShowMaxIcon = mContext.getResources().getDrawable(R.drawable.expander_ic_maximized);
+        mShowMinIcon = mContext.getResources().getDrawable(R.drawable.expander_ic_minimized);
         
         // Set permissions view
         setPermissions(mPermsList);

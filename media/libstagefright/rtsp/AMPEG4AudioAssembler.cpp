@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
-#define LOG_TAG "AMPEG4AudioAssembler"
-
 #include "AMPEG4AudioAssembler.h"
 
 #include "ARTPSource.h"
@@ -142,10 +139,7 @@ static status_t parseGASpecificConfig(
     return OK;
 }
 
-static status_t parseAudioSpecificConfig(ABitReader *bits, sp<ABuffer> *asc) {
-    const uint8_t *dataStart = bits->data();
-    size_t totalNumBits = bits->numBitsLeft();
-
+static status_t parseAudioSpecificConfig(ABitReader *bits) {
     unsigned audioObjectType;
     CHECK_EQ(parseAudioObjectType(bits, &audioObjectType), (status_t)OK);
 
@@ -191,13 +185,13 @@ static status_t parseAudioSpecificConfig(ABitReader *bits, sp<ABuffer> *asc) {
         }
     }
 
-    if (extensionAudioObjectType != 5 && bits->numBitsLeft() >= 16) {
-        size_t numBitsLeftAtStart = bits->numBitsLeft();
+#if 0
+    // This is not supported here as the upper layers did not explicitly
+    // signal the length of AudioSpecificConfig.
 
+    if (extensionAudioObjectType != 5 && bits->numBitsLeft() >= 16) {
         unsigned syncExtensionType = bits->getBits(11);
         if (syncExtensionType == 0x2b7) {
-            LOGI("found syncExtension");
-
             CHECK_EQ(parseAudioObjectType(bits, &extensionAudioObjectType),
                      (status_t)OK);
 
@@ -209,45 +203,9 @@ static status_t parseAudioSpecificConfig(ABitReader *bits, sp<ABuffer> *asc) {
                     /* unsigned extensionSamplingFrequency = */bits->getBits(24);
                 }
             }
-
-            size_t numBitsInExtension =
-                numBitsLeftAtStart - bits->numBitsLeft();
-
-            if (numBitsInExtension & 7) {
-                // Apparently an extension is always considered an even
-                // multiple of 8 bits long.
-
-                LOGI("Skipping %d bits after sync extension",
-                     8 - (numBitsInExtension & 7));
-
-                bits->skipBits(8 - (numBitsInExtension & 7));
-            }
-        } else {
-            bits->putBits(syncExtensionType, 11);
         }
     }
-
-    if (asc != NULL) {
-        size_t bitpos = totalNumBits & 7;
-
-        ABitReader bs(dataStart, (totalNumBits + 7) / 8);
-
-        totalNumBits -= bits->numBitsLeft();
-
-        size_t numBytes = (totalNumBits + 7) / 8;
-
-        *asc = new ABuffer(numBytes);
-
-        if (bitpos & 7) {
-            bs.skipBits(8 - (bitpos & 7));
-        }
-
-        uint8_t *dstPtr = (*asc)->data();
-        while (numBytes > 0) {
-            *dstPtr++ = bs.getBits(8);
-            --numBytes;
-        }
-    }
+#endif
 
     return OK;
 }
@@ -256,7 +214,6 @@ static status_t parseStreamMuxConfig(
         ABitReader *bits,
         unsigned *numSubFrames,
         unsigned *frameLengthType,
-        ssize_t *fixedFrameLength,
         bool *otherDataPresent,
         unsigned *otherDataLenBits) {
     unsigned audioMuxVersion = bits->getBits(1);
@@ -285,14 +242,12 @@ static status_t parseStreamMuxConfig(
 
     if (audioMuxVersion == 0) {
         // AudioSpecificConfig
-        CHECK_EQ(parseAudioSpecificConfig(bits, NULL /* asc */), (status_t)OK);
+        CHECK_EQ(parseAudioSpecificConfig(bits), (status_t)OK);
     } else {
         TRESPASS();  // XXX to be implemented
     }
 
     *frameLengthType = bits->getBits(3);
-    *fixedFrameLength = -1;
-
     switch (*frameLengthType) {
         case 0:
         {
@@ -305,14 +260,7 @@ static status_t parseStreamMuxConfig(
 
         case 1:
         {
-            *fixedFrameLength = bits->getBits(9);
-            break;
-        }
-
-        case 2:
-        {
-            // reserved
-            TRESPASS();
+            /* unsigned frameLength = */bits->getBits(9);
             break;
         }
 
@@ -390,21 +338,9 @@ sp<ABuffer> AMPEG4AudioAssembler::removeLATMFraming(const sp<ABuffer> &buffer) {
                 break;
             }
 
-            case 2:
-            {
-                // reserved
-
-                TRESPASS();
-                break;
-            }
-
             default:
-            {
-                CHECK_GE(mFixedFrameLength, 0);
-
-                payloadLength = mFixedFrameLength;
+                TRESPASS();  // XXX to be implemented
                 break;
-            }
         }
 
         CHECK_LE(offset + payloadLength, buffer->size());
@@ -457,7 +393,6 @@ AMPEG4AudioAssembler::AMPEG4AudioAssembler(
     ABitReader bits(config->data(), config->size());
     status_t err = parseStreamMuxConfig(
             &bits, &mNumSubFrames, &mFrameLengthType,
-            &mFixedFrameLength,
             &mOtherDataPresent, &mOtherDataLenBits);
 
     CHECK_EQ(err, (status_t)NO_ERROR);

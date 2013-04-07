@@ -25,27 +25,22 @@ import android.os.Handler;
 import android.os.Message;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 /**
- * The Surface View for a graphics renderscript (RenderScriptGL) to draw on.
+ * @hide
  *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For more information about creating an application that uses Renderscript, read the
- * <a href="{@docRoot}guide/topics/graphics/renderscript.html">Renderscript</a> developer guide.</p>
- * </div>
- */
+ **/
 public class RSSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
     private SurfaceHolder mSurfaceHolder;
     private RenderScriptGL mRS;
 
     /**
      * Standard View constructor. In order to render something, you
-     * must call {@link android.opengl.GLSurfaceView#setRenderer} to
-     * register a renderer.
+     * must call {@link #setRenderer} to register a renderer.
      */
     public RSSurfaceView(Context context) {
         super(context);
@@ -55,8 +50,7 @@ public class RSSurfaceView extends SurfaceView implements SurfaceHolder.Callback
 
     /**
      * Standard View constructor. In order to render something, you
-     * must call {@link android.opengl.GLSurfaceView#setRenderer} to
-     * register a renderer.
+     * must call {@link #setRenderer} to register a renderer.
      */
     public RSSurfaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -76,6 +70,7 @@ public class RSSurfaceView extends SurfaceView implements SurfaceHolder.Callback
      * not normally called or subclassed by clients of RSSurfaceView.
      */
     public void surfaceCreated(SurfaceHolder holder) {
+        Log.v(RenderScript.LOG_TAG, "surfaceCreated");
         mSurfaceHolder = holder;
     }
 
@@ -84,11 +79,10 @@ public class RSSurfaceView extends SurfaceView implements SurfaceHolder.Callback
      * not normally called or subclassed by clients of RSSurfaceView.
      */
     public void surfaceDestroyed(SurfaceHolder holder) {
-        synchronized (this) {
-            // Surface will be destroyed when we return
-            if (mRS != null) {
-                mRS.setSurface(null, 0, 0);
-            }
+        // Surface will be destroyed when we return
+        Log.v(RenderScript.LOG_TAG, "surfaceDestroyed");
+        if (mRS != null) {
+            mRS.contextSetSurface(0, 0, null);
         }
     }
 
@@ -97,23 +91,23 @@ public class RSSurfaceView extends SurfaceView implements SurfaceHolder.Callback
      * not normally called or subclassed by clients of RSSurfaceView.
      */
     public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
-        synchronized (this) {
-            if (mRS != null) {
-                mRS.setSurface(holder, w, h);
-            }
+        Log.v(RenderScript.LOG_TAG, "surfaceChanged");
+        if (mRS != null) {
+            mRS.contextSetSurface(w, h, holder.getSurface());
         }
     }
 
-   /**
+    /**
      * Inform the view that the activity is paused. The owner of this view must
      * call this method when the activity is paused. Calling this method will
      * pause the rendering thread.
      * Must not be called before a renderer has been set.
      */
-    public void pause() {
+    public void onPause() {
         if(mRS != null) {
             mRS.pause();
         }
+        //Log.v(RenderScript.LOG_TAG, "onPause");
     }
 
     /**
@@ -123,30 +117,53 @@ public class RSSurfaceView extends SurfaceView implements SurfaceHolder.Callback
      * thread.
      * Must not be called before a renderer has been set.
      */
-    public void resume() {
+    public void onResume() {
         if(mRS != null) {
             mRS.resume();
         }
+        //Log.v(RenderScript.LOG_TAG, "onResume");
     }
 
-    public RenderScriptGL createRenderScriptGL(RenderScriptGL.SurfaceConfig sc) {
-      RenderScriptGL rs = new RenderScriptGL(this.getContext(), sc);
-        setRenderScriptGL(rs);
-        return rs;
+    /**
+     * Queue a runnable to be run on the GL rendering thread. This can be used
+     * to communicate with the Renderer on the rendering thread.
+     * Must not be called before a renderer has been set.
+     * @param r the runnable to be run on the GL rendering thread.
+     */
+    public void queueEvent(Runnable r) {
+        //Log.v(RenderScript.LOG_TAG, "queueEvent");
     }
 
-    public void destroyRenderScriptGL() {
-        synchronized (this) {
-            mRS.destroy();
-            mRS = null;
-        }
+    /**
+     * This method is used as part of the View class and is not normally
+     * called or subclassed by clients of RSSurfaceView.
+     * Must not be called before a renderer has been set.
+     */
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
     }
 
-    public void setRenderScriptGL(RenderScriptGL rs) {
-        mRS = rs;
-    }
+    // ----------------------------------------------------------------------
 
-    public RenderScriptGL getRenderScriptGL() {
+    public RenderScriptGL createRenderScript(boolean useDepth, boolean forceSW) {
+        Log.v(RenderScript.LOG_TAG, "createRenderScript");
+        mRS = new RenderScriptGL(useDepth, forceSW);
         return mRS;
     }
+
+    public RenderScriptGL createRenderScript(boolean useDepth) {
+        return createRenderScript(useDepth, false);
+    }
+
+    public void destroyRenderScript() {
+        Log.v(RenderScript.LOG_TAG, "destroyRenderScript");
+        mRS.destroy();
+        mRS = null;
+    }
+    
+    public void createRenderScript(RenderScriptGL rs) {
+        mRS = rs;
+    }
 }
+

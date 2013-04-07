@@ -22,6 +22,7 @@ LOCAL_SHARED_LIBRARIES := \
     libbinder \
     libui \
     libgui \
+    libsurfaceflinger_client \
     libandroid_runtime
 
 LOCAL_STATIC_LIBRARIES := \

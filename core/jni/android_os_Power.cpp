@@ -20,16 +20,24 @@
 #include "android_runtime/AndroidRuntime.h"
 #include <utils/misc.h>
 #include <hardware_legacy/power.h>
-#include <cutils/android_reboot.h>
+#include <sys/reboot.h>
+#include <reboot/reboot.h>
 
 namespace android
 {
+
+static void throw_NullPointerException(JNIEnv *env, const char* msg)
+{
+    jclass clazz;
+    clazz = env->FindClass("java/lang/NullPointerException");
+    env->ThrowNew(clazz, msg);
+}
 
 static void
 acquireWakeLock(JNIEnv *env, jobject clazz, jint lock, jstring idObj)
 {
     if (idObj == NULL) {
-        jniThrowNullPointerException(env, "id is null");
+        throw_NullPointerException(env, "id is null");
         return ;
     }
 
@@ -44,7 +52,7 @@ static void
 releaseWakeLock(JNIEnv *env, jobject clazz, jstring idObj)
 {
     if (idObj == NULL) {
-        jniThrowNullPointerException(env, "id is null");
+        throw_NullPointerException(env, "id is null");
         return ;
     }
 
@@ -70,29 +78,26 @@ setScreenState(JNIEnv *env, jobject clazz, jboolean on)
 
 static void android_os_Power_shutdown(JNIEnv *env, jobject clazz)
 {
-    android_reboot(ANDROID_RB_POWEROFF, 0, 0);
+    sync();
+#ifdef HAVE_ANDROID_OS
+    reboot(RB_POWER_OFF);
+#endif
 }
 
 static void android_os_Power_reboot(JNIEnv *env, jobject clazz, jstring reason)
 {
+    sync();
+#ifdef HAVE_ANDROID_OS
     if (reason == NULL) {
-        android_reboot(ANDROID_RB_RESTART, 0, 0);
+        reboot_wrapper(NULL);
     } else {
         const char *chars = env->GetStringUTFChars(reason, NULL);
-        android_reboot(ANDROID_RB_RESTART2, 0, (char *) chars);
+        reboot_wrapper(chars);
         env->ReleaseStringUTFChars(reason, chars);  // In case it fails.
     }
     jniThrowIOException(env, errno);
-}
-
-#ifdef QCOM_HARDWARE
-static int
-SetUnstableMemoryState(JNIEnv *env, jobject clazz, jboolean on)
-{
-    return set_unstable_memory_state(on);
-}
 #endif
-
+}
 
 static JNINativeMethod method_table[] = {
     { "acquireWakeLock", "(ILjava/lang/String;)V", (void*)acquireWakeLock },
@@ -101,9 +106,6 @@ static JNINativeMethod method_table[] = {
     { "setScreenState", "(Z)I", (void*)setScreenState },
     { "shutdown", "()V", (void*)android_os_Power_shutdown },
     { "rebootNative", "(Ljava/lang/String;)V", (void*)android_os_Power_reboot },
-#ifdef QCOM_HARDWARE
-    { "SetUnstableMemoryState",  "(Z)I", (void*)SetUnstableMemoryState},
-#endif
 };
 
 int register_android_os_Power(JNIEnv *env)

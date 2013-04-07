@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (C) 2010-2012 Code Aurora Forum
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,20 +19,9 @@
 #include "include/MPEG4Extractor.h"
 #include "include/WAVExtractor.h"
 #include "include/OggExtractor.h"
-#include "include/MPEG2PSExtractor.h"
 #include "include/MPEG2TSExtractor.h"
 #include "include/NuCachedSource2.h"
-#include "include/HTTPBase.h"
-#include "include/DRMExtractor.h"
-#include "include/FLACExtractor.h"
-#include "include/AACExtractor.h"
-#ifdef QCOM_HARDWARE
-#include "include/ExtendedExtractor.h"
-#else
-#include "include/AVIExtractor.h"
-#endif
-
-#include <media/stagefright/MediaDefs.h>
+#include "include/NuHTTPDataSource.h"
 
 #include "matroska/MatroskaExtractor.h"
 
@@ -43,11 +31,13 @@
 #include <media/stagefright/MediaErrors.h>
 #include <utils/String8.h>
 
-#include <cutils/properties.h>
+#if defined(OMAP_ENHANCEMENT)
+#include "include/ASFExtractor.h"
+#endif
 
 namespace android {
 
-bool DataSource::getUInt16(off64_t offset, uint16_t *x) {
+bool DataSource::getUInt16(off_t offset, uint16_t *x) {
     *x = 0;
 
     uint8_t byte[2];
@@ -60,7 +50,7 @@ bool DataSource::getUInt16(off64_t offset, uint16_t *x) {
     return true;
 }
 
-status_t DataSource::getSize(off64_t *size) {
+status_t DataSource::getSize(off_t *size) {
     *size = 0;
 
     return ERROR_UNSUPPORTED;
@@ -70,26 +60,16 @@ status_t DataSource::getSize(off64_t *size) {
 
 Mutex DataSource::gSnifferMutex;
 List<DataSource::SnifferFunc> DataSource::gSniffers;
-#ifdef QCOM_HARDWARE
-List<DataSource::SnifferFunc>::iterator DataSource::extendedSnifferPosition;
-#endif
 
 bool DataSource::sniff(
         String8 *mimeType, float *confidence, sp<AMessage> *meta) {
-
     *mimeType = "";
     *confidence = 0.0f;
     meta->clear();
+
     Mutex::Autolock autoLock(gSnifferMutex);
     for (List<SnifferFunc>::iterator it = gSniffers.begin();
          it != gSniffers.end(); ++it) {
-
-#ifdef QCOM_HARDWARE
-        //Dont call the first sniffer from extended extarctor
-        if(it == extendedSnifferPosition)
-            continue;
-#endif
-
         String8 newMimeType;
         float newConfidence;
         sp<AMessage> newMeta;
@@ -98,34 +78,6 @@ bool DataSource::sniff(
                 *mimeType = newMimeType;
                 *confidence = newConfidence;
                 *meta = newMeta;
-#ifdef QCOM_HARDWARE
-                if(*confidence >= 0.6f) {
-
-                    LOGV("Ignore other Sniffers - confidence = %f , mimeType = %s",*confidence,mimeType->string());
-
-                    char value[PROPERTY_VALUE_MAX];
-                    if( (!strcasecmp((*mimeType).string(), MEDIA_MIMETYPE_CONTAINER_MPEG4)) &&
-                        (property_get("mmp.enable.3g2", value, NULL)) &&
-                        (!strcasecmp(value, "true") || !strcmp(value, "1"))) {
-
-                        //Incase of mimeType MPEG4 call the extended parser sniffer to check
-                        //if this is fragmented or not.
-                        LOGV("calling Extended Sniff if mimeType = %s ",(*mimeType).string());
-                        String8 tmpMimeType;
-                        float tmpConfidence;
-                        sp<AMessage> tmpMeta;
-                        (*extendedSnifferPosition)(this, &tmpMimeType, &tmpConfidence, &tmpMeta);
-                        if (tmpConfidence > *confidence) {
-                            *mimeType = tmpMimeType;
-                            *confidence = tmpConfidence;
-                            *meta = tmpMeta;
-                            LOGV("Confidence of Extended sniffer greater than previous sniffer ");
-                        }
-                    }
-
-                    break;
-                }
-#endif
             }
         }
     }
@@ -134,11 +86,7 @@ bool DataSource::sniff(
 }
 
 // static
-#ifdef QCOM_HARDWARE
-void DataSource::RegisterSniffer(SnifferFunc func, bool isExtendedExtractor) {
-#else
 void DataSource::RegisterSniffer(SnifferFunc func) {
-#endif
     Mutex::Autolock autoLock(gSnifferMutex);
 
     for (List<SnifferFunc>::iterator it = gSniffers.begin();
@@ -149,16 +97,6 @@ void DataSource::RegisterSniffer(SnifferFunc func) {
     }
 
     gSniffers.push_back(func);
-
-#ifdef QCOM_HARDWARE
-    if(isExtendedExtractor)
-    {
-        extendedSnifferPosition = gSniffers.end();
-        extendedSnifferPosition--;
-    }
-
-    return;
-#endif
 }
 
 // static
@@ -167,21 +105,14 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer(SniffMatroska);
     RegisterSniffer(SniffOgg);
     RegisterSniffer(SniffWAV);
-    RegisterSniffer(SniffFLAC);
     RegisterSniffer(SniffAMR);
     RegisterSniffer(SniffMPEG2TS);
     RegisterSniffer(SniffMP3);
-    RegisterSniffer(SniffAAC);
-    RegisterSniffer(SniffMPEG2PS);
-#ifdef QCOM_HARDWARE
-    ExtendedExtractor::RegisterSniffers();
-#endif
-
-    char value[PROPERTY_VALUE_MAX];
-    if (property_get("drm.service.enabled", value, NULL)
-            && (!strcmp(value, "1") || !strcasecmp(value, "true"))) {
-        RegisterSniffer(SniffDRM);
+#ifdef OMAP_ENHANCEMENT
+    if(isASFParserAvailable()){
+        RegisterSniffer(SniffASF);
     }
+#endif
 }
 
 // static
@@ -190,9 +121,8 @@ sp<DataSource> DataSource::CreateFromURI(
     sp<DataSource> source;
     if (!strncasecmp("file://", uri, 7)) {
         source = new FileSource(uri + 7);
-    } else if (!strncasecmp("http://", uri, 7)
-            || !strncasecmp("https://", uri, 8)) {
-        sp<HTTPBase> httpSource = HTTPBase::Create();
+    } else if (!strncasecmp("http://", uri, 7)) {
+        sp<NuHTTPDataSource> httpSource = new NuHTTPDataSource;
         if (httpSource->connect(uri, headers) != OK) {
             return NULL;
         }
@@ -207,10 +137,6 @@ sp<DataSource> DataSource::CreateFromURI(
     }
 
     return source;
-}
-
-String8 DataSource::getMIMEType() const {
-    return String8("application/octet-stream");
 }
 
 }  // namespace android

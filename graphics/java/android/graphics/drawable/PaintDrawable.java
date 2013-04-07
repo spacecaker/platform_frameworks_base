@@ -66,7 +66,6 @@ public class PaintDrawable extends ShapeDrawable {
         } else {
             setShape(new RoundRectShape(radii, null, null));
         }
-        invalidateSelf();
     }
 
     @Override

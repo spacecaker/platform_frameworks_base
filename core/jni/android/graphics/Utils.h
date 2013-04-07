@@ -51,7 +51,7 @@ public:
     }
 private:
     int     fFD;
-    off64_t   fCurr;
+    off_t   fCurr;
 };
 
 jobject nullObjectReturn(const char msg[]);

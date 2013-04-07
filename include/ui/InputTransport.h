@@ -136,7 +136,6 @@ struct InputMessage {
             int32_t action;
             int32_t flags;
             int32_t metaState;
-            int32_t buttonState;
             int32_t edgeFlags;
             nsecs_t downTime;
             float xOffset;
@@ -144,7 +143,7 @@ struct InputMessage {
             float xPrecision;
             float yPrecision;
             size_t pointerCount;
-            PointerProperties pointerProperties[MAX_POINTERS];
+            int32_t pointerIds[MAX_POINTERS];
             size_t sampleCount;
             SampleData sampleData[0]; // variable length
         } motion;
@@ -222,7 +221,6 @@ public:
             int32_t flags,
             int32_t edgeFlags,
             int32_t metaState,
-            int32_t buttonState,
             float xOffset,
             float yOffset,
             float xPrecision,
@@ -230,7 +228,7 @@ public:
             nsecs_t downTime,
             nsecs_t eventTime,
             size_t pointerCount,
-            const PointerProperties* pointerProperties,
+            const int32_t* pointerIds,
             const PointerCoords* pointerCoords);
 
     /* Appends a motion sample to a motion event unless already consumed.
@@ -252,13 +250,12 @@ public:
     status_t sendDispatchSignal();
 
     /* Receives the finished signal from the consumer in reply to the original dispatch signal.
-     * Returns whether the consumer handled the message.
      *
      * Returns OK on success.
      * Returns WOULD_BLOCK if there is no signal present.
      * Other errors probably indicate that the channel is broken.
      */
-    status_t receiveFinishedSignal(bool* outHandled);
+    status_t receiveFinishedSignal();
 
 private:
     sp<InputChannel> mChannel;
@@ -308,12 +305,12 @@ public:
     status_t consume(InputEventFactoryInterface* factory, InputEvent** outEvent);
 
     /* Sends a finished signal to the publisher to inform it that the current message is
-     * finished processing and specifies whether the message was handled by the consumer.
+     * finished processing.
      *
      * Returns OK on success.
      * Errors probably indicate that the channel is broken.
      */
-    status_t sendFinishedSignal(bool handled);
+    status_t sendFinishedSignal();
 
     /* Receives the dispatched signal from the publisher.
      *

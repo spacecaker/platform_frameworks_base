@@ -24,12 +24,11 @@ public interface AccessibilityEventSource {
     /**
      * Handles the request for sending an {@link AccessibilityEvent} given
      * the event type. The method must first check if accessibility is on
-     * via calling {@link AccessibilityManager#isEnabled() AccessibilityManager.isEnabled()},
-     * obtain an {@link AccessibilityEvent} from the event pool through calling
-     * {@link AccessibilityEvent#obtain(int) AccessibilityEvent.obtain(int)}, populate the
-     * event, and send it for dispatch via calling
-     * {@link AccessibilityManager#sendAccessibilityEvent(AccessibilityEvent)
-     * AccessibilityManager.sendAccessibilityEvent(AccessibilityEvent)}.
+     * via calling {@link AccessibilityManager#isEnabled()}, obtain
+     * an {@link AccessibilityEvent} from the event pool through calling
+     * {@link AccessibilityEvent#obtain(int)}, populate the event, and
+     * send it for dispatch via calling
+     * {@link AccessibilityManager#sendAccessibilityEvent(AccessibilityEvent)}.
      *
      * @see AccessibilityEvent
      * @see AccessibilityManager
@@ -42,8 +41,7 @@ public interface AccessibilityEventSource {
      * Handles the request for sending an {@link AccessibilityEvent}. The
      * method does not guarantee to check if accessibility is on before
      * sending the event for dispatch. It is responsibility of the caller
-     * to do the check via calling {@link AccessibilityManager#isEnabled()
-     * AccessibilityManager.isEnabled()}.
+     * to do the check via calling {@link AccessibilityManager#isEnabled()}.
      *
      * @see AccessibilityEvent
      * @see AccessibilityManager

@@ -24,7 +24,6 @@ import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.ViewConfiguration;
 
 public abstract class AbsSeekBar extends ProgressBar {
     private Drawable mThumb;
@@ -50,10 +49,6 @@ public abstract class AbsSeekBar extends ProgressBar {
     private static final int NO_ALPHA = 0xFF;
     private float mDisabledAlpha;
     
-    private int mScaledTouchSlop;
-    private float mTouchDownX;
-    private boolean mIsDragging;
-
     public AbsSeekBar(Context context) {
         super(context);
     }
@@ -79,8 +74,6 @@ public abstract class AbsSeekBar extends ProgressBar {
                 com.android.internal.R.styleable.Theme, 0, 0);
         mDisabledAlpha = a.getFloat(com.android.internal.R.styleable.Theme_disabledAlpha, 0.5f);
         a.recycle();
-
-        mScaledTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
     }
 
     /**
@@ -92,16 +85,6 @@ public abstract class AbsSeekBar extends ProgressBar {
      * @param thumb Drawable representing the thumb
      */
     public void setThumb(Drawable thumb) {
-        boolean needUpdate;
-        // This way, calling setThumb again with the same bitmap will result in
-        // it recalcuating mThumbOffset (if for example it the bounds of the
-        // drawable changed)
-        if (mThumb != null && thumb != mThumb) {
-            mThumb.setCallback(null);
-            needUpdate = true;
-        } else {
-            needUpdate = false;
-        }
         if (thumb != null) {
             thumb.setCallback(this);
 
@@ -109,25 +92,9 @@ public abstract class AbsSeekBar extends ProgressBar {
             // such that the thumb will hang halfway off either edge of the
             // progress bar.
             mThumbOffset = thumb.getIntrinsicWidth() / 2;
-
-            // If we're updating get the new states
-            if (needUpdate &&
-                    (thumb.getIntrinsicWidth() != mThumb.getIntrinsicWidth()
-                        || thumb.getIntrinsicHeight() != mThumb.getIntrinsicHeight())) {
-                requestLayout();
-            }
         }
         mThumb = thumb;
         invalidate();
-        if (needUpdate) {
-            updateThumbPos(getWidth(), getHeight());
-            if (thumb.isStateful()) {
-                // Note that if the states are different this won't work.
-                // For now, let's consider that an app bug.
-                int[] state = getDrawableState();
-                thumb.setState(state);
-            }
-        }
     }
 
     /**
@@ -187,12 +154,6 @@ public abstract class AbsSeekBar extends ProgressBar {
     }
 
     @Override
-    public void jumpDrawablesToCurrentState() {
-        super.jumpDrawablesToCurrentState();
-        if (mThumb != null) mThumb.jumpToCurrentState();
-    }
-
-    @Override
     protected void drawableStateChanged() {
         super.drawableStateChanged();
         
@@ -208,8 +169,7 @@ public abstract class AbsSeekBar extends ProgressBar {
     }
     
     @Override
-    void onProgressRefresh(float scale, boolean fromUser) {
-        super.onProgressRefresh(scale, fromUser);
+    void onProgressRefresh(float scale, boolean fromUser) { 
         Drawable thumb = mThumb;
         if (thumb != null) {
             setThumbPos(getWidth(), thumb, scale, Integer.MIN_VALUE);
@@ -225,10 +185,6 @@ public abstract class AbsSeekBar extends ProgressBar {
     
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        updateThumbPos(w, h);
-    }
-
-    private void updateThumbPos(int w, int h) {
         Drawable d = getCurrentDrawable();
         Drawable thumb = mThumb;
         int thumbHeight = thumb == null ? 0 : thumb.getIntrinsicHeight();
@@ -319,8 +275,8 @@ public abstract class AbsSeekBar extends ProgressBar {
         dw += mPaddingLeft + mPaddingRight;
         dh += mPaddingTop + mPaddingBottom;
         
-        setMeasuredDimension(resolveSizeAndState(dw, widthMeasureSpec, 0),
-                resolveSizeAndState(dh, heightMeasureSpec, 0));
+        setMeasuredDimension(resolveSize(dw, widthMeasureSpec),
+                resolveSize(dh, heightMeasureSpec));
     }
     
     @Override
@@ -331,48 +287,20 @@ public abstract class AbsSeekBar extends ProgressBar {
         
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                if (isInScrollingContainer()) {
-                    mTouchDownX = event.getX();
-                } else {
-                    setPressed(true);
-                    if (mThumb != null) {
-                        invalidate(mThumb.getBounds()); // This may be within the padding region
-                    }
-                    onStartTrackingTouch();
-                    trackTouchEvent(event);
-                    attemptClaimDrag();
-                }
+                setPressed(true);
+                onStartTrackingTouch();
+                trackTouchEvent(event);
                 break;
                 
             case MotionEvent.ACTION_MOVE:
-                if (mIsDragging) {
-                    trackTouchEvent(event);
-                } else {
-                    final float x = event.getX();
-                    if (Math.abs(x - mTouchDownX) > mScaledTouchSlop) {
-                        setPressed(true);
-                        if (mThumb != null) {
-                            invalidate(mThumb.getBounds()); // This may be within the padding region
-                        }
-                        onStartTrackingTouch();
-                        trackTouchEvent(event);
-                        attemptClaimDrag();
-                    }
-                }
+                trackTouchEvent(event);
+                attemptClaimDrag();
                 break;
                 
             case MotionEvent.ACTION_UP:
-                if (mIsDragging) {
-                    trackTouchEvent(event);
-                    onStopTrackingTouch();
-                    setPressed(false);
-                } else {
-                    // Touch up when we never crossed the touch slop threshold should
-                    // be interpreted as a tap-seek to that location.
-                    onStartTrackingTouch();
-                    trackTouchEvent(event);
-                    onStopTrackingTouch();
-                }
+                trackTouchEvent(event);
+                onStopTrackingTouch();
+                setPressed(false);
                 // ProgressBar doesn't know to repaint the thumb drawable
                 // in its inactive state when the touch stops (because the
                 // value has not apparently changed)
@@ -380,10 +308,8 @@ public abstract class AbsSeekBar extends ProgressBar {
                 break;
                 
             case MotionEvent.ACTION_CANCEL:
-                if (mIsDragging) {
-                    onStopTrackingTouch();
-                    setPressed(false);
-                }
+                onStopTrackingTouch();
+                setPressed(false);
                 invalidate(); // see above explanation
                 break;
         }
@@ -425,7 +351,6 @@ public abstract class AbsSeekBar extends ProgressBar {
      * This is called when the user has started touching this widget.
      */
     void onStartTrackingTouch() {
-        mIsDragging = true;
     }
 
     /**
@@ -433,7 +358,6 @@ public abstract class AbsSeekBar extends ProgressBar {
      * canceled.
      */
     void onStopTrackingTouch() {
-        mIsDragging = false;
     }
 
     /**

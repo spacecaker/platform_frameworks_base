@@ -32,7 +32,7 @@ import java.util.List;
 /*
  * TODO(code review): Curious question... Why are a lot of these
  * methods not declared as static, since they do not seem to require
- * any local object state?  Presumably this cannot be changed without
+ * any local object state?  Assumedly this cannot be changed without
  * interfering with the API...
  */
 
@@ -41,8 +41,7 @@ import java.util.List;
  * Get this object by calling the static method SmsManager.getDefault().
  */
 public final class SmsManager {
-    /** Singleton object constructed during class initialization. */
-    private static final SmsManager sInstance = new SmsManager();
+    private static SmsManager sInstance;
 
     /**
      * Send a text based SMS.
@@ -52,8 +51,8 @@ public final class SmsManager {
      *  the current default SMSC
      * @param text the body of the message to send
      * @param sentIntent if not NULL this <code>PendingIntent</code> is
-     *  broadcast when the message is successfully sent, or failed.
-     *  The result code will be <code>Activity.RESULT_OK</code> for success,
+     *  broadcast when the message is sucessfully sent, or failed.
+     *  The result code will be <code>Activity.RESULT_OK<code> for success,
      *  or one of these errors:<br>
      *  <code>RESULT_ERROR_GENERIC_FAILURE</code><br>
      *  <code>RESULT_ERROR_RADIO_OFF</code><br>
@@ -116,7 +115,7 @@ public final class SmsManager {
      * @param sentIntents if not null, an <code>ArrayList</code> of
      *   <code>PendingIntent</code>s (one for each message part) that is
      *   broadcast when the corresponding message part has been sent.
-     *   The result code will be <code>Activity.RESULT_OK</code> for success,
+     *   The result code will be <code>Activity.RESULT_OK<code> for success,
      *   or one of these errors:<br>
      *   <code>RESULT_ERROR_GENERIC_FAILURE</code><br>
      *   <code>RESULT_ERROR_RADIO_OFF</code><br>
@@ -125,7 +124,7 @@ public final class SmsManager {
      *   the extra "errorCode" containing a radio technology specific value,
      *   generally only useful for troubleshooting.<br>
      *   The per-application based SMS control checks sentIntent. If sentIntent
-     *   is NULL the caller will be checked against all unknown applications,
+     *   is NULL the caller will be checked against all unknown applicaitons,
      *   which cause smaller number of SMS to be sent in checking period.
      * @param deliveryIntents if not null, an <code>ArrayList</code> of
      *   <code>PendingIntent</code>s (one for each message part) that is
@@ -178,8 +177,8 @@ public final class SmsManager {
      * @param destinationPort the port to deliver the message to
      * @param data the body of the message to send
      * @param sentIntent if not NULL this <code>PendingIntent</code> is
-     *  broadcast when the message is successfully sent, or failed.
-     *  The result code will be <code>Activity.RESULT_OK</code> for success,
+     *  broadcast when the message is sucessfully sent, or failed.
+     *  The result code will be <code>Activity.RESULT_OK<code> for success,
      *  or one of these errors:<br>
      *  <code>RESULT_ERROR_GENERIC_FAILURE</code><br>
      *  <code>RESULT_ERROR_RADIO_OFF</code><br>
@@ -188,7 +187,7 @@ public final class SmsManager {
      *  the extra "errorCode" containing a radio technology specific value,
      *  generally only useful for troubleshooting.<br>
      *  The per-application based SMS control checks sentIntent. If sentIntent
-     *  is NULL the caller will be checked against all unknown applications,
+     *  is NULL the caller will be checked against all unknown applicaitons,
      *  which cause smaller number of SMS to be sent in checking period.
      * @param deliveryIntent if not NULL this <code>PendingIntent</code> is
      *  broadcast when the message is delivered to the recipient.  The
@@ -224,6 +223,9 @@ public final class SmsManager {
      * @return the default instance of the SmsManager
      */
     public static SmsManager getDefault() {
+        if (sInstance == null) {
+            sInstance = new SmsManager();
+        }
         return sInstance;
     }
 
@@ -325,7 +327,7 @@ public final class SmsManager {
      *
      * {@hide}
      */
-    public static ArrayList<SmsMessage> getAllMessagesFromIcc() {
+    public ArrayList<SmsMessage> getAllMessagesFromIcc() {
         List<SmsRawData> records = null;
 
         try {
@@ -470,7 +472,7 @@ public final class SmsManager {
      *   <code>getAllMessagesFromIcc</code>
      * @return <code>ArrayList</code> of <code>SmsMessage</code> objects.
      */
-    private static ArrayList<SmsMessage> createMessageListFromRawRecords(List<SmsRawData> records) {
+    private ArrayList<SmsMessage> createMessageListFromRawRecords(List<SmsRawData> records) {
         ArrayList<SmsMessage> messages = new ArrayList<SmsMessage>();
         if (records != null) {
             int count = records.size();

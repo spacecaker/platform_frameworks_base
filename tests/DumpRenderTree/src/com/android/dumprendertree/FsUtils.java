@@ -18,7 +18,6 @@ package com.android.dumprendertree;
 
 import com.android.dumprendertree.forwarder.ForwardService;
 
-import android.os.Environment;
 import android.util.Log;
 
 import java.io.BufferedOutputStream;
@@ -33,29 +32,18 @@ import java.util.regex.Pattern;
 public class FsUtils {
 
     private static final String LOGTAG = "FsUtils";
-    static final String EXTERNAL_DIR = Environment.getExternalStorageDirectory().toString();
-    static final String HTTP_TESTS_PREFIX =
-        EXTERNAL_DIR + "/webkit/layout_tests/http/tests/";
-    static final String HTTPS_TESTS_PREFIX =
-        EXTERNAL_DIR + "/webkit/layout_tests/http/tests/ssl/";
-    static final String HTTP_LOCAL_TESTS_PREFIX =
-        EXTERNAL_DIR + "/webkit/layout_tests/http/tests/local/";
-    static final String HTTP_MEDIA_TESTS_PREFIX =
-        EXTERNAL_DIR + "/webkit/layout_tests/http/tests/media/";
-    static final String HTTP_WML_TESTS_PREFIX =
-        EXTERNAL_DIR + "/webkit/layout_tests/http/tests/wml/";
+    static final String HTTP_TESTS_PREFIX = "/sdcard/android/layout_tests/http/tests/";
+    static final String HTTPS_TESTS_PREFIX = "/sdcard/android/layout_tests/http/tests/ssl/";
+    static final String HTTP_LOCAL_TESTS_PREFIX = "/sdcard/android/layout_tests/http/tests/local/";
+    static final String HTTP_MEDIA_TESTS_PREFIX = "/sdcard/android/layout_tests/http/tests/media/";
+    static final String HTTP_WML_TESTS_PREFIX = "/sdcard/android/layout_tests/http/tests/wml/";
 
     private FsUtils() {
         //no creation of instances
     }
 
-    /**
-     * @return the number of tests in the list.
-     */
-    public static int writeLayoutTestListRecursively(BufferedOutputStream bos,
+    public static void findLayoutTestsRecursively(BufferedOutputStream bos,
             String dir, boolean ignoreResultsInDir) throws IOException {
-
-        int testCount = 0;
         Log.v(LOGTAG, "Searching tests under " + dir);
 
         File d = new File(dir);
@@ -73,7 +61,7 @@ public class FsUtils {
                 // If this is not a test directory, we don't recurse into it.
                 if (!FileFilter.isNonTestDir(s)) {
                     Log.v(LOGTAG, "Recursing on " + s);
-                    testCount += writeLayoutTestListRecursively(bos, s, ignoreResultsInDir);
+                    findLayoutTestsRecursively(bos, s, ignoreResultsInDir);
                 }
                 continue;
             }
@@ -84,9 +72,7 @@ public class FsUtils {
                 continue;
             }
 
-            if ((s.toLowerCase().endsWith(".html")
-                    || s.toLowerCase().endsWith(".xml")
-                    || s.toLowerCase().endsWith(".xhtml"))
+            if ((s.toLowerCase().endsWith(".html") || s.toLowerCase().endsWith(".xml"))
                     && !s.endsWith("TEMPLATE.html")) {
                 Log.v(LOGTAG, "Recording " + s);
                 bos.write(s.getBytes());
@@ -95,10 +81,8 @@ public class FsUtils {
                     bos.write((" IGNORE_RESULT").getBytes());
                 }
                 bos.write('\n');
-                testCount++;
             }
         }
-        return testCount;
     }
 
     public static void updateTestStatus(String statusFile, String s) {
@@ -141,7 +125,7 @@ public class FsUtils {
             } else if (!path.startsWith(HTTP_LOCAL_TESTS_PREFIX)
                     && !path.startsWith(HTTP_MEDIA_TESTS_PREFIX)
                     && !path.startsWith(HTTP_WML_TESTS_PREFIX)) {
-                url = "http://127.0.0.1:18000/" + path.substring(HTTP_TESTS_PREFIX.length());
+                url = "http://127.0.0.1:8000/" + path.substring(HTTP_TESTS_PREFIX.length());
             } else {
                 url = "file://" + path;
             }

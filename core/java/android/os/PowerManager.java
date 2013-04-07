@@ -18,6 +18,8 @@ package android.os;
 
 import android.util.Log;
 
+import com.android.internal.os.RuntimeInit;
+
 /**
  * This class gives you control of the power state of the device.  
  * 
@@ -97,8 +99,7 @@ import android.util.Log;
  *     </tbody>
  * </table>
  * 
- * Any application using a WakeLock must request the {@code android.permission.WAKE_LOCK}
- * permission in an {@code &lt;uses-permission&gt;} element of the application's manifest.
+ * 
  */
 public class PowerManager
 {
@@ -131,25 +132,14 @@ public class PowerManager
     /**
      * Wake lock that ensures that the screen and keyboard are on at
      * full brightness.
-     *
-     * <p class="note">Most applications should strongly consider using
-     * {@link android.view.WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON}.
-     * This window flag will be correctly managed by the platform
-     * as the user moves between applications and doesn't require a special permission.</p>
      */
     public static final int FULL_WAKE_LOCK = WAKE_BIT_CPU_WEAK | WAKE_BIT_SCREEN_BRIGHT 
                                             | WAKE_BIT_KEYBOARD_BRIGHT;
 
     /**
-     * @deprecated Most applications should use
-     * {@link android.view.WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON} instead
-     * of this type of wake lock, as it will be correctly managed by the platform
-     * as the user moves between applications and doesn't require a special permission.
-     *
      * Wake lock that ensures that the screen is on at full brightness;
      * the keyboard backlight will be allowed to go off.
      */
-    @Deprecated
     public static final int SCREEN_BRIGHT_WAKE_LOCK = WAKE_BIT_CPU_WEAK | WAKE_BIT_SCREEN_BRIGHT;
 
     /**
@@ -200,11 +190,8 @@ public class PowerManager
     
     /**
      * Class lets you say that you need to have the device on.
-     * <p>
-     * Call release when you are done and don't need the lock anymore.
-     * <p>
-     * Any application using a WakeLock must request the {@code android.permission.WAKE_LOCK}
-     * permission in an {@code &lt;uses-permission&gt;} element of the application's manifest.
+     *
+     * <p>Call release when you are done and don't need the lock anymore.
      */
     public class WakeLock
     {
@@ -261,10 +248,16 @@ public class PowerManager
         public void acquire()
         {
             synchronized (mToken) {
-                acquireLocked();
+                if (!mRefCounted || mCount++ == 0) {
+                    try {
+                        mService.acquireWakeLock(mFlags, mToken, mTag, mWorkSource);
+                    } catch (RemoteException e) {
+                    }
+                    mHeld = true;
+                }
             }
         }
-
+        
         /**
          * Makes sure the device is on at the level you asked when you created
          * the wake lock. The lock will be released after the given timeout.
@@ -272,22 +265,10 @@ public class PowerManager
          * @param timeout Release the lock after the give timeout in milliseconds.
          */
         public void acquire(long timeout) {
-            synchronized (mToken) {
-                acquireLocked();
-                mHandler.postDelayed(mReleaser, timeout);
-            }
+            acquire();
+            mHandler.postDelayed(mReleaser, timeout);
         }
         
-        private void acquireLocked() {
-            if (!mRefCounted || mCount++ == 0) {
-                mHandler.removeCallbacks(mReleaser);
-                try {
-                    mService.acquireWakeLock(mFlags, mToken, mTag, mWorkSource);
-                } catch (RemoteException e) {
-                }
-                mHeld = true;
-            }
-        }
 
         /**
          * Release your claim to the CPU or screen being on.
@@ -296,7 +277,8 @@ public class PowerManager
          * It may turn off shortly after you release it, or it may not if there
          * are other wake locks held.
          */
-        public void release() {
+        public void release()
+        {
             release(0);
         }
 
@@ -311,10 +293,10 @@ public class PowerManager
          *
          * {@hide}
          */
-        public void release(int flags) {
+        public void release(int flags)
+        {
             synchronized (mToken) {
                 if (!mRefCounted || --mCount == 0) {
-                    mHandler.removeCallbacks(mReleaser);
                     try {
                         mService.releaseWakeLock(mToken, flags);
                     } catch (RemoteException e) {
@@ -400,11 +382,6 @@ public class PowerManager
      *wl.release();
      * }
      *
-     * <p class="note">If using this to keep the screen on, you should strongly consider using
-     * {@link android.view.WindowManager.LayoutParams#FLAG_KEEP_SCREEN_ON} instead.
-     * This window flag will be correctly managed by the platform
-     * as the user moves between applications and doesn't require a special permission.</p>
-     *
      * @param flags Combination of flag values defining the requested behavior of the WakeLock.
      * @param tag Your class name (or other tag) for debugging purposes.
      *
@@ -469,6 +446,22 @@ public class PowerManager
     {
         try {
             mService.setBacklightBrightness(brightness);
+        } catch (RemoteException e) {
+        }
+    }
+
+    /**
+     * sets the keyboard LED state
+     *
+     * @param on boolean state
+     * @param key 1 for caps, 2 for fn
+     *
+     * {@hide}
+     */
+    public void setKeyboardLight(boolean on, int key)
+    {
+        try {
+            mService.setKeyboardLight(on, key);
         } catch (RemoteException e) {
         }
     }

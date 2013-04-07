@@ -22,6 +22,11 @@ LOCAL_SRC_FILES := \
         SkOmxPixelRef.cpp \
         StreamSource.cpp
 
+
+# add external/skia/src/images/SkImageDecoder_libjpeg.cpp
+LOCAL_SRC_FILES += \
+        ../../../../../external/skia/src/images/SkImageDecoder_libjpeg.cpp
+
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libskia \

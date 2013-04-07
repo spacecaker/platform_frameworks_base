@@ -55,45 +55,35 @@ public:
     status_t setInterleaveDuration(uint32_t duration);
     int32_t getTimeScale() const { return mTimeScale; }
 
-    status_t setGeoData(int latitudex10000, int longitudex10000);
-    void setStartTimeOffsetMs(int ms) { mStartTimeOffsetMs = ms; }
-    int32_t getStartTimeOffsetMs() const { return mStartTimeOffsetMs; }
-
 protected:
     virtual ~MPEG4Writer();
 
 private:
     class Track;
 
-    int  mFd;
-    status_t mInitCheck;
+    FILE *mFile;
     bool mUse4ByteNalLength;
     bool mUse32BitOffset;
     bool mIsFileSizeLimitExplicitlyRequested;
     bool mPaused;
-    bool mStarted;  // Writer thread + track threads started successfully
-    bool mWriterThreadStarted;  // Only writer thread started successfully
-    off64_t mOffset;
+    bool mStarted;
+    off_t mOffset;
     off_t mMdatOffset;
     uint8_t *mMoovBoxBuffer;
-    off64_t mMoovBoxBufferOffset;
+    off_t mMoovBoxBufferOffset;
     bool  mWriteMoovBoxToMemory;
-    off64_t mFreeBoxOffset;
+    off_t mFreeBoxOffset;
     bool mStreamableFile;
-    off64_t mEstimatedMoovBoxSize;
+    off_t mEstimatedMoovBoxSize;
     uint32_t mInterleaveDurationUs;
     int32_t mTimeScale;
     int64_t mStartTimestampUs;
-    int mLatitudex10000;
-    int mLongitudex10000;
-    bool mAreGeoTagsAvailable;
-    int32_t mStartTimeOffsetMs;
 
     Mutex mLock;
 
     List<Track *> mTracks;
 
-    List<off64_t> mBoxes;
+    List<off_t> mBoxes;
 
     void setStartTimestampUs(int64_t timeUs);
     int64_t getStartTimestampUs();  // Not const
@@ -107,8 +97,6 @@ private:
         List<MediaBuffer *> mSamples;       // Sample data
 
         // Convenient constructor
-        Chunk(): mTrack(NULL), mTimeStampUs(0) {}
-
         Chunk(Track *track, int64_t timeUs, List<MediaBuffer *> samples)
             : mTrack(track), mTimeStampUs(timeUs), mSamples(samples) {
         }
@@ -117,13 +105,6 @@ private:
     struct ChunkInfo {
         Track               *mTrack;        // Owner
         List<Chunk>         mChunks;        // Remaining chunks to be written
-
-        // Previous chunk timestamp that has been written
-        int64_t mPrevChunkTimestampUs;
-
-        // Max time interval between neighboring chunks
-        int64_t mMaxInterChunkDurUs;
-
     };
 
     bool            mIsFirstChunk;
@@ -142,14 +123,13 @@ private:
     void bufferChunk(const Chunk& chunk);
 
     // Write all buffered chunks from all tracks
-    void writeAllChunks();
+    void writeChunks();
 
-    // Retrieve the proper chunk to write if there is one
-    // Return true if a chunk is found; otherwise, return false.
-    bool findChunkToWrite(Chunk *chunk);
+    // Write a chunk if there is one
+    status_t writeOneChunk();
 
-    // Actually write the given chunk to the file.
-    void writeChunkToFile(Chunk* chunk);
+    // Write the first chunk from the given ChunkInfo.
+    void writeFirstChunk(ChunkInfo* info);
 
     // Adjust other track media clock (presumably wall clock)
     // based on audio track media clock with the drift time.
@@ -165,25 +145,16 @@ private:
     void unlock();
 
     // Acquire lock before calling these methods
-    off64_t addSample_l(MediaBuffer *buffer);
-    off64_t addLengthPrefixedSample_l(MediaBuffer *buffer);
+    off_t addSample_l(MediaBuffer *buffer);
+    off_t addLengthPrefixedSample_l(MediaBuffer *buffer);
 
-    inline size_t write(const void *ptr, size_t size, size_t nmemb);
+    inline size_t write(const void *ptr, size_t size, size_t nmemb, FILE* stream);
     bool exceedsFileSizeLimit();
     bool use32BitFileOffset() const;
     bool exceedsFileDurationLimit();
     bool isFileStreamable() const;
-    void trackProgressStatus(size_t trackId, int64_t timeUs, status_t err = OK);
+    void trackProgressStatus(const Track* track, int64_t timeUs, status_t err = OK);
     void writeCompositionMatrix(int32_t degrees);
-    void writeMvhdBox(int64_t durationUs);
-    void writeMoovBox(int64_t durationUs);
-    void writeFtypBox(MetaData *param);
-    void writeUdtaBox();
-    void writeGeoDataBox();
-    void writeLatitude(int degreex10000);
-    void writeLongitude(int degreex10000);
-    void sendSessionSummary();
-    void release();
 
     MPEG4Writer(const MPEG4Writer &);
     MPEG4Writer &operator=(const MPEG4Writer &);

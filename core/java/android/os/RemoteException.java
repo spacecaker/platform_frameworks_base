@@ -24,8 +24,4 @@ public class RemoteException extends AndroidException {
     public RemoteException() {
         super();
     }
-
-    public RemoteException(String message) {
-        super(message);
-    }
 }

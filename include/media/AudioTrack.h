@@ -30,6 +30,7 @@
 #include <binder/IMemory.h>
 #include <utils/threads.h>
 
+
 namespace android {
 
 // ----------------------------------------------------------------------------
@@ -69,8 +70,8 @@ public:
             MUTE    = 0x00000001
         };
         uint32_t    flags;
+        int         channelCount;
         int         format;
-        int         channelCount; // will be removed in the future, do not use
         size_t      frameCount;
         size_t      size;
         union {
@@ -125,15 +126,13 @@ public:
      * Parameters:
      *
      * streamType:         Select the type of audio stream this track is attached to
-     *                     (e.g. AUDIO_STREAM_MUSIC).
+     *                     (e.g. AudioSystem::MUSIC).
      * sampleRate:         Track sampling rate in Hz.
-     * format:             Audio format (e.g AUDIO_FORMAT_PCM_16_BIT for signed
+     * format:             Audio format (e.g AudioSystem::PCM_16_BIT for signed
      *                     16 bits per sample).
-     * channelMask:        Channel mask: see audio_channels_t.
-     * frameCount:         Minimum size of track PCM buffer in frames. This defines the
-     *                     latency of the track. The actual size selected by the AudioTrack could be
-     *                     larger if the requested size is not compatible with current audio HAL
-     *                     latency.
+     * channels:           Channel mask: see AudioSystem::audio_channels.
+     * frameCount:         Total size of track PCM buffer in frames. This defines the
+     *                     latency of the track.
      * flags:              Reserved for future use.
      * cbf:                Callback function. If not null, this function is called periodically
      *                     to request new PCM data.
@@ -145,7 +144,7 @@ public:
                         AudioTrack( int streamType,
                                     uint32_t sampleRate  = 0,
                                     int format           = 0,
-                                    int channelMask      = 0,
+                                    int channels         = 0,
                                     int frameCount       = 0,
                                     uint32_t flags       = 0,
                                     callback_t cbf       = 0,
@@ -165,27 +164,13 @@ public:
                         AudioTrack( int streamType,
                                     uint32_t sampleRate = 0,
                                     int format          = 0,
-                                    int channelMask     = 0,
+                                    int channels        = 0,
                                     const sp<IMemory>& sharedBuffer = 0,
                                     uint32_t flags      = 0,
                                     callback_t cbf      = 0,
                                     void* user          = 0,
                                     int notificationFrames = 0,
                                     int sessionId = 0);
-#ifdef WITH_QCOM_LPA
-    /* Creates an audio track and registers it with AudioFlinger. With this constructor,
-     * session ID of compressed stream can be registered AudioFlinger and AudioHardware,
-     * for routing purpose.
-     */
-
-                        AudioTrack( int streamType,
-                                    uint32_t sampleRate = 0,
-                                    int format          = 0,
-                                    int channels        = 0,
-                                    uint32_t flags      = 0,
-                                    int sessionId       = 0,
-                                    int lpaSessionId    =-1);
-#endif
 
     /* Terminates the AudioTrack and unregisters it from AudioFlinger.
      * Also destroys all resources assotiated with the AudioTrack.
@@ -203,7 +188,7 @@ public:
             status_t    set(int streamType      =-1,
                             uint32_t sampleRate = 0,
                             int format          = 0,
-                            int channelMask     = 0,
+                            int channels        = 0,
                             int frameCount      = 0,
                             uint32_t flags      = 0,
                             callback_t cbf      = 0,
@@ -212,22 +197,7 @@ public:
                             const sp<IMemory>& sharedBuffer = 0,
                             bool threadCanCallJava = false,
                             int sessionId = 0);
-#ifdef WITH_QCOM_LPA
-    /* Initialize an AudioTrack and registers session Id for Tunneled audio decoding.
-     * Returned status (from utils/Errors.h) can be:
-     *  - NO_ERROR: successful intialization
-     *  - INVALID_OPERATION: AudioTrack is already intitialized
-     *  - BAD_VALUE: invalid parameter (channels, format, sampleRate...)
-     *  - NO_INIT: audio server or audio hardware not initialized
-     * */
-            status_t    set(int streamType      =-1,
-                            uint32_t sampleRate = 0,
-                            int format          = 0,
-                            int channels        = 0,
-                            uint32_t flags      = 0,
-                            int sessionId       = 0,
-                            int lpaSessionId    =-1);
-#endif
+
 
     /* Result of constructing the AudioTrack. This must be checked
      * before using any AudioTrack API (except for set()), using
@@ -467,19 +437,15 @@ private:
     };
 
             bool processAudioBuffer(const sp<AudioTrackThread>& thread);
-            status_t createTrack_l(int streamType,
+            status_t createTrack(int streamType,
                                  uint32_t sampleRate,
-                                 uint32_t format,
-                                 uint32_t channelMask,
+                                 int format,
+                                 int channelCount,
                                  int frameCount,
                                  uint32_t flags,
                                  const sp<IMemory>& sharedBuffer,
                                  audio_io_handle_t output,
                                  bool enforceFrameCount);
-            void flush_l();
-            status_t setLoop_l(uint32_t loopStart, uint32_t loopEnd, int loopCount);
-            audio_io_handle_t getOutput_l();
-            status_t restoreTrack_l(audio_track_cblk_t*& cblk, bool fromStart);
 
     sp<IAudioTrack>         mAudioTrack;
     sp<IMemory>             mCblkMemory;
@@ -490,12 +456,11 @@ private:
     uint32_t                mFrameCount;
 
     audio_track_cblk_t*     mCblk;
-    uint32_t                mFormat;
     uint8_t                 mStreamType;
+    uint8_t                 mFormat;
     uint8_t                 mChannelCount;
     uint8_t                 mMuted;
-    uint8_t                 mReserved;
-    uint32_t                mChannelMask;
+    uint32_t                mChannels;
     status_t                mStatus;
     uint32_t                mLatency;
 
@@ -512,15 +477,9 @@ private:
     bool                    mMarkerReached;
     uint32_t                mNewPosition;
     uint32_t                mUpdatePeriod;
-    bool                    mFlushed; // FIXME will be made obsolete by making flush() synchronous
     uint32_t                mFlags;
-#ifdef WITH_QCOM_LPA
-    audio_io_handle_t       mAudioSession;
-#endif
     int                     mSessionId;
     int                     mAuxEffectId;
-    Mutex                   mLock;
-    status_t                mRestoreStatus;
 };
 
 

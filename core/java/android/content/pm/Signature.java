@@ -16,15 +16,11 @@
 
 package android.content.pm;
 
+import android.content.ComponentName;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-import java.io.ByteArrayInputStream;
 import java.lang.ref.SoftReference;
-import java.security.PublicKey;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
 import java.util.Arrays;
 
 /**
@@ -44,43 +40,21 @@ public class Signature implements Parcelable {
         mSignature = signature.clone();
     }
 
-    private static final int parseHexDigit(int nibble) {
-        if ('0' <= nibble && nibble <= '9') {
-            return nibble - '0';
-        } else if ('a' <= nibble && nibble <= 'f') {
-            return nibble - 'a' + 10;
-        } else if ('A' <= nibble && nibble <= 'F') {
-            return nibble - 'A' + 10;
-        } else {
-            throw new IllegalArgumentException("Invalid character " + nibble + " in hex string");
-        }
-    }
-
     /**
      * Create Signature from a text representation previously returned by
-     * {@link #toChars} or {@link #toCharsString()}. Signatures are expected to
-     * be a hex-encoded ASCII string.
-     *
-     * @param text hex-encoded string representing the signature
-     * @throws IllegalArgumentException when signature is odd-length
+     * {@link #toChars} or {@link #toCharsString()}.
      */
     public Signature(String text) {
-        final byte[] input = text.getBytes();
-        final int N = input.length;
-
-        if (N % 2 != 0) {
-            throw new IllegalArgumentException("text size " + N + " is not even");
+        final int N = text.length()/2;
+        byte[] sig = new byte[N];
+        for (int i=0; i<N; i++) {
+            char c = text.charAt(i*2);
+            byte b = (byte)(
+                    (c >= 'a' ? (c - 'a' + 10) : (c - '0'))<<4);
+            c = text.charAt(i*2 + 1);
+            b |= (byte)(c >= 'a' ? (c - 'a' + 10) : (c - '0'));
+            sig[i] = b;
         }
-
-        final byte[] sig = new byte[N / 2];
-        int sigIndex = 0;
-
-        for (int i = 0; i < N;) {
-            final int hi = parseHexDigit(input[i++]);
-            final int lo = parseHexDigit(input[i++]);
-            sig[sigIndex++] = (byte) ((hi << 4) | lo);
-        }
-
         mSignature = sig;
     }
 
@@ -119,7 +93,8 @@ public class Signature implements Parcelable {
     }
 
     /**
-     * Return the result of {@link #toChars()} as a String.
+     * Return the result of {@link #toChars()} as a String.  This result is
+     * cached so future calls will return the same String.
      */
     public String toCharsString() {
         String str = mStringRef == null ? null : mStringRef.get();
@@ -140,26 +115,12 @@ public class Signature implements Parcelable {
         return bytes;
     }
 
-    /**
-     * Returns the public key for this signature.
-     *
-     * @throws CertificateException when Signature isn't a valid X.509
-     *             certificate; shouldn't happen.
-     * @hide
-     */
-    public PublicKey getPublicKey() throws CertificateException {
-        final CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-        final ByteArrayInputStream bais = new ByteArrayInputStream(mSignature);
-        final Certificate cert = certFactory.generateCertificate(bais);
-        return cert.getPublicKey();
-    }
-
     @Override
     public boolean equals(Object obj) {
         try {
             if (obj != null) {
                 Signature other = (Signature)obj;
-                return this == other || Arrays.equals(mSignature, other.mSignature);
+                return Arrays.equals(mSignature, other.mSignature);
             }
         } catch (ClassCastException e) {
         }

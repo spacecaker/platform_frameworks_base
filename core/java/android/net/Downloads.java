@@ -196,7 +196,7 @@ public final class Downloads {
          * @return a boolean whether the download is successful.
          */
         public boolean isSuccessful() {
-            return android.provider.Downloads.Impl.isStatusSuccess(statusCode);
+            return android.provider.Downloads.Impl.isStatusCompleted(statusCode);
         }
     }
 
@@ -430,10 +430,11 @@ public final class Downloads {
 
             ContentResolver cr = context.getContentResolver();
 
-            Cursor c = cr.query(downloadUri, DOWNLOADS_PROJECTION, null /* selection */,
-                    null /* selection args */, null /* sort order */);
+            Cursor c = cr.query(
+                    downloadUri, DOWNLOADS_PROJECTION, null /* selection */, null /* selection args */,
+                    null /* sort order */);
             try {
-                if (c == null || !c.moveToNext()) {
+                if (!c.moveToNext()) {
                     return result;
                 }
 

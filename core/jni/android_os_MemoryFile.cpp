@@ -148,10 +148,17 @@ static const JNINativeMethod methods[] = {
             (void*)android_os_MemoryFile_get_size}
 };
 
+static const char* const kClassPathName = "android/os/MemoryFile";
+
 int register_android_os_MemoryFile(JNIEnv* env)
 {
+    jclass clazz;
+
+    clazz = env->FindClass(kClassPathName);
+    LOG_FATAL_IF(clazz == NULL, "Unable to find class android.os.FileUtils");
+
     return AndroidRuntime::registerNativeMethods(
-        env, "android/os/MemoryFile",
+        env, kClassPathName,
         methods, NELEM(methods));
 }
 

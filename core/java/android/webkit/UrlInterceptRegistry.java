@@ -25,7 +25,6 @@ import java.util.LinkedList;
 import java.util.Map;
 
 /**
- * @hide
  * @deprecated This class was intended to be used by Gears. Since Gears was
  * deprecated, so is this class.
  */
@@ -49,7 +48,6 @@ public final class UrlInterceptRegistry {
      * 
      * @param disabled true to disable the cache
      *
-     * @hide
      * @deprecated This class was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -63,7 +61,6 @@ public final class UrlInterceptRegistry {
      * 
      * @return return if it is disabled
      *
-     * @hide
      * @deprecated This class was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -79,7 +76,6 @@ public final class UrlInterceptRegistry {
      * @param handler The new UrlInterceptHandler object
      * @return true if the handler was not previously registered.
      *
-     * @hide
      * @deprecated This class was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -100,7 +96,6 @@ public final class UrlInterceptRegistry {
      * @param handler A previously registered UrlInterceptHandler.
      * @return true if the handler was found and removed from the list.
      *
-     * @hide
      * @deprecated This class was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -116,7 +111,6 @@ public final class UrlInterceptRegistry {
      *
      * @return A CacheResult containing surrogate content.
      *
-     * @hide
      * @deprecated This class was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -144,7 +138,6 @@ public final class UrlInterceptRegistry {
      *
      * @return A PluginData instance containing surrogate content.
      *
-     * @hide
      * @deprecated This class was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */

@@ -18,6 +18,7 @@ package com.android.internal.telephony.mockril;
 
 import android.os.Bundle;
 import android.util.Log;
+import android.telephony.PhoneNumberUtils;
 
 import com.android.internal.communication.MsgHeader;
 import com.android.internal.communication.Msg;

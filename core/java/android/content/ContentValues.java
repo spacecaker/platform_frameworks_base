@@ -414,8 +414,6 @@ public final class ContentValues implements Parcelable {
         } catch (ClassCastException e) {
             if (value instanceof CharSequence) {
                 return Boolean.valueOf(value.toString());
-            } else if (value instanceof Number) {
-                return ((Number) value).intValue() != 0;
             } else {
                 Log.e(TAG, "Cannot cast value for " + key + " to a Boolean: " + value, e);
                 return null;
@@ -446,15 +444,6 @@ public final class ContentValues implements Parcelable {
      */
     public Set<Map.Entry<String, Object>> valueSet() {
         return mValues.entrySet();
-    }
-
-    /**
-     * Returns a set of all of the keys
-     *
-     * @return a set of all of the keys
-     */
-    public Set<String> keySet() {
-        return mValues.keySet();
     }
 
     public static final Parcelable.Creator<ContentValues> CREATOR =
@@ -499,10 +488,6 @@ public final class ContentValues implements Parcelable {
         return (ArrayList<String>) mValues.get(key);
     }
 
-    /**
-     * Returns a string containing a concise, human-readable description of this object.
-     * @return a printable representation of this object.
-     */
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

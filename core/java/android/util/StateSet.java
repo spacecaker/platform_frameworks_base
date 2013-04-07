@@ -36,14 +36,12 @@ import com.android.internal.R;
  */
 
 public class StateSet {
-    /** @hide */ public StateSet() {}
 
     public static final int[] WILD_CARD = new int[0];
-    public static final int[] NOTHING = new int[] { 0 };
 
     /**
      * Return whether the stateSetOrSpec is matched by all StateSets.
-     *
+     * 
      * @param stateSetOrSpec a state set or state spec.
      */
     public static boolean isWildCard(int[] stateSetOrSpec) {
@@ -52,7 +50,7 @@ public class StateSet {
 
     /**
      * Return whether the stateSet matches the desired stateSpec.
-     *
+     * 
      * @param stateSpec an array of required (if positive) or
      *        prohibited (if negative) {@link android.view.View} states.
      * @param stateSet an array of {@link android.view.View} states
@@ -112,7 +110,7 @@ public class StateSet {
 
     /**
      * Return whether the state matches the desired stateSpec.
-     *
+     * 
      * @param stateSpec an array of required (if positive) or
      *        prohibited (if negative) {@link android.view.View} states.
      * @param state a {@link android.view.View} state
@@ -149,13 +147,13 @@ public class StateSet {
         System.arraycopy(states, 0, trimmedStates, 0, newSize);
         return trimmedStates;
     }
-
+    
     public static String dump(int[] states) {
         StringBuilder sb = new StringBuilder();
-
+        
         int count = states.length;
         for (int i = 0; i < count; i++) {
-
+            
             switch (states[i]) {
             case R.attr.state_window_focused:
                 sb.append("W ");
@@ -174,7 +172,7 @@ public class StateSet {
                 break;
             }
         }
-
+        
         return sb.toString();
     }
 }

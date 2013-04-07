@@ -11,8 +11,6 @@
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/OMXCodec.h>
 
-#include <system/audio.h>
-
 using namespace android;
 
 int main() {
@@ -33,8 +31,8 @@ int main() {
             AUDIO_SOURCE_DEFAULT,
             kSampleRate,
             kNumChannels == 1
-                ? AUDIO_CHANNEL_IN_MONO
-                : AUDIO_CHANNEL_IN_STEREO);
+                ? AudioSystem::CHANNEL_IN_MONO
+                : AudioSystem::CHANNEL_IN_STEREO);
 #endif
 
     sp<MetaData> meta = new MetaData;

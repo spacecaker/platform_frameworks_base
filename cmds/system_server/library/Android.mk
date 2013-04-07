@@ -14,10 +14,6 @@ LOCAL_C_INCLUDES := \
 	$(base)/media/libmediaplayerservice \
 	$(JNI_H_INCLUDE)
 
-ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
-LOCAL_C_INCLUDES +=  hardware/qcom/display/libqcomui
-endif
-
 LOCAL_SHARED_LIBRARIES := \
 	libandroid_runtime \
 	libsensorservice \
@@ -25,7 +21,6 @@ LOCAL_SHARED_LIBRARIES := \
 	libaudioflinger \
     libcameraservice \
     libmediaplayerservice \
-    libinput \
 	libutils \
 	libbinder \
 	libcutils

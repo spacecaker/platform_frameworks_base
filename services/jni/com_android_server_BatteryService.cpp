@@ -32,7 +32,11 @@
 #include <errno.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <cutils/properties.h>
+
+#if HAVE_ANDROID_OS
 #include <linux/ioctl.h>
+#endif
 
 namespace android {
 
@@ -64,7 +68,6 @@ struct BatteryManagerConstants {
     jint healthDead;
     jint healthOverVoltage;
     jint healthUnspecifiedFailure;
-    jint healthCold;
 };
 static BatteryManagerConstants gConstants;
 
@@ -102,7 +105,6 @@ static jint getBatteryStatus(const char* status)
 static jint getBatteryHealth(const char* status)
 {
     switch (status[0]) {
-        case 'C': return gConstants.healthCold;         // Cold
         case 'D': return gConstants.healthDead;         // Dead
         case 'G': return gConstants.healthGood;         // Good
         case 'O': {
@@ -141,10 +143,10 @@ static int readFromFile(const char* path, char* buf, size_t size)
         return -1;
     }
     
-    ssize_t count = read(fd, buf, size);
+    size_t count = read(fd, buf, size);
     if (count > 0) {
-        while (count > 0 && buf[count-1] == '\n')
-            count--;
+        count = (count < size) ? count : size - 1;
+        while (count > 0 && buf[count-1] == '\n') count--;
         buf[count] = '\0';
     } else {
         buf[0] = '\0';
@@ -180,6 +182,25 @@ static void setIntField(JNIEnv* env, jobject obj, const char* path, jfieldID fie
     env->SetIntField(obj, fieldID, value);
 }
 
+static void setPercentageField(JNIEnv* env, jobject obj, const char* path, jfieldID fieldID)
+{
+    const int SIZE = 128;
+    char buf[SIZE];
+
+    jint value = 0;
+    if (readFromFile(path, buf, SIZE) > 0) {
+        value = atoi(buf);
+    }
+    /* sanity check for buggy drivers that provide bogus values, e.g. 103% */
+    if (value < 0) {
+        value = 0;
+    } else if (value > 100) {
+        value = 100;
+    }
+
+    env->SetIntField(obj, fieldID, value);
+}
+
 static void setVoltageField(JNIEnv* env, jobject obj, const char* path, jfieldID fieldID)
 {
     const int SIZE = 128;
@@ -200,7 +221,7 @@ static void android_server_BatteryService_update(JNIEnv* env, jobject obj)
     setBooleanField(env, obj, gPaths.usbOnlinePath, gFieldIds.mUsbOnline);
     setBooleanField(env, obj, gPaths.batteryPresentPath, gFieldIds.mBatteryPresent);
     
-    setIntField(env, obj, gPaths.batteryCapacityPath, gFieldIds.mBatteryLevel);
+    setPercentageField(env, obj, gPaths.batteryCapacityPath, gFieldIds.mBatteryLevel);
     setVoltageField(env, obj, gPaths.batteryVoltagePath, gFieldIds.mBatteryVoltage);
     setIntField(env, obj, gPaths.batteryTemperaturePath, gFieldIds.mBatteryTemperature);
     
@@ -271,9 +292,27 @@ int register_android_server_BatteryService(JNIEnv* env)
                 snprintf(path, sizeof(path), "%s/%s/present", POWER_SUPPLY_PATH, name);
                 if (access(path, R_OK) == 0)
                     gPaths.batteryPresentPath = strdup(path);
-                snprintf(path, sizeof(path), "%s/%s/capacity", POWER_SUPPLY_PATH, name);
-                if (access(path, R_OK) == 0)
-                    gPaths.batteryCapacityPath = strdup(path);
+
+                /* For some weird, unknown reason Motorola phones provide
+                * capacity information only in 10% steps in the 'capacity'
+                * file. The 'charge_counter' file provides the 1% steps
+                * on those phones. Since using charge_counter has issues
+                * on some devices, we'll use ro.product.use_charge_counter
+                * in build.prop to decide which capacity file to use.
+                */
+
+                char valueChargeCounter[PROPERTY_VALUE_MAX];
+
+                if (property_get("ro.product.use_charge_counter", valueChargeCounter, NULL)
+                    && (!strcmp(valueChargeCounter, "1"))) {
+                   snprintf(path, sizeof(path), "%s/%s/charge_counter", POWER_SUPPLY_PATH, name);
+                   if (access(path, R_OK) == 0)
+                       gPaths.batteryCapacityPath = strdup(path);
+                }else{
+                   snprintf(path, sizeof(path), "%s/%s/capacity", POWER_SUPPLY_PATH, name);
+                   if (access(path, R_OK) == 0)
+                       gPaths.batteryCapacityPath = strdup(path);
+                }
 
                 snprintf(path, sizeof(path), "%s/%s/voltage_now", POWER_SUPPLY_PATH, name);
                 if (access(path, R_OK) == 0) {
@@ -389,9 +428,6 @@ int register_android_server_BatteryService(JNIEnv* env)
     gConstants.healthUnspecifiedFailure = env->GetStaticIntField(clazz, 
             env->GetStaticFieldID(clazz, "BATTERY_HEALTH_UNSPECIFIED_FAILURE", "I"));
     
-    gConstants.healthCold = env->GetStaticIntField(clazz,
-            env->GetStaticFieldID(clazz, "BATTERY_HEALTH_COLD", "I"));
-
     return jniRegisterNativeMethods(env, "com/android/server/BatteryService", sMethods, NELEM(sMethods));
 }
 

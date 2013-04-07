@@ -32,18 +32,16 @@ LOCAL_SRC_FILES := \
 	PluginObject.cpp \
 	event/EventPlugin.cpp \
 
-WEBCORE_PATH := external/webkit/Source/WebCore
-
 LOCAL_C_INCLUDES += \
 	$(LOCAL_PATH) \
 	$(LOCAL_PATH)/event \
-	$(WEBCORE_PATH)/bridge \
-	$(WEBCORE_PATH)/plugins \
-	$(WEBCORE_PATH)/platform/android/JavaVM \
-	external/webkit/Source/WebKit/android/plugins
+	external/webkit/WebCore/bridge \
+	external/webkit/WebCore/plugins \
+	external/webkit/WebCore/platform/android/JavaVM \
+	external/webkit/WebKit/android/plugins
 
 LOCAL_CFLAGS += -fvisibility=hidden 
-
+LOCAL_PRELINK_MODULE := false
 
 LOCAL_MODULE := libtestplugin
 LOCAL_MODULE_TAGS := tests

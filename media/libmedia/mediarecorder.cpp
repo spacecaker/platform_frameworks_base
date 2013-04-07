@@ -25,13 +25,12 @@
 #include <media/IMediaPlayerService.h>
 #include <media/IMediaRecorder.h>
 #include <media/mediaplayer.h>  // for MEDIA_ERROR_SERVER_DIED
-#include <gui/ISurfaceTexture.h>
 
 namespace android {
 
-status_t MediaRecorder::setCamera(const sp<ICamera>& camera, const sp<ICameraRecordingProxy>& proxy)
+status_t MediaRecorder::setCamera(const sp<ICamera>& camera)
 {
-    LOGV("setCamera(%p,%p)", camera.get(), proxy.get());
+    LOGV("setCamera(%p)", camera.get());
     if(mMediaRecorder == NULL) {
         LOGE("media recorder is not initialized yet");
         return INVALID_OPERATION;
@@ -41,7 +40,7 @@ status_t MediaRecorder::setCamera(const sp<ICamera>& camera, const sp<ICameraRec
         return INVALID_OPERATION;
     }
 
-    status_t ret = mMediaRecorder->setCamera(camera, proxy);
+    status_t ret = mMediaRecorder->setCamera(camera);
     if (OK != ret) {
         LOGV("setCamera failed: %d", ret);
         mCurrentState = MEDIA_RECORDER_ERROR;
@@ -66,7 +65,7 @@ status_t MediaRecorder::setPreviewSurface(const sp<Surface>& surface)
         return INVALID_OPERATION;
     }
 
-    status_t ret = mMediaRecorder->setPreviewSurface(surface);
+    status_t ret = mMediaRecorder->setPreviewSurface(surface->getISurface());
     if (OK != ret) {
         LOGV("setPreviewSurface failed: %d", ret);
         mCurrentState = MEDIA_RECORDER_ERROR;
@@ -128,9 +127,7 @@ status_t MediaRecorder::setVideoSource(int vs)
         return INVALID_OPERATION;
     }
 
-    // following call is made over the Binder Interface
     status_t ret = mMediaRecorder->setVideoSource(vs);
-
     if (OK != ret) {
         LOGV("setVideoSource failed: %d", ret);
         mCurrentState = MEDIA_RECORDER_ERROR;
@@ -301,17 +298,6 @@ status_t MediaRecorder::setOutputFile(int fd, int64_t offset, int64_t length)
         return INVALID_OPERATION;
     }
 
-    // It appears that if an invalid file descriptor is passed through
-    // binder calls, the server-side of the inter-process function call
-    // is skipped. As a result, the check at the server-side to catch
-    // the invalid file descritpor never gets invoked. This is to workaround
-    // this issue by checking the file descriptor first before passing
-    // it through binder call.
-    if (fd < 0) {
-        LOGE("Invalid file descriptor: %d", fd);
-        return BAD_VALUE;
-    }
-
     status_t ret = mMediaRecorder->setOutputFile(fd, offset, length);
     if (OK != ret) {
         LOGV("setOutputFile failed: %d", ret);
@@ -334,7 +320,7 @@ status_t MediaRecorder::setVideoSize(int width, int height)
         return INVALID_OPERATION;
     }
     if (!mIsVideoSourceSet) {
-        LOGE("Cannot set video size without setting video source first");
+        LOGE("try to set video size without setting video source first");
         return INVALID_OPERATION;
     }
 
@@ -344,26 +330,8 @@ status_t MediaRecorder::setVideoSize(int width, int height)
         mCurrentState = MEDIA_RECORDER_ERROR;
         return ret;
     }
-
     return ret;
 }
-
-// Query a SurfaceMediaSurface through the Mediaserver, over the
-// binder interface. This is used by the Filter Framework (MeidaEncoder)
-// to get an <ISurfaceTexture> object to hook up to ANativeWindow.
-sp<ISurfaceTexture> MediaRecorder::
-        querySurfaceMediaSourceFromMediaServer()
-{
-    Mutex::Autolock _l(mLock);
-    mSurfaceMediaSource =
-            mMediaRecorder->querySurfaceMediaSource();
-    if (mSurfaceMediaSource == NULL) {
-        LOGE("SurfaceMediaSource could not be initialized!");
-    }
-    return mSurfaceMediaSource;
-}
-
-
 
 status_t MediaRecorder::setVideoFrameRate(int frames_per_second)
 {
@@ -377,7 +345,7 @@ status_t MediaRecorder::setVideoFrameRate(int frames_per_second)
         return INVALID_OPERATION;
     }
     if (!mIsVideoSourceSet) {
-        LOGE("Cannot set video frame rate without setting video source first");
+        LOGE("try to set video frame rate without setting video source first");
         return INVALID_OPERATION;
     }
 
@@ -412,6 +380,28 @@ status_t MediaRecorder::setParameters(const String8& params) {
         // Do not change our current state to MEDIA_RECORDER_ERROR, failures
         // of the only currently supported parameters, "max-duration" and
         // "max-filesize" are _not_ fatal.
+    }
+
+    return ret;
+}
+
+status_t MediaRecorder::setCameraParameters(const String8& params) {
+    LOGV("setCameraParameters(%s)", params.string());
+    if(mMediaRecorder == NULL) {
+        LOGE("media recorder is not initialized yet");
+        return INVALID_OPERATION;
+    }
+
+    bool isInvalidState = (mCurrentState &
+                            MEDIA_RECORDER_ERROR);
+    if (isInvalidState) {
+        LOGE("setCameraParameters is called in an invalid state: %d", mCurrentState);
+        return INVALID_OPERATION;
+    }
+
+    status_t ret = mMediaRecorder->setCameraParameters(params);
+    if (OK != ret) {
+        LOGE("setCameraParameters(%s) failed: %d", params.string(), ret);
     }
 
     return ret;
@@ -615,7 +605,7 @@ status_t MediaRecorder::release()
     return INVALID_OPERATION;
 }
 
-MediaRecorder::MediaRecorder() : mSurfaceMediaSource(NULL)
+MediaRecorder::MediaRecorder()
 {
     LOGV("constructor");
 
@@ -626,8 +616,6 @@ MediaRecorder::MediaRecorder() : mSurfaceMediaSource(NULL)
     if (mMediaRecorder != NULL) {
         mCurrentState = MEDIA_RECORDER_IDLE;
     }
-
-
     doCleanUp();
 }
 
@@ -641,10 +629,6 @@ MediaRecorder::~MediaRecorder()
     LOGV("destructor");
     if (mMediaRecorder != NULL) {
         mMediaRecorder.clear();
-    }
-
-    if (mSurfaceMediaSource != NULL) {
-        mSurfaceMediaSource.clear();
     }
 }
 
@@ -681,3 +665,4 @@ void MediaRecorder::died()
 }
 
 }; // namespace android
+

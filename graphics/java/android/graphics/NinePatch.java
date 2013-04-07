@@ -35,12 +35,6 @@ package android.graphics;
  * </p>
  */
 public class NinePatch {
-    private final Bitmap mBitmap;
-    private final byte[] mChunk;
-    private Paint mPaint;
-    private String mSrcName;  // Useful for debugging
-    private final RectF mRect = new RectF();
-    
     /** 
      * Create a drawable projection from a bitmap to nine patches.
      *
@@ -80,14 +74,10 @@ public class NinePatch {
      * @param location  Where to draw the bitmap.
      */
     public void draw(Canvas canvas, RectF location) {
-        if (!canvas.isHardwareAccelerated()) {
-            nativeDraw(canvas.mNativeCanvas, location,
-                       mBitmap.ni(), mChunk,
-                       mPaint != null ? mPaint.mNativePaint : 0,
-                       canvas.mDensity, mBitmap.mDensity);
-        } else {
-            canvas.drawPatch(mBitmap, mChunk, location, mPaint);
-        }
+        nativeDraw(canvas.mNativeCanvas, location,
+                   mBitmap.ni(), mChunk,
+                   mPaint != null ? mPaint.mNativePaint : 0,
+                   canvas.mDensity, mBitmap.mDensity);
     }
     
     /** 
@@ -97,15 +87,10 @@ public class NinePatch {
      * @param location  Where to draw the bitmap.
      */
     public void draw(Canvas canvas, Rect location) {
-        if (!canvas.isHardwareAccelerated()) {
-            nativeDraw(canvas.mNativeCanvas, location,
-                        mBitmap.ni(), mChunk,
-                        mPaint != null ? mPaint.mNativePaint : 0,
-                        canvas.mDensity, mBitmap.mDensity);
-        } else {
-            mRect.set(location);
-            canvas.drawPatch(mBitmap, mChunk, mRect, mPaint);
-        }
+        nativeDraw(canvas.mNativeCanvas, location,
+                mBitmap.ni(), mChunk,
+                mPaint != null ? mPaint.mNativePaint : 0,
+                canvas.mDensity, mBitmap.mDensity);
     }
 
     /** 
@@ -116,14 +101,9 @@ public class NinePatch {
      * @param paint     The Paint to draw through.
      */
     public void draw(Canvas canvas, Rect location, Paint paint) {
-        if (!canvas.isHardwareAccelerated()) {
-            nativeDraw(canvas.mNativeCanvas, location,
-                    mBitmap.ni(), mChunk, paint != null ? paint.mNativePaint : 0,
-                    canvas.mDensity, mBitmap.mDensity);
-        } else {
-            mRect.set(location);
-            canvas.drawPatch(mBitmap, mChunk, mRect, paint);
-        }
+        nativeDraw(canvas.mNativeCanvas, location,
+                mBitmap.ni(), mChunk, paint != null ? paint.mNativePaint : 0,
+                canvas.mDensity, mBitmap.mDensity);
     }
 
     /**
@@ -152,6 +132,11 @@ public class NinePatch {
     }
     
     public native static boolean isNinePatchChunk(byte[] chunk);
+
+    private final Bitmap mBitmap;
+    private final byte[] mChunk;
+    private Paint        mPaint;
+    private String       mSrcName;  // Useful for debugging
 
     private static native void validateNinePatchChunk(int bitmap, byte[] chunk);
     private static native void nativeDraw(int canvas_instance, RectF loc, int bitmap_instance,

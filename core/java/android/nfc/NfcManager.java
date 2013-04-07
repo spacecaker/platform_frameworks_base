@@ -28,12 +28,6 @@ import android.content.Context;
  * Alternately, you can just call the static helper
  * {@link NfcAdapter#getDefaultAdapter(android.content.Context)}.
  *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For more information about using NFC, read the
- * <a href="{@docRoot}guide/topics/nfc/index.html">Near Field Communication</a> developer guide.</p>
- * </div>
- *
  * @see Context#getSystemService
  * @see NfcAdapter#getDefaultAdapter(android.content.Context)
  */
@@ -45,9 +39,8 @@ public final class NfcManager {
      */
     public NfcManager(Context context) {
         NfcAdapter adapter;
-        context = context.getApplicationContext();
         try {
-            adapter = NfcAdapter.getNfcAdapter(context);
+            adapter = new NfcAdapter(context);
         } catch (UnsupportedOperationException e) {
             adapter = null;
         }

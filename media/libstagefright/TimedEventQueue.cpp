@@ -30,6 +30,7 @@
 
 #include <sys/prctl.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 
 #include <media/stagefright/MediaDebug.h>
 
@@ -209,7 +210,8 @@ void *TimedEventQueue::ThreadWrapper(void *me) {
     vm->AttachCurrentThread(&env, NULL);
 #endif
 
-    androidSetThreadPriority(0, ANDROID_PRIORITY_FOREGROUND);
+    setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_FOREGROUND);
+    set_sched_policy(androidGetTid(), SP_FOREGROUND);
 
     static_cast<TimedEventQueue *>(me)->threadEntry();
 

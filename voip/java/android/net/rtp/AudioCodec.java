@@ -33,6 +33,7 @@ import java.util.Arrays;
  * </pre>
  *
  * @see AudioStream
+ * @hide
  */
 public class AudioCodec {
     /**

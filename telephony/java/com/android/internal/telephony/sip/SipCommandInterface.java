@@ -144,10 +144,10 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     public void getSignalStrength (Message result) {
     }
 
-    public void getVoiceRegistrationState (Message result) {
+    public void getRegistrationState (Message result) {
     }
 
-    public void getDataRegistrationState (Message result) {
+    public void getGPRSRegistrationState (Message result) {
     }
 
     public void getOperator(Message result) {
@@ -184,12 +184,19 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     public void writeSmsToRuim(int status, String pdu, Message response) {
     }
 
-    public void setupDataCall(String radioTechnology, String profile,
-            String apn, String user, String password, String authType,
-            String protocol, Message result) {
+    public void setupDefaultPDP(String apn, String user, String password,
+            Message result) {
     }
 
-    public void deactivateDataCall(int cid, int reason, Message result) {
+    public void deactivateDefaultPDP(int cid, Message result) {
+    }
+
+    public void setupDataCall(String radioTechnology, String profile,
+            String apn, String user, String password, String authType,
+            String protcol, Message result) {
+    }
+
+    public void deactivateDataCall(int cid, Message result) {
     }
 
     public void setRadioPower(boolean on, Message result) {
@@ -206,9 +213,6 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
             Message result) {
     }
 
-    public void acknowledgeIncomingGsmSmsWithPdu(boolean success, String ackPdu,
-            Message result) {
-    }
 
     public void iccIO (int command, int fileid, String path, int p1, int p2,
             int p3, String data, String pin2, Message result) {
@@ -254,24 +258,12 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     public void getBasebandVersion (Message response) {
     }
 
-    @Override
-    public void queryFacilityLock(String facility, String password,
+    public void queryFacilityLock (String facility, String password,
             int serviceClass, Message response) {
     }
 
-    @Override
-    public void queryFacilityLockForApp(String facility, String password,
-            int serviceClass, String appId, Message response) {
-    }
-
-    @Override
-    public void setFacilityLock(String facility, boolean lockState,
+    public void setFacilityLock (String facility, boolean lockState,
             String password, int serviceClass, Message response) {
-    }
-
-    @Override
-    public void setFacilityLockForApp(String facility, boolean lockState,
-            String password, int serviceClass, String appId, Message response) {
     }
 
     public void sendUSSD (String ussdString, Message response) {
@@ -299,9 +291,6 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     }
 
     public void sendEnvelope(String contents, Message response) {
-    }
-
-    public void sendEnvelopeWithStatus(String contents, Message response) {
     }
 
     public void handleCallSetupRequestFromSim(
@@ -332,10 +321,6 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     public void reportStkServiceIsRunning(Message result) {
     }
 
-    @Override
-    public void getCdmaSubscriptionSource(Message response) {
-    }
-
     public void getGsmBroadcastConfig(Message response) {
     }
 
@@ -361,7 +346,7 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     public void setCdmaRoamingPreference(int cdmaRoamingType, Message response) {
     }
 
-    public void setCdmaSubscriptionSource(int cdmaSubscription , Message response) {
+    public void setCdmaSubscription(int cdmaSubscription , Message response) {
     }
 
     public void queryTTYMode(Message response) {
@@ -383,47 +368,5 @@ class SipCommandInterface extends BaseCommands implements CommandsInterface {
     }
 
     public void exitEmergencyCallbackMode(Message response) {
-    }
-
-    @Override
-    public void supplyIccPinForApp(String pin, String aid, Message response) {
-    }
-
-    @Override
-    public void supplyIccPukForApp(String puk, String newPin, String aid, Message response) {
-    }
-
-    @Override
-    public void supplyIccPin2ForApp(String pin2, String aid, Message response) {
-    }
-
-    @Override
-    public void supplyIccPuk2ForApp(String puk2, String newPin2, String aid, Message response) {
-    }
-
-    @Override
-    public void changeIccPinForApp(String oldPin, String newPin, String aidPtr, Message response) {
-    }
-
-    @Override
-    public void changeIccPin2ForApp(String oldPin2, String newPin2, String aidPtr,
-            Message response) {
-    }
-
-    public void requestIsimAuthentication(String nonce, Message response) {
-    }
-
-    public boolean needsOldRilFeature(String feature) { return false; }
-
-    /**
-     * added samsung part to command interface
-     * @param h
-     * @param what
-     * @param obj
-     */
-    public void setOnCatSendSmsResult(Handler h, int what, Object obj) {
-    }
-
-    public void unSetOnCatSendSmsResult(Handler h) {
     }
 }

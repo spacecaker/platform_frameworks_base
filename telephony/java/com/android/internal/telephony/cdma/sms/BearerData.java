@@ -20,6 +20,8 @@ import static android.telephony.SmsMessage.ENCODING_16BIT;
 import static android.telephony.SmsMessage.MAX_USER_DATA_BYTES;
 import static android.telephony.SmsMessage.MAX_USER_DATA_BYTES_WITH_HEADER;
 
+import android.os.SystemProperties;
+
 import android.util.Log;
 
 import android.telephony.SmsMessage;
@@ -36,7 +38,6 @@ import com.android.internal.util.BitwiseOutputStream;
 
 import android.content.res.Resources;
 
-import java.util.TimeZone;
 
 
 /**
@@ -46,13 +47,13 @@ public final class BearerData {
     private final static String LOG_TAG = "SMS";
 
     /**
-     * Bearer Data Subparameter Identifiers
+     * Bearer Data Subparameter Indentifiers
      * (See 3GPP2 C.S0015-B, v2.0, table 4.5-1)
      * NOTE: Commented subparameter types are not implemented.
      */
     private final static byte SUBPARAM_MESSAGE_IDENTIFIER               = 0x00;
     private final static byte SUBPARAM_USER_DATA                        = 0x01;
-    private final static byte SUBPARAM_USER_RESPONSE_CODE               = 0x02;
+    private final static byte SUBPARAM_USER_REPONSE_CODE                = 0x02;
     private final static byte SUBPARAM_MESSAGE_CENTER_TIME_STAMP        = 0x03;
     private final static byte SUBPARAM_VALIDITY_PERIOD_ABSOLUTE         = 0x04;
     private final static byte SUBPARAM_VALIDITY_PERIOD_RELATIVE         = 0x05;
@@ -232,7 +233,7 @@ public final class BearerData {
     public static class TimeStamp extends Time {
 
         public TimeStamp() {
-            super(TimeZone.getDefault().getID());   // 3GPP2 timestamps use the local timezone
+            super(Time.TIMEZONE_UTC);
         }
 
         public static TimeStamp fromByteArray(byte[] data) {
@@ -697,7 +698,7 @@ public final class BearerData {
     /*
      * TODO(cleanup): CdmaSmsAddress encoding should make use of
      * CdmaSmsAddress.parse provided that DTMF encoding is unified,
-     * and the difference in 4-bit vs. 8-bit is resolved.
+     * and the difference in 4bit vs 8bit is resolved.
      */
 
     private static void encodeCdmaSmsAddress(CdmaSmsAddress addr) throws CodingException {
@@ -805,7 +806,6 @@ public final class BearerData {
      * (See 3GPP2 C.R1001-F, v1.0, section 4.5 for layout details)
      *
      * @param bData an instance of BearerData.
-     *
      * @return byte array of raw encoded SMS bearer data.
      */
     public static byte[] encode(BearerData bData) {
@@ -878,11 +878,9 @@ public final class BearerData {
             paramBits -= EXPECTED_PARAM_SIZE;
             decodeSuccess = true;
             bData.messageType = inStream.read(4);
-            // Some Samsung CDMAphones parses messageId differently than other devices
+            // Samsung Fascinate parses messageId differently than other devices
             // fix it here so that incoming sms works correctly
-            boolean hasSamsungCDMAAlternateMessageIDEncoding = Resources.getSystem()
-                    .getBoolean(com.android.internal.R.bool.config_smsSamsungCdmaAlternateMessageIDEncoding);
-            if (hasSamsungCDMAAlternateMessageIDEncoding) {
+            if ("fascinatemtd".equals(SystemProperties.get("ro.cm.device"))) {
                 inStream.skip(4);
                 bData.messageId = inStream.read(8) << 8;
                 bData.messageId |= inStream.read(8);
@@ -1587,7 +1585,7 @@ public final class BearerData {
                 case SUBPARAM_USER_DATA:
                     decodeSuccess = decodeUserData(bData, inStream);
                     break;
-                case SUBPARAM_USER_RESPONSE_CODE:
+                case SUBPARAM_USER_REPONSE_CODE:
                     decodeSuccess = decodeUserResponseCode(bData, inStream);
                     break;
                 case SUBPARAM_REPLY_OPTION:

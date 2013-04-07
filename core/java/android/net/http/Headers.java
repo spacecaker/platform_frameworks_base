@@ -16,6 +16,7 @@
 
 package android.net.http;
 
+import android.util.Config;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -200,7 +201,7 @@ public final class Headers {
                 try {
                     contentLength = Long.parseLong(val);
                 } catch (NumberFormatException e) {
-                    if (false) {
+                    if (Config.LOGV) {
                         Log.v(LOGTAG, "Headers.headers(): error parsing"
                                 + " content length: " + buffer.toString());
                     }
@@ -448,7 +449,7 @@ public final class Headers {
         }
         int extraLen = mExtraHeaderNames.size();
         for (int i = 0; i < extraLen; i++) {
-            if (false) {
+            if (Config.LOGV) {
                 HttpLog.v("Headers.getHeaders() extra: " + i + " " +
                           mExtraHeaderNames.get(i) + " " + mExtraHeaderValues.get(i));
             }

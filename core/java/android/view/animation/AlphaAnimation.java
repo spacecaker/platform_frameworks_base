@@ -78,12 +78,4 @@ public class AlphaAnimation extends Animation {
     public boolean willChangeBounds() {
         return false;
     }
-
-    /**
-     * @hide
-     */
-    @Override
-    public boolean hasAlpha() {
-        return true;
-    }
 }

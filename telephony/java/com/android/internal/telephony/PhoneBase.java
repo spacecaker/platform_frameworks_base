@@ -21,8 +21,6 @@ import android.app.IActivityManager;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.SharedPreferences;
-import android.net.LinkCapabilities;
-import android.net.LinkProperties;
 import android.net.wifi.WifiManager;
 import android.os.AsyncResult;
 import android.os.Handler;
@@ -37,12 +35,10 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.internal.R;
-import com.android.internal.telephony.gsm.UsimServiceTable;
-import com.android.internal.telephony.ims.IsimRecords;
+import com.android.internal.telephony.gsm.GsmDataConnection;
 import com.android.internal.telephony.test.SimulatedRadioControl;
-import com.android.internal.telephony.gsm.SIMRecords;
-import com.android.internal.telephony.gsm.SimCard;
 
+import java.util.List;
 import java.util.Locale;
 
 
@@ -113,18 +109,12 @@ public abstract class PhoneBase extends Handler implements Phone {
     /* Instance Variables */
     public CommandsInterface mCM;
     protected IccFileHandler mIccFileHandler;
-    boolean mDnsCheckDisabled;
-    public DataConnectionTracker mDataConnectionTracker;
+    boolean mDnsCheckDisabled = false;
+    public DataConnectionTracker mDataConnection;
     boolean mDoesRilSendMultipleCallRing;
-    int mCallRingContinueToken;
+    int mCallRingContinueToken = 0;
     int mCallRingDelay;
     public boolean mIsTheCurrentActivePhone = true;
-    boolean mIsVoiceCapable = true;
-    public IccRecords mIccRecords;
-    public IccCard mIccCard;
-    public SmsStorageMonitor mSmsStorageMonitor;
-    public SmsUsageMonitor mSmsUsageMonitor;
-    public SMSDispatcher mSMS;
 
     /**
      * Set a system property, unless we're in unit test mode
@@ -167,7 +157,7 @@ public abstract class PhoneBase extends Handler implements Phone {
 
     protected Looper mLooper; /* to insure registrants are in correct thread*/
 
-    protected final Context mContext;
+    protected Context mContext;
 
     /**
      * PhoneNotifier is an abstraction for all system-wide
@@ -215,15 +205,6 @@ public abstract class PhoneBase extends Handler implements Phone {
         mDnsCheckDisabled = sp.getBoolean(DNS_SERVER_CHECK_DISABLED_KEY, false);
         mCM.setOnCallRing(this, EVENT_CALL_RING, null);
 
-        /* "Voice capable" means that this device supports circuit-switched
-        * (i.e. voice) phone calls over the telephony network, and is allowed
-        * to display the in-call UI while a cellular voice call is active.
-        * This will be false on "data only" devices which can't make voice
-        * calls and don't support any in-call UI.
-        */
-        mIsVoiceCapable = mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_voice_capable);
-
         /**
          *  Some RIL's don't always send RIL_UNSOL_CALL_RING so it needs
          *  to be generated locally. Ideally all ring tones should be loops
@@ -241,27 +222,14 @@ public abstract class PhoneBase extends Handler implements Phone {
         mCallRingDelay = SystemProperties.getInt(
                 TelephonyProperties.PROPERTY_CALL_RING_DELAY, 3000);
         Log.d(LOG_TAG, "mCallRingDelay=" + mCallRingDelay);
-
-        // Initialize device storage and outgoing SMS usage monitors for SMSDispatchers.
-        mSmsStorageMonitor = new SmsStorageMonitor(this);
-        mSmsUsageMonitor = new SmsUsageMonitor(context.getContentResolver());
     }
 
     public void dispose() {
         synchronized(PhoneProxy.lockForRadioTechnologyChange) {
             mCM.unSetOnCallRing(this);
-            // Must cleanup all connectionS and needs to use sendMessage!
-            mDataConnectionTracker.cleanUpAllConnections(null);
+            mDataConnection.onCleanUpConnection(false, REASON_RADIO_TURNED_OFF);
             mIsTheCurrentActivePhone = false;
-            // Dispose the SMS usage and storage monitors
-            mSmsStorageMonitor.dispose();
-            mSmsUsageMonitor.dispose();
         }
-    }
-
-    public void removeReferences() {
-        mSmsStorageMonitor = null;
-        mSmsUsageMonitor = null;
     }
 
     /**
@@ -590,23 +558,28 @@ public abstract class PhoneBase extends Handler implements Phone {
             String c = carrierLocales[i].toString();
             if (carrier.equals(c)) {
                 String l = carrierLocales[i+1].toString();
+                int wifiChannels = 0;
+                try {
+                    wifiChannels = Integer.parseInt(
+                            carrierLocales[i+2].toString());
+                } catch (NumberFormatException e) { }
 
                 String language = l.substring(0, 2);
                 String country = "";
                 if (l.length() >=5) {
                     country = l.substring(3, 5);
                 }
-                setSystemLocale(language, country, false);
+                setSystemLocale(language, country);
 
-                if (!country.isEmpty()) {
+                if (wifiChannels != 0) {
                     try {
                         Settings.Secure.getInt(mContext.getContentResolver(),
-                                Settings.Secure.WIFI_COUNTRY_CODE);
+                                Settings.Secure.WIFI_NUM_ALLOWED_CHANNELS);
                     } catch (Settings.SettingNotFoundException e) {
                         // note this is not persisting
                         WifiManager wM = (WifiManager)
                                 mContext.getSystemService(Context.WIFI_SERVICE);
-                        wM.setCountryCode(country, false);
+                        wM.setNumAllowedChannels(wifiChannels, false);
                     }
                 }
                 return;
@@ -618,14 +591,10 @@ public abstract class PhoneBase extends Handler implements Phone {
      * Utility code to set the system locale if it's not set already
      * @param language Two character language code desired
      * @param country Two character country code desired
-     * @param fromMcc Indicating whether the locale is set according to MCC table.
-     *                This flag wil be ignored by default implementation.
-     *                TODO: Use a source enumeration so that source of the locale
-     *                      can be prioritized.
      *
      *  {@hide}
      */
-    public void setSystemLocale(String language, String country, boolean fromMcc) {
+    public void setSystemLocale(String language, String country) {
         String l = SystemProperties.get("persist.sys.language");
         String c = SystemProperties.get("persist.sys.country");
 
@@ -688,45 +657,6 @@ public abstract class PhoneBase extends Handler implements Phone {
     }
 
     /**
-    * Retrieves the ServiceStateTracker of the phone instance.
-    */
-    public ServiceStateTracker getServiceStateTracker() {
-        return null;
-    }
-
-    /**
-    * Get call tracker
-    */
-    public CallTracker getCallTracker() {
-        return null;
-    }
-
-    @Override
-    public IccCard getIccCard() {
-        return mIccCard;
-    }
-
-    @Override
-    public String getIccSerialNumber() {
-        return mIccRecords.iccid;
-    }
-
-    @Override
-    public boolean getIccRecordsLoaded() {
-        return mIccRecords.getRecordsLoaded();
-    }
-
-    @Override
-    public boolean getMessageWaitingIndicator() {
-        return mIccRecords.getVoiceMessageWaiting();
-    }
-
-    @Override
-    public boolean getCallForwardingIndicator() {
-        return mIccRecords.getVoiceCallForwardingFlag();
-    }
-
-    /**
      *  Query the status of the CDMA roaming preference
      */
     public void queryCdmaRoamingPreference(Message response) {
@@ -744,7 +674,7 @@ public abstract class PhoneBase extends Handler implements Phone {
      *  Set the status of the CDMA subscription mode
      */
     public void setCdmaSubscription(int cdmaSubscriptionType, Message response) {
-        mCM.setCdmaSubscriptionSource(cdmaSubscriptionType, response);
+        mCM.setCdmaSubscription(cdmaSubscriptionType, response);
     }
 
     /**
@@ -805,48 +735,12 @@ public abstract class PhoneBase extends Handler implements Phone {
     }
 
     public void notifyMessageWaitingIndicator() {
-        // Do not notify voice mail waiting if device doesn't support voice
-        if (!mIsVoiceCapable)
-            return;
-
         // This function is added to send the notification to DefaultPhoneNotifier.
         mNotifier.notifyMessageWaitingChanged(this);
     }
 
-    public void notifyDataConnection(String reason, String apnType,
-            Phone.DataState state) {
-        mNotifier.notifyDataConnection(this, reason, apnType, state);
-    }
-
-    public void notifyDataConnection(String reason, String apnType) {
-        mNotifier.notifyDataConnection(this, reason, apnType, getDataConnectionState(apnType));
-    }
-
     public void notifyDataConnection(String reason) {
-        String types[] = getActiveApnTypes();
-        for (String apnType : types) {
-            mNotifier.notifyDataConnection(this, reason, apnType, getDataConnectionState(apnType));
-        }
-    }
-
-    public void notifyOtaspChanged(int otaspMode) {
-        mNotifier.notifyOtaspChanged(this, otaspMode);
-    }
-
-    /**
-     * @return true if a mobile originating emergency call is active
-     */
-    public boolean isInEmergencyCall() {
-        return false;
-    }
-
-    /**
-     * @return true if we are in the emergency call back mode. This is a period where
-     * the phone should be using as little power as possible and be ready to receive an
-     * incoming call from the emergency operator.
-     */
-    public boolean isInEcm() {
-        return false;
+        mNotifier.notifyDataConnection(this, reason);
     }
 
     public abstract String getPhoneName();
@@ -932,19 +826,9 @@ public abstract class PhoneBase extends Handler implements Phone {
         logUnexpectedCdmaMethodCall("unregisterForSubscriptionInfoReady");
     }
 
-    /**
-     * Returns true if OTA Service Provisioning needs to be performed.
-     * If not overridden return false.
-     */
-    public boolean needsOtaServiceProvisioning() {
-        return false;
-    }
-
-    /**
-     * Return true if number is an OTASP number.
-     * If not overridden return false.
-     */
     public  boolean isOtaSpNumber(String dialStr) {
+        // This function should be overridden by the class CDMAPhone. Not implemented in GSMPhone.
+        logUnexpectedCdmaMethodCall("isOtaSpNumber");
         return false;
     }
 
@@ -1034,37 +918,71 @@ public abstract class PhoneBase extends Handler implements Phone {
          logUnexpectedCdmaMethodCall("unsetOnEcbModeExitResponse");
      }
 
+    public String getInterfaceName(String apnType) {
+        return mDataConnection.getInterfaceName(apnType);
+    }
+
+    public String getIpAddress(String apnType) {
+        return mDataConnection.getIpAddress(apnType);
+    }
+
+    public boolean isDataConnectivityEnabled() {
+        return mDataConnection.getDataEnabled();
+    }
+
+    public String getGateway(String apnType) {
+        return mDataConnection.getGateway(apnType);
+    }
+
+    public String[] getDnsServers(String apnType) {
+        return mDataConnection.getDnsServers(apnType);
+    }
+
     public String[] getActiveApnTypes() {
-        return mDataConnectionTracker.getActiveApnTypes();
+        return mDataConnection.getActiveApnTypes();
     }
 
-    public String getActiveApnHost(String apnType) {
-        return mDataConnectionTracker.getActiveApnString(apnType);
-    }
-
-    public LinkProperties getLinkProperties(String apnType) {
-        return mDataConnectionTracker.getLinkProperties(apnType);
-    }
-
-    public LinkCapabilities getLinkCapabilities(String apnType) {
-        return mDataConnectionTracker.getLinkCapabilities(apnType);
+    public String getActiveApn() {
+        return mDataConnection.getActiveApnString();
     }
 
     public int enableApnType(String type) {
-        return mDataConnectionTracker.enableApnType(type);
+        return mDataConnection.enableApnType(type);
     }
 
     public int disableApnType(String type) {
-        return mDataConnectionTracker.disableApnType(type);
+        return mDataConnection.disableApnType(type);
     }
 
-    public boolean isDataConnectivityPossible() {
-        return isDataConnectivityPossible(Phone.APN_TYPE_DEFAULT);
-    }
+    /**
+     * simulateDataConnection
+     *
+     * simulates various data connection states. This messes with
+     * DataConnectionTracker's internal states, but doesn't actually change
+     * the underlying radio connection states.
+     *
+     * @param state Phone.DataState enum.
+     */
+    public void simulateDataConnection(Phone.DataState state) {
+        DataConnectionTracker.State dcState;
 
-    public boolean isDataConnectivityPossible(String apnType) {
-        return ((mDataConnectionTracker != null) &&
-                (mDataConnectionTracker.isDataPossible(apnType)));
+        switch (state) {
+            case CONNECTED:
+                dcState = DataConnectionTracker.State.CONNECTED;
+                break;
+            case SUSPENDED:
+                dcState = DataConnectionTracker.State.CONNECTED;
+                break;
+            case DISCONNECTED:
+                dcState = DataConnectionTracker.State.FAILED;
+                break;
+            default:
+                dcState = DataConnectionTracker.State.CONNECTING;
+                break;
+        }
+
+        mDataConnection.setState(dcState);
+        notifyDataConnection(null);
     }
 
     /**
@@ -1073,11 +991,9 @@ public abstract class PhoneBase extends Handler implements Phone {
      * version scoped to their packages
      */
     protected void notifyNewRingingConnectionP(Connection cn) {
-        if (!mIsVoiceCapable)
-            return;
         AsyncResult ar = new AsyncResult(null, cn, null);
         if (SystemProperties.getBoolean(
-                "ro.telephony.call_ring.absent", true)) {
+                "ro.telephony.call_ring.absent", false)) {
             sendMessageDelayed(
                     obtainMessage(EVENT_CALL_RING_CONTINUE, mCallRingContinueToken, 0), mCallRingDelay);
         }
@@ -1088,8 +1004,6 @@ public abstract class PhoneBase extends Handler implements Phone {
      * Notify registrants of a RING event.
      */
     private void notifyIncomingRing() {
-        if (!mIsVoiceCapable)
-            return;
         AsyncResult ar = new AsyncResult(null, this, null);
         mIncomingRingRegistrants.notifyRegistrants(ar);
     }
@@ -1098,8 +1012,7 @@ public abstract class PhoneBase extends Handler implements Phone {
      * Send the incoming call Ring notification if conditions are right.
      */
     private void sendIncomingCallRingNotification(int token) {
-        if (mIsVoiceCapable && !mDoesRilSendMultipleCallRing &&
-                (token == mCallRingContinueToken)) {
+        if (!mDoesRilSendMultipleCallRing && (token == mCallRingContinueToken)) {
             Log.d(LOG_TAG, "Sending notifyIncomingRing");
             notifyIncomingRing();
             sendMessageDelayed(
@@ -1108,8 +1021,7 @@ public abstract class PhoneBase extends Handler implements Phone {
             Log.d(LOG_TAG, "Ignoring ring notification request,"
                     + " mDoesRilSendMultipleCallRing=" + mDoesRilSendMultipleCallRing
                     + " token=" + token
-                    + " mCallRingContinueToken=" + mCallRingContinueToken
-                    + " mIsVoiceCapable=" + mIsVoiceCapable);
+                    + " mCallRingContinueToken=" + mCallRingContinueToken);
         }
     }
 
@@ -1120,77 +1032,20 @@ public abstract class PhoneBase extends Handler implements Phone {
         return false;
     }
 
-    public IsimRecords getIsimRecords() {
-        Log.e(LOG_TAG, "getIsimRecords() is only supported on LTE devices");
-        return null;
-    }
-
-    public void requestIsimAuthentication(String nonce, Message result) {
-        Log.e(LOG_TAG, "requestIsimAuthentication() is only supported on LTE devices");
-    }
-
-    public String getMsisdn() {
-        logUnexpectedGsmMethodCall("getMsisdn");
-        return null;
-    }
-
     /**
      * Common error logger method for unexpected calls to CDMA-only methods.
      */
-    private static void logUnexpectedCdmaMethodCall(String name)
+    private void logUnexpectedCdmaMethodCall(String name)
     {
         Log.e(LOG_TAG, "Error! " + name + "() in PhoneBase should not be " +
                 "called, CDMAPhone inactive.");
     }
 
-    public DataState getDataConnectionState() {
-        return getDataConnectionState(APN_TYPE_DEFAULT);
-    }
-
     /**
      * Common error logger method for unexpected calls to GSM/WCDMA-only methods.
      */
-    private static void logUnexpectedGsmMethodCall(String name) {
+    private void logUnexpectedGsmMethodCall(String name) {
         Log.e(LOG_TAG, "Error! " + name + "() in PhoneBase should not be " +
                 "called, GSMPhone inactive.");
-    }
-
-    // Called by SimRecords which is constructed with a PhoneBase instead of a GSMPhone.
-    public void notifyCallForwardingIndicator() {
-        // This function should be overridden by the class GSMPhone. Not implemented in CDMAPhone.
-        Log.e(LOG_TAG, "Error! This function should never be executed, inactive CDMAPhone.");
-    }
-
-    public void notifyDataConnectionFailed(String reason, String apnType) {
-        mNotifier.notifyDataConnectionFailed(this, reason, apnType);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public int getLteOnCdmaMode() {
-        return mCM.getLteOnCdmaMode();
-    }
-
-    /**
-     * Sets the SIM voice message waiting indicator records.
-     * @param line GSM Subscriber Profile Number, one-based. Only '1' is supported
-     * @param countWaiting The number of messages waiting, if known. Use
-     *                     -1 to indicate that an unknown number of
-     *                      messages are waiting
-     */
-    @Override
-    public void setVoiceMessageWaiting(int line, int countWaiting) {
-        mIccRecords.setVoiceMessageWaiting(line, countWaiting);
-    }
-
-    /**
-     * Gets the USIM service table from the UICC, if present and available.
-     * @return an interface to the UsimServiceTable record, or null if not available
-     */
-    @Override
-    public UsimServiceTable getUsimServiceTable() {
-        return mIccRecords.getUsimServiceTable();
     }
 }

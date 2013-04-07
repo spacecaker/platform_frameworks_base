@@ -4,9 +4,9 @@
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
      You may obtain a copy of the License at
-
+  
           http://www.apache.org/licenses/LICENSE-2.0
-
+  
      Unless required by applicable law or agreed to in writing, software
      distributed under the License is distributed on an "AS IS" BASIS,
      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -36,15 +36,11 @@
             android:description="@string/permdesc_testDenied" />
 
     <uses-permission android:name="android.permission.ACCESS_CACHE_FILESYSTEM" />
-    <uses-permission android:name="android.permission.ACCESS_DOWNLOAD_MANAGER" />
-    <uses-permission android:name="android.permission.ACCESS_DOWNLOAD_MANAGER_ADVANCED" />
-    <uses-permission android:name="android.permission.DOWNLOAD_CACHE_NON_PURGEABLE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.BROADCAST_STICKY" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CLEAR_APP_CACHE" />
@@ -88,7 +84,6 @@
     <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.MOVE_PACKAGE" />
-    <uses-permission android:name="android.permission.PACKAGE_VERIFICATION_AGENT" />
 
     <!--os storage test permissions -->
     <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
@@ -98,9 +93,6 @@
     <uses-permission android:name="android.permission.ASEC_MOUNT_UNMOUNT" />
     <uses-permission android:name="android.permission.ASEC_RENAME" />
     <uses-permission android:name="android.permission.SHUTDOWN" />
-
-    <!-- accessibility test permissions -->
-    <uses-permission android:name="android.permission.RETRIEVE_WINDOW_CONTENT" />
 
     <application android:theme="@style/Theme">
         <uses-library android:name="android.test.runner" />
@@ -128,7 +120,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.focus.FocusAfterRemoval" android:label="FocusAfterRemoval">
@@ -156,28 +148,28 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.focus.ListOfEditTexts" android:label="ListOfEditTexts">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.focus.ListOfInternalSelectionViews" android:label="ListOfInternalSelectionViews">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>                        
         </activity>
 
         <activity android:name="android.widget.focus.ListWithFooterViewAndNewLabels" android:label="FocusListWithFooter">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.focus.ListWithMailMessages" android:label="ListWithMailMessages">
@@ -191,7 +183,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.focus.VerticalFocusSearch" android:label="VerticalFocusSearch">
@@ -268,7 +260,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.layout.linear.LLOfButtons1" android:label="LLOfButtons1">
@@ -296,7 +288,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.layout.linear.Weight" android:label="Weight">
@@ -425,13 +417,6 @@
             </intent-filter>
         </activity>
 
-        <activity android:name="android.widget.scroll.arrowscroll.MultiPageTextWithPadding" android:label="arrowscrollMultiPageTextWithPadding">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
-        </activity>
-
         <activity android:name="android.view.Include" android:label="IncludeTag">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -501,7 +486,7 @@
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.view.PreDrawListener" android:label="PreDrawListener">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -536,7 +521,7 @@
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.listview.ListScrollListener" android:label="ListScrollListener">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -550,21 +535,21 @@
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.listview.ListTakeFocusFromSide" android:label="ListTakeFocusFromSide">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.listview.ListBottomGravity" android:label="ListBottomGravity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.listview.ListBottomGravityMany" android:label="ListBottomGravityMany">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -586,19 +571,19 @@
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.listview.ListTopGravityMany" android:label="ListTopGravityMany">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.listview.ListEndingWithMultipleSeparators" android:label="ListEndingWithMultipleSeparators">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>                        
         </activity>
 
         <activity android:name="android.widget.listview.ListGetSelectedView" android:label="ListGetSelectedView">
@@ -633,21 +618,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListOfItemsTallerThanScreen" android:label="ListOfItemsTallerThanScreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListOfThinItems" android:label="ListOfThinItems">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>                        
         </activity>
 
         <activity android:name="android.widget.listview.ListOfShortTallShort" android:label="ListOfShortTallShort">
@@ -661,14 +646,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListWithOffScreenNextSelectable" android:label="ListWithOffScreenNextSelectable">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>                                    
         </activity>
 
         <activity android:name="android.widget.listview.ListWithFirstScreenUnSelectable" android:label="ListWithFirstScreenUnSelectable">
@@ -683,7 +668,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListWithHeaders" android:label="ListWithHeaders">
@@ -704,14 +689,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListWithScreenOfNoSelectables" android:label="ListWithScreenOfNoSelectables">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListItemFocusablesFarApart" android:label="ListItemFocusablesFarApart">
@@ -739,21 +724,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListItemsExpandOnSelection" android:label="ListItemsExpandOnSelection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListWithOnItemSelectedAction" android:label="ListWithOnItemSelectedAction">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
 
         <activity android:name="android.widget.listview.ListItemISVAndButton" android:label="ListItemISVAndButton">
@@ -788,30 +773,30 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
-
+       
 	    <activity android:name="android.widget.listview.ListManagedCursor" android:label="ListManagedCursor">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+       
 	    <activity android:name="android.widget.listview.ListWithEmptyView" android:label="ListWithEmptyView">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.gridview.GridInHorizontal" android:label="GridInHorizontal">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.gridview.GridPadding" android:label="GridPadding">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -902,21 +887,21 @@
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.gridview.GridVerticalSpacingStackFromBottom" android:label="GridVerticalSpacingStackFromBottom">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.gridview.GridSingleColumn" android:label="GridSingleColumn">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.view.menu.ListContextMenu" android:label="ListContextMenu">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -1030,7 +1015,7 @@
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
             </intent-filter>
         </activity>
-
+        
         <activity android:name="android.widget.AutoCompleteTextViewSimple"
                   android:label="AutoCompleteTextViewSimple">
             <intent-filter>
@@ -1039,26 +1024,19 @@
             </intent-filter>
         </activity>
 
-        <service android:name="android.webkit.AccessibilityInjectorTest$MockAccessibilityService">
+        <service android:name="android.accessibilityservice.AccessibilityTestService">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
         </service>
-
+        
         <activity android:name="android.widget.RadioGroupActivity" android:label="RadioGroupActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
+            </intent-filter>            
         </activity>
-
-        <activity android:name="android.widget.TextViewTestActivity" android:label="TextViewTestActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
-        </activity>
-
+        
 
 
         <!-- Activity-level metadata -->
@@ -1070,6 +1048,13 @@
         <meta-data android:name="com.android.frameworks.coretests.float" android:value="100.1" />
         <meta-data android:name="com.android.frameworks.coretests.reference"
                    android:resource="@xml/metadata_app" />
+
+        <activity android:name="AndroidPerformanceTests" android:label="Android Performance Tests">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.UNIT_TEST" />
+            </intent-filter>
+        </activity>
 
         <!-- Application components used for activity tests -->
 
@@ -1229,30 +1214,14 @@
                 android:authorities="android.app.SuggestionProvider">
         </provider>
 
-        <activity android:name="android.webkit.AccessibilityInjectorTestActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name="android.accessibilityservice.InterrogationActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name="android.animation.BasicAnimatorActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.FRAMEWORK_INSTRUMENTATION_TEST" />
-            </intent-filter>
-        </activity>
-
     </application>
 
     <instrumentation android:name="android.test.InstrumentationTestRunner"
             android:targetPackage="com.android.frameworks.coretests"
             android:label="Frameworks Core Tests" />
+
+    <instrumentation android:name="android.bluetooth.BluetoothTestRunner"
+            android:targetPackage="com.android.frameworks.coretests"
+            android:label="Bluetooth Tests" />
+
 </manifest>

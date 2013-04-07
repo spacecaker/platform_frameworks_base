@@ -31,18 +31,21 @@
 #include <binder/MemoryHeapBase.h>
 #include <binder/MemoryBase.h>
 
+#ifndef NO_OPENCORE
+#include <media/PVMediaRecorder.h>
+#endif
+
 #include <utils/String16.h>
 
 #include <media/AudioTrack.h>
-
-#include <system/audio.h>
 
 #include "MediaRecorderClient.h"
 #include "MediaPlayerService.h"
 
 #include "StagefrightRecorder.h"
-#include <gui/ISurfaceTexture.h>
-
+#ifdef  USE_BOARD_MEDIARECORDER
+#include <hardware_legacy/MediaRecorderHardwareInterface.h>
+#endif
 namespace android {
 
 const char* cameraPermission = "android.permission.CAMERA";
@@ -58,22 +61,7 @@ static bool checkPermission(const char* permissionString) {
     return ok;
 }
 
-
-sp<ISurfaceTexture> MediaRecorderClient::querySurfaceMediaSource()
-{
-    LOGV("Query SurfaceMediaSource");
-    Mutex::Autolock lock(mLock);
-    if (mRecorder == NULL) {
-        LOGE("recorder is not initialized");
-        return NULL;
-    }
-    return mRecorder->querySurfaceMediaSource();
-}
-
-
-
-status_t MediaRecorderClient::setCamera(const sp<ICamera>& camera,
-                                        const sp<ICameraRecordingProxy>& proxy)
+status_t MediaRecorderClient::setCamera(const sp<ICamera>& camera)
 {
     LOGV("setCamera");
     Mutex::Autolock lock(mLock);
@@ -81,10 +69,10 @@ status_t MediaRecorderClient::setCamera(const sp<ICamera>& camera,
         LOGE("recorder is not initialized");
         return NO_INIT;
     }
-    return mRecorder->setCamera(camera, proxy);
+    return mRecorder->setCamera(camera);
 }
 
-status_t MediaRecorderClient::setPreviewSurface(const sp<Surface>& surface)
+status_t MediaRecorderClient::setPreviewSurface(const sp<ISurface>& surface)
 {
     LOGV("setPreviewSurface");
     Mutex::Autolock lock(mLock);
@@ -120,7 +108,7 @@ status_t MediaRecorderClient::setAudioSource(int as)
         LOGE("recorder is not initialized");
         return NO_INIT;
     }
-    return mRecorder->setAudioSource((audio_source_t)as);
+    return mRecorder->setAudioSource((audio_source)as);
 }
 
 status_t MediaRecorderClient::setOutputFormat(int of)
@@ -208,6 +196,16 @@ status_t MediaRecorderClient::setParameters(const String8& params) {
         return NO_INIT;
     }
     return mRecorder->setParameters(params);
+}
+
+status_t MediaRecorderClient::setCameraParameters(const String8& params) {
+    LOGV("setCameraParameters(%s)", params.string());
+    Mutex::Autolock lock(mLock);
+    if (mRecorder == NULL) {
+        LOGE("recorder is not initialized");
+        return NO_INIT;
+    }
+    return mRecorder->setCameraParameters(params);
 }
 
 status_t MediaRecorderClient::prepare()
@@ -307,7 +305,26 @@ MediaRecorderClient::MediaRecorderClient(const sp<MediaPlayerService>& service, 
 {
     LOGV("Client constructor");
     mPid = pid;
-    mRecorder = new StagefrightRecorder;
+#ifdef USE_BOARD_MEDIARECORDER
+    {
+        mRecorder = createMediaRecorderHardware();
+    }
+#else
+    char value[PROPERTY_VALUE_MAX];
+    if (!property_get("media.stagefright.enable-record", value, NULL)
+        || !strcmp(value, "1") || !strcasecmp(value, "true")) {
+        mRecorder = new StagefrightRecorder;
+    } else
+#ifndef NO_OPENCORE
+    {
+        mRecorder = new PVMediaRecorder();
+    }
+#else
+    {
+        mRecorder = NULL;
+    }
+#endif
+#endif
     mMediaPlayerService = service;
 }
 
@@ -336,3 +353,4 @@ status_t MediaRecorderClient::dump(int fd, const Vector<String16>& args) const {
 }
 
 }; // namespace android
+

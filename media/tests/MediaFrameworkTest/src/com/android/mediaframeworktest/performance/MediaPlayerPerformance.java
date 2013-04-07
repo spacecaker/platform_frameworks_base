@@ -17,33 +17,27 @@
 package com.android.mediaframeworktest.performance;
 
 import com.android.mediaframeworktest.MediaFrameworkTest;
-import com.android.mediaframeworktest.MediaFrameworkPerfTestRunner;
 import com.android.mediaframeworktest.MediaNames;
-import com.android.mediaframeworktest.MediaTestUtil;
 
 import android.database.sqlite.SQLiteDatabase;
 import android.hardware.Camera;
 import android.hardware.Camera.PreviewCallback;
 import android.media.MediaPlayer;
 import android.media.MediaRecorder;
-import android.media.EncoderCapabilities.VideoEncoderCap;
 import android.os.ConditionVariable;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.test.ActivityInstrumentationTestCase2;
+import android.test.ActivityInstrumentationTestCase;
 import android.test.suitebuilder.annotation.LargeTest;
 import android.test.suitebuilder.annotation.Suppress;
 import android.util.Log;
 import android.view.SurfaceHolder;
 
-import java.util.List;
-import java.io.BufferedReader;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.Writer;
 import java.io.File;
 import java.io.FileWriter;
@@ -52,14 +46,13 @@ import java.io.BufferedWriter;
 import android.media.MediaMetadataRetriever;
 import com.android.mediaframeworktest.MediaProfileReader;
 
+import android.hardware.Camera.PreviewCallback;
+
 /**
  * Junit / Instrumentation - performance measurement for media player and 
  * recorder
- *
- * FIXME:
- * Add tests on H264 video encoder
  */
-public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<MediaFrameworkTest> {
+public class MediaPlayerPerformance extends ActivityInstrumentationTestCase<MediaFrameworkTest> {
 
     private String TAG = "MediaPlayerPerformance";
 
@@ -70,8 +63,6 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     private static final long MEDIA_STRESS_WAIT_TIME = 5000; //5 seconds
     private static final String MEDIA_MEMORY_OUTPUT =
         "/sdcard/mediaMemOutput.txt";
-    private static final String MEDIA_PROCMEM_OUTPUT =
-        "/sdcard/mediaProcmemOutput.txt";
 
     private static int mStartMemory = 0;
     private static int mEndMemory = 0;
@@ -88,11 +79,6 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     private static int DECODER_LIMIT = 150;
     private static int CAMERA_LIMIT = 80;
 
-    private Writer mProcMemWriter;
-    private Writer mMemWriter;
-
-    private static List<VideoEncoderCap> videoEncoders = MediaProfileReader.getVideoEncoders();
-
     Camera mCamera;
 
     public MediaPlayerPerformance() {
@@ -101,24 +87,109 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
 
     protected void setUp() throws Exception {
         super.setUp();
-        getActivity();
-        if (MediaFrameworkPerfTestRunner.mGetNativeHeapDump)
-            MediaTestUtil.getNativeHeapDump(this.getName() + "_before");
+    }
 
-        mProcMemWriter = new BufferedWriter(new FileWriter
-                (new File(MEDIA_PROCMEM_OUTPUT), true));
-        mProcMemWriter.write(this.getName() + "\n");
-        mMemWriter = new BufferedWriter(new FileWriter
-                (new File(MEDIA_MEMORY_OUTPUT), true));
+    public void createDB() {
+        mDB = SQLiteDatabase.openOrCreateDatabase("/sdcard/perf.db", null);
+        mDB.execSQL("CREATE TABLE IF NOT EXISTS perfdata (_id INTEGER PRIMARY KEY," + 
+                "file TEXT," + "setdatatime LONG," + "preparetime LONG," +
+                "playtime LONG" + ");");
+        //clean the table before adding new data
+        mDB.execSQL("DELETE FROM perfdata");
+    }
+
+    public void audioPlaybackStartupTime(String[] testFile) {
+        long t1 = 0;
+        long t2 = 0;
+        long t3 = 0;
+        long t4 = 0;
+        long setDataSourceDuration = 0;
+        long prepareDuration = 0;
+        long startDuration = 0;
+        long totalSetDataTime = 0;
+        long totalPrepareTime = 0;
+        long totalStartDuration = 0;
+
+        int numberOfFiles = testFile.length;
+        Log.v(TAG, "File length " + numberOfFiles);
+        for (int k = 0; k < numberOfFiles; k++) {
+            MediaPlayer mp = new MediaPlayer();
+            try {
+                t1 = SystemClock.uptimeMillis();
+                FileInputStream fis = new FileInputStream(testFile[k]);
+                FileDescriptor fd = fis.getFD();
+                mp.setDataSource(fd);
+                fis.close();
+                t2 = SystemClock.uptimeMillis();
+                mp.prepare();
+                t3 = SystemClock.uptimeMillis();
+                mp.start();
+                t4 = SystemClock.uptimeMillis();
+            } catch (Exception e) {
+                Log.v(TAG, e.toString());
+            }
+            setDataSourceDuration = t2 - t1;
+            prepareDuration = t3 - t2;
+            startDuration = t4 - t3;
+            totalSetDataTime = totalSetDataTime + setDataSourceDuration;
+            totalPrepareTime = totalPrepareTime + prepareDuration;
+            totalStartDuration = totalStartDuration + startDuration;
+            mDB.execSQL("INSERT INTO perfdata (file, setdatatime, preparetime," +
+                    " playtime) VALUES (" + '"' + testFile[k] + '"' + ',' +
+                    setDataSourceDuration + ',' + prepareDuration +
+            		',' + startDuration + ");");
+            Log.v(TAG, "File name " + testFile[k]);
+            mp.stop();
+            mp.release();
+        }
+        Log.v(TAG, "setDataSource average " + totalSetDataTime / numberOfFiles);
+        Log.v(TAG, "prepare average " + totalPrepareTime / numberOfFiles);
+        Log.v(TAG, "start average " + totalStartDuration / numberOfFiles);
 
     }
 
-    protected void tearDown() throws Exception {
-        if (MediaFrameworkPerfTestRunner.mGetNativeHeapDump)
-            MediaTestUtil.getNativeHeapDump(this.getName() + "_after");
-        mProcMemWriter.close();
-        mMemWriter.close();
-        super.tearDown();
+    @Suppress
+    public void testStartUpTime() throws Exception {
+        createDB();
+        audioPlaybackStartupTime(MediaNames.MP3FILES);
+        audioPlaybackStartupTime(MediaNames.AACFILES);
+
+        //close the database after all transactions
+        if (mDB.isOpen()) {
+            mDB.close();
+        }
+    }
+
+    public void wmametadatautility(String[] testFile) {
+        long t1 = 0;
+        long t2 = 0;
+        long sum = 0;
+        long duration = 0;
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        String value;
+        for (int i = 0, n = testFile.length; i < n; ++i) {
+            try {
+                t1 = SystemClock.uptimeMillis();
+                retriever.setDataSource(testFile[i]);
+                value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+                value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+                value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER);
+                value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE);
+                value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+                value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR);
+                value =
+                    retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER);
+                t2 = SystemClock.uptimeMillis();
+                duration = t2 - t1;
+                Log.v(TAG, "Time taken = " + duration);
+                sum = sum + duration;
+            } catch (Exception e) {
+                Log.v(TAG, e.getMessage());
+            }
+
+        }
+        Log.v(TAG, "Average duration = " + sum / testFile.length);
     }
 
     private void initializeMessageLooper() {
@@ -202,10 +273,9 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     }
 
     // Note: This test is to assume the mediaserver's pid is 34
-    private boolean stressVideoRecord(int frameRate, int width, int height, int videoFormat,
+    private void stressVideoRecord(int frameRate, int width, int height, int videoFormat,
             int outFormat, String outFile, boolean videoOnly) {
         // Video recording
-        boolean doesTestFail = false;
         for (int i = 0; i < NUM_PLAYBACk_IN_EACH_LOOP; i++) {
             MediaRecorder mRecorder = new MediaRecorder();
             try {
@@ -234,11 +304,8 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
             } catch (Exception e) {
                 Log.v("record video failed ", e.toString());
                 mRecorder.release();
-                doesTestFail = true;
-                break;
             }
         }
-        return !doesTestFail;
     }
 
     public void stressAudioRecord(String filePath) {
@@ -263,37 +330,22 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     }
 
     //Write the ps output to the file
-    public void getMemoryWriteToLog(int writeCount) {
+    public void getMemoryWriteToLog(Writer output, int writeCount) {
         String memusage = null;
         try {
             if (writeCount == 0) {
                 mStartMemory = getMediaserverVsize();
-                mMemWriter.write("Start memory : " + mStartMemory + "\n");
+                output.write("Start memory : " + mStartMemory + "\n");
             }
             memusage = captureMediaserverInfo();
-            mMemWriter.write(memusage);
+            output.write(memusage);
             if (writeCount == NUM_STRESS_LOOP - 1) {
                 mEndMemory = getMediaserverVsize();
-                mMemWriter.write("End Memory :" + mEndMemory + "\n");
+                output.write("End Memory :" + mEndMemory + "\n");
             }
         } catch (Exception e) {
             e.toString();
         }
-    }
-
-    public void writeProcmemInfo() throws Exception{
-        String cmd = "procmem " + getMediaserverPid();
-        Process p = Runtime.getRuntime().exec(cmd);
-
-        InputStream inStream = p.getInputStream();
-        InputStreamReader inReader = new InputStreamReader(inStream);
-        BufferedReader inBuffer = new BufferedReader(inReader);
-        String s;
-        while ((s = inBuffer.readLine()) != null) {
-              mProcMemWriter.write(s);
-              mProcMemWriter.write("\n");
-        }
-        mProcMemWriter.write("\n\n");
     }
 
     public String captureMediaserverInfo() {
@@ -337,7 +389,7 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
         return vsizevalue;
     }
 
-    public boolean validateMemoryResult(int startPid, int startMemory, int limit)
+    public boolean validateMemoryResult(int startPid, int startMemory, Writer output, int limit)
             throws Exception {
         // Wait for 10 seconds to make sure the memory settle.
         Thread.sleep(10000);
@@ -346,11 +398,11 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
         if (memDiff < 0) {
             memDiff = 0;
         }
-        mMemWriter.write("The total diff = " + memDiff);
-        mMemWriter.write("\n\n");
+        output.write("The total diff = " + memDiff);
+        output.write("\n\n");
         // mediaserver crash
         if (startPid != mEndPid) {
-            mMemWriter.write("mediaserver died. Test failed\n");
+            output.write("mediaserver died. Test failed\n");
             return false;
         }
         // memory leak greter than the tolerant
@@ -358,20 +410,29 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
         return true;
     }
 
+    @Suppress
+    public void testWmaParseTime() throws Exception {
+        // createDB();
+        wmametadatautility(MediaNames.WMASUPPORTED);
+    }
+
+
     // Test case 1: Capture the memory usage after every 20 h263 playback
     @LargeTest
     public void testH263VideoPlaybackMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        mMemWriter.write("H263 Video Playback Only\n");
+
+        File h263MemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(h263MemoryOut, true));
+        output.write("H263 Video Playback Only\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
             mediaStressPlayback(MediaNames.VIDEO_HIGHRES_H263);
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, DECODER_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, DECODER_LIMIT);
+        output.close();
         assertTrue("H263 playback memory test", memoryResult);
     }
 
@@ -379,36 +440,58 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     @LargeTest
     public void testH264VideoPlaybackMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        mMemWriter.write("H264 Video Playback only\n");
+
+        File h264MemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(h264MemoryOut, true));
+        output.write("H264 Video Playback only\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
             mediaStressPlayback(MediaNames.VIDEO_H264_AMR);
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, DECODER_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, DECODER_LIMIT);
+        output.close();
         assertTrue("H264 playback memory test", memoryResult);
+    }
+
+    // Test case 3: Capture the memory usage after each 20 WMV playback
+    @LargeTest
+    public void testWMVVideoPlaybackMemoryUsage() throws Exception {
+        boolean memoryResult = false;
+        if (MediaProfileReader.getWMVEnable()){
+            mStartPid = getMediaserverPid();
+            File wmvMemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+            Writer output = new BufferedWriter(new FileWriter(wmvMemoryOut, true));
+            output.write("WMV video playback only\n");
+            for (int i = 0; i < NUM_STRESS_LOOP; i++) {
+                mediaStressPlayback(MediaNames.VIDEO_WMV);
+                getMemoryWriteToLog(output, i);
+            }
+            output.write("\n");
+            memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, DECODER_LIMIT);
+            output.close();
+            assertTrue("wmv playback memory test", memoryResult);
+        }
     }
 
     // Test case 4: Capture the memory usage after every 20 video only recorded
     @LargeTest
     public void testH263RecordVideoOnlyMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        mMemWriter.write("H263 video record only\n");
-        int frameRate = MediaProfileReader.getMaxFrameRateForCodec(MediaRecorder.VideoEncoder.H263);
-        assertTrue("H263 video recording frame rate", frameRate != -1);
+
+        File videoH263RecordOnlyMemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(videoH263RecordOnlyMemoryOut, true));
+        output.write("H263 video record only\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
-            assertTrue(stressVideoRecord(frameRate, 352, 288, MediaRecorder.VideoEncoder.H263,
-                    MediaRecorder.OutputFormat.MPEG_4, MediaNames.RECORDED_VIDEO_3GP, true));
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            stressVideoRecord(20, 352, 288, MediaRecorder.VideoEncoder.H263,
+                    MediaRecorder.OutputFormat.MPEG_4, MediaNames.RECORDED_VIDEO_3GP, true);
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, ENCODER_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, ENCODER_LIMIT);
+        output.close();
         assertTrue("H263 record only memory test", memoryResult);
     }
 
@@ -416,19 +499,19 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     @LargeTest
     public void testMpeg4RecordVideoOnlyMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        mMemWriter.write("MPEG4 video record only\n");
-        int frameRate = MediaProfileReader.getMaxFrameRateForCodec(MediaRecorder.VideoEncoder.MPEG_4_SP);
-        assertTrue("MPEG4 video recording frame rate", frameRate != -1);
+
+        File videoMp4RecordOnlyMemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(videoMp4RecordOnlyMemoryOut, true));
+        output.write("MPEG4 video record only\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
-            assertTrue(stressVideoRecord(frameRate, 352, 288, MediaRecorder.VideoEncoder.MPEG_4_SP,
-                    MediaRecorder.OutputFormat.MPEG_4, MediaNames.RECORDED_VIDEO_3GP, true));
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            stressVideoRecord(20, 352, 288, MediaRecorder.VideoEncoder.MPEG_4_SP,
+                    MediaRecorder.OutputFormat.MPEG_4, MediaNames.RECORDED_VIDEO_3GP, true);
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, ENCODER_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, ENCODER_LIMIT);
+        output.close();
         assertTrue("mpeg4 record only memory test", memoryResult);
     }
 
@@ -437,19 +520,19 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     @LargeTest
     public void testRecordVideoAudioMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        int frameRate = MediaProfileReader.getMaxFrameRateForCodec(MediaRecorder.VideoEncoder.H263);
-        assertTrue("H263 video recording frame rate", frameRate != -1);
-        mMemWriter.write("Audio and h263 video record\n");
+
+        File videoRecordAudioMemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(videoRecordAudioMemoryOut, true));
+        output.write("Audio and h263 video record\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
-            assertTrue(stressVideoRecord(frameRate, 352, 288, MediaRecorder.VideoEncoder.H263,
-                    MediaRecorder.OutputFormat.MPEG_4, MediaNames.RECORDED_VIDEO_3GP, false));
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            stressVideoRecord(20, 352, 288, MediaRecorder.VideoEncoder.H263,
+                    MediaRecorder.OutputFormat.MPEG_4, MediaNames.RECORDED_VIDEO_3GP, false);
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, ENCODER_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, ENCODER_LIMIT);
+        output.close();
         assertTrue("H263 audio video record memory test", memoryResult);
     }
 
@@ -457,16 +540,18 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     @LargeTest
     public void testRecordAudioOnlyMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        mMemWriter.write("Audio record only\n");
+
+        File audioOnlyMemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(audioOnlyMemoryOut, true));
+        output.write("Audio record only\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
             stressAudioRecord(MediaNames.RECORDER_OUTPUT);
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, ENCODER_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, ENCODER_LIMIT);
+        output.close();
         assertTrue("audio record only memory test", memoryResult);
     }
 
@@ -474,16 +559,18 @@ public class MediaPlayerPerformance extends ActivityInstrumentationTestCase2<Med
     @LargeTest
     public void testCameraPreviewMemoryUsage() throws Exception {
         boolean memoryResult = false;
-
         mStartPid = getMediaserverPid();
-        mMemWriter.write("Camera Preview Only\n");
+
+        File cameraPreviewMemoryOut = new File(MEDIA_MEMORY_OUTPUT);
+        Writer output = new BufferedWriter(new FileWriter(cameraPreviewMemoryOut, true));
+        output.write("Camera Preview Only\n");
         for (int i = 0; i < NUM_STRESS_LOOP; i++) {
             stressCameraPreview();
-            getMemoryWriteToLog(i);
-            writeProcmemInfo();
+            getMemoryWriteToLog(output, i);
         }
-        mMemWriter.write("\n");
-        memoryResult = validateMemoryResult(mStartPid, mStartMemory, CAMERA_LIMIT);
+        output.write("\n");
+        memoryResult = validateMemoryResult(mStartPid, mStartMemory, output, CAMERA_LIMIT);
+        output.close();
         assertTrue("camera preview memory test", memoryResult);
     }
 }

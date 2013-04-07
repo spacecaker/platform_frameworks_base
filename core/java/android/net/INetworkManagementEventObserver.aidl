@@ -23,21 +23,12 @@ package android.net;
  */
 interface INetworkManagementEventObserver {
     /**
-     * Interface configuration status has changed.
+     * Interface link status has changed.
      *
      * @param iface The interface.
-     * @param up True if the interface has been enabled.
+     * @param link True if link is up.
      */
-    void interfaceStatusChanged(String iface, boolean up);
-
-    /**
-     * Interface physical-layer link state has changed.  For Ethernet,
-     * this method is invoked when the cable is plugged in or unplugged.
-     *
-     * @param iface The interface.
-     * @param up  True if the physical link-layer connection signal is valid.
-     */
-    void interfaceLinkStateChanged(String iface, boolean up);
+    void interfaceLinkStatusChanged(String iface, boolean link);
 
     /**
      * An interface has been added to the system
@@ -52,14 +43,4 @@ interface INetworkManagementEventObserver {
      * @param iface The interface.
      */
     void interfaceRemoved(String iface);
-
-    /**
-     * A networking quota limit has been reached. The quota might not
-     * be specific to an interface.
-     *
-     * @param limitName The name of the limit that triggered.
-     * @param iface The interface on which the limit was detected.
-     */
-    void limitReached(String limitName, String iface);
-
 }

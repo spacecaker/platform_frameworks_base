@@ -31,7 +31,6 @@ import android.view.View;
 import android.widget.ListView;
 import android.widget.SimpleAdapter;
 import android.os.Bundle;
-import android.os.Environment;
 
 
 public abstract class FileList extends ListActivity
@@ -180,16 +179,17 @@ public abstract class FileList extends ListActivity
         getListView().setSelection(mFocusIndex);
     }
 
-    protected void setupPath() {
-        mPath = Environment.getExternalStorageDirectory() + "/webkit/layout_tests";
-        mBaseLength = mPath.length();
+    protected void setupPath()
+    {
+    	mPath = "/sdcard/android/layout_tests";
+    	mBaseLength = mPath.length();
     }
 
     protected String mPath;
     protected int mBaseLength;
     protected String mFocusFile;
     protected int mFocusIndex;
-
+    
     private final static int OPEN_DIRECTORY = 0;
     private final static int RUN_TESTS = 1;
 

@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2008, The Android Open Source Project
+** Copyright (C) 2010, Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -101,9 +102,9 @@ CameraHardwareStub::~CameraHardwareStub()
     mFakeCamera = 0; // paranoia
 }
 
-status_t CameraHardwareStub::setPreviewWindow(const sp<ANativeWindow>& buf)
+sp<IMemoryHeap> CameraHardwareStub::getPreviewHeap() const
 {
-    return NO_ERROR;
+    return mPreviewHeap;
 }
 
 sp<IMemoryHeap> CameraHardwareStub::getRawHeap() const
@@ -180,7 +181,7 @@ int CameraHardwareStub::previewThread()
 
         // Notify the client of a new frame.
         if (mMsgEnabled & CAMERA_MSG_PREVIEW_FRAME)
-            mDataCb(CAMERA_MSG_PREVIEW_FRAME, buffer, NULL, mCallbackCookie);
+            mDataCb(CAMERA_MSG_PREVIEW_FRAME, buffer, mCallbackCookie);
 
         // Advance the buffer pointer.
         mCurrentPreviewFrame = (mCurrentPreviewFrame + 1) % kBufferCount;
@@ -290,14 +291,14 @@ int CameraHardwareStub::pictureThread()
         sp<MemoryBase> mem = new MemoryBase(mRawHeap, 0, w * h * 3 / 2);
         FakeCamera cam(w, h);
         cam.getNextFrameAsYuv420((uint8_t *)mRawHeap->base());
-        mDataCb(CAMERA_MSG_RAW_IMAGE, mem, NULL, mCallbackCookie);
+        mDataCb(CAMERA_MSG_RAW_IMAGE, mem, mCallbackCookie);
     }
 
     if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
         sp<MemoryHeapBase> heap = new MemoryHeapBase(kCannedJpegSize);
         sp<MemoryBase> mem = new MemoryBase(heap, 0, kCannedJpegSize);
         memcpy(heap->base(), kCannedJpeg, kCannedJpegSize);
-        mDataCb(CAMERA_MSG_COMPRESSED_IMAGE, mem, NULL, mCallbackCookie);
+        mDataCb(CAMERA_MSG_COMPRESSED_IMAGE, mem, mCallbackCookie);
     }
     return NO_ERROR;
 }
@@ -370,6 +371,20 @@ CameraParameters CameraHardwareStub::getParameters() const
     return mParameters;
 }
 
+#ifdef MOTO_CUSTOM_PARAMETERS
+status_t CameraHardwareStub::setCustomParameters(const CameraParameters& params)
+{
+    Mutex::Autolock lock(mLock);
+    return NO_ERROR;
+}
+
+CameraParameters CameraHardwareStub::getCustomParameters() const
+{
+    Mutex::Autolock lock(mLock);
+    return mParameters;
+}
+#endif
+
 status_t CameraHardwareStub::sendCommand(int32_t command, int32_t arg1,
                                          int32_t arg2)
 {
@@ -391,6 +406,17 @@ static CameraInfo sCameraInfo[] = {
         90,  /* orientation */
     }
 };
+
+#ifdef USE_GETBUFFERINFO
+status_t CameraHardwareStub::getBufferInfo(sp<IMemory>& Frame, size_t *alignedSize) {
+    /* No Support for this API in STUB Camera. Just return NULL */
+    Frame = NULL;
+    if( alignedSize != NULL)
+        *alignedSize = 0;
+
+    return UNKNOWN_ERROR;
+}
+#endif
 
 extern "C" int HAL_getNumberOfCameras()
 {

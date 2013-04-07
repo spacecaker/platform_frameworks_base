@@ -25,7 +25,6 @@ import java.util.List;
  * populated when the plugins are initialized (at
  * browser startup, at the moment).
  *
- * @hide
  * @deprecated This interface was intended to be used by Gears. Since Gears was
  * deprecated, so is this class.
  */
@@ -36,7 +35,6 @@ public class PluginList {
    /**
     * Public constructor. Initializes the list of plugins.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -48,7 +46,6 @@ public class PluginList {
    /**
     * Returns the list of plugins as a java.util.List.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -60,7 +57,6 @@ public class PluginList {
    /**
     * Adds a plugin to the list.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -74,7 +70,6 @@ public class PluginList {
    /**
     * Removes a plugin from the list.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -89,7 +84,6 @@ public class PluginList {
    /**
     * Clears the plugin list.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -101,7 +95,6 @@ public class PluginList {
    /**
     * Dispatches the click event to the appropriate plugin.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */

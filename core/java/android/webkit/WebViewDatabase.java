@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
+ * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +21,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.HashMap;
 import java.util.Map.Entry;
 
 import android.content.ContentValues;
@@ -30,10 +33,10 @@ import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteStatement;
+import android.os.SystemProperties;
 import android.util.Log;
 import android.webkit.CookieManager.Cookie;
 import android.webkit.CacheManager.CacheResult;
-import android.webkit.JniUtil;
 
 public class WebViewDatabase {
     private static final String DATABASE_FILE = "webview.db";
@@ -42,7 +45,7 @@ public class WebViewDatabase {
     // log tag
     protected static final String LOGTAG = "webviewdatabase";
 
-    private static final int DATABASE_VERSION = 11;
+    private static final int DATABASE_VERSION = 10;
     // 2 -> 3 Modified Cache table to allow cache of redirects
     // 3 -> 4 Added Oma-Downloads table
     // 4 -> 5 Modified Cache table to support persistent contentLength
@@ -52,13 +55,11 @@ public class WebViewDatabase {
     // 7 -> 8 Move cache to its own db
     // 8 -> 9 Store both scheme and host when storing passwords
     // 9 -> 10 Update httpauth table UNIQUE
-    // 10 -> 11 Drop cookies and cache now managed by the chromium stack,
-    //          and update the form data table to use the new format
-    //          implemented for b/5265606.
-    private static final int CACHE_DATABASE_VERSION = 4;
+    private static final int CACHE_DATABASE_VERSION = 5;
     // 1 -> 2 Add expires String
     // 2 -> 3 Add content-disposition
     // 3 -> 4 Add crossdomain (For x-permitted-cross-domain-policies header)
+    // 4 -> 5 Add last-acces-time, access-counter, weight
 
     private static WebViewDatabase mInstance = null;
 
@@ -71,9 +72,6 @@ public class WebViewDatabase {
     private final Object mFormLock = new Object();
     private final Object mHttpAuthLock = new Object();
 
-    // TODO: The Chromium HTTP stack handles cookies independently.
-    // We should consider removing the cookies table if and when we switch to
-    // the Chromium HTTP stack for good.
     private static final String mTableNames[] = {
         "cookies", "password", "formurl", "formdata", "httpauth"
     };
@@ -136,6 +134,12 @@ public class WebViewDatabase {
 
     private static final String CACHE_CROSSDOMAIN_COL = "crossdomain";
 
+    private static final String CACHE_LASTACCESSTIME_COL = "lastaccesstime";
+
+    private static final String CACHE_ACCESSCOUNTER_COL = "accesscounter";
+
+    private static final String CACHE_WEIGHT_COL = "weight";
+
     // column id strings for "password" table
     private static final String PASSWORD_HOST_COL = "host";
 
@@ -177,214 +181,234 @@ public class WebViewDatabase {
     private static int mCacheContentLengthColIndex;
     private static int mCacheContentDispositionColIndex;
     private static int mCacheCrossDomainColIndex;
+    private static int mCacheLastAccessTimeIndex;
+    private static int mCacheAccessCounterIndex;
+    private static int mCacheWeightIndex;
 
     private static int mCacheTransactionRefcount;
 
-    // Initially true until the background thread completes.
-    private boolean mInitialized = false;
+    private static final int CACHE_STAT_ID_OTHER = 0;
+    private static final int CACHE_STAT_ID_HTML = 1;
+    private static final int CACHE_STAT_ID_CSS = 2;
+    private static final int CACHE_STAT_ID_JS = 3;
+    private static final int CACHE_STAT_ID_IMAGE = 4;
 
-    private WebViewDatabase(final Context context) {
-        new Thread() {
-            @Override
-            public void run() {
-                init(context);
+    private static final String CACHE_ORDER_BY_DEF = CACHE_EXPIRES_COL;
+    private static String CACHE_ORDER_BY = CACHE_ORDER_BY_DEF;
+
+    private static final int CACHE_EVICT_EXPIRED_DEF = 0;
+    private static final long CACHE_PRIO_ADVANCE_STEP_DEF = 0;
+    private static final long CACHE_WEIGHT_ADVANCE_STEP_DEF = 0;
+
+    private static int CACHE_EVICT_EXPIRED = CACHE_EVICT_EXPIRED_DEF;
+    private static long CACHE_ADVANCE_STEP_PRIO = CACHE_PRIO_ADVANCE_STEP_DEF;
+    private static long CACHE_ADVANCE_STEP_WEIGHT = CACHE_WEIGHT_ADVANCE_STEP_DEF;
+
+    private static class CacheAccessStat {
+        long mLastAccessTime = 0;
+        int mCacheAccessCounter = 0;
+        int mCacheItemPriority = 0;
+        long mContentLength = 0;
+        long mWeight = 0;
+
+        public CacheAccessStat(CacheResult c) {
+            mCacheAccessCounter = c.accessCounter;
+            mCacheItemPriority = getCacheItemPriority(c.getMimeType());
+            mContentLength = c.getContentLength();
+            hit();
+        }
+
+        public void hit() {
+            mCacheAccessCounter++;
+            mLastAccessTime = System.currentTimeMillis();
+            mWeight = mLastAccessTime + CACHE_ADVANCE_STEP_PRIO * mCacheItemPriority;
+            mWeight += CACHE_ADVANCE_STEP_WEIGHT * normalize(mContentLength/mCacheAccessCounter);
+        }
+
+        int getCacheStatId(String mimeType) {
+            if (mimeType.contains("image")) {
+                return CACHE_STAT_ID_IMAGE;
             }
-        }.start();
+            if (mimeType.contains("javascript") || mimeType.contains("js")) {
+                return CACHE_STAT_ID_JS;
+            }
+            if (mimeType.contains("css")) {
+                return CACHE_STAT_ID_CSS;
+            }
+            if (mimeType.contains("html")) {
+                return CACHE_STAT_ID_HTML;
+            }
+            return CACHE_STAT_ID_OTHER;
+        }
 
+        /**
+         * Get resource priority
+         */
+        int getCacheItemPriority(String mimeType) {
+            int id = getCacheStatId(mimeType);
+            switch (id) {
+                case CACHE_STAT_ID_CSS:
+                case CACHE_STAT_ID_HTML:
+                    return 2;
+                case CACHE_STAT_ID_JS:
+                    return 1;
+                case CACHE_STAT_ID_IMAGE:
+                    return 0;
+            }
+            return -1;
+        }
+
+        int normalize(long i) {
+            int normalized = 0;
+
+            if ((i & (i - 1)) != 0) {
+                normalized += 1;
+            }
+            for (int index = 16; index >= 2; index = index/2 ) {
+                if ((i >> index) != 0) {
+                    normalized += index; i >>= index;
+            }
+            }
+            if ((i >> 1) != 0) {
+                normalized += 1;
+            }
+            return (32 - normalized);
+        }
+    }
+
+    private final Object mCacheStatLock = new Object();
+    private static HashMap<String, CacheAccessStat> mCacheStat = new HashMap<String, CacheAccessStat>();
+
+    private WebViewDatabase() {
         // Singleton only, use getInstance()
     }
 
     public static synchronized WebViewDatabase getInstance(Context context) {
         if (mInstance == null) {
-            mInstance = new WebViewDatabase(context);
+            mInstance = new WebViewDatabase();
+
+            CACHE_EVICT_EXPIRED = SystemProperties.getInt("nw.cache.evictexpired", CACHE_EVICT_EXPIRED_DEF);
+            CACHE_ADVANCE_STEP_PRIO = SystemProperties.getLong("nw.cache.prioadvstep", CACHE_PRIO_ADVANCE_STEP_DEF);
+            CACHE_ADVANCE_STEP_WEIGHT = SystemProperties.getLong("nw.cache.weightadvstep", CACHE_WEIGHT_ADVANCE_STEP_DEF);
+            CACHE_ORDER_BY = SystemProperties.get("nw.cache.orderby", CACHE_ORDER_BY_DEF);
+
+            try {
+                mDatabase = context
+                        .openOrCreateDatabase(DATABASE_FILE, 0, null);
+            } catch (SQLiteException e) {
+                // try again by deleting the old db and create a new one
+                if (context.deleteDatabase(DATABASE_FILE)) {
+                    mDatabase = context.openOrCreateDatabase(DATABASE_FILE, 0,
+                            null);
+                }
+            }
+
+            // mDatabase should not be null, 
+            // the only case is RequestAPI test has problem to create db 
+            if (mDatabase != null && mDatabase.getVersion() != DATABASE_VERSION) {
+                mDatabase.beginTransaction();
+                try {
+                    upgradeDatabase();
+                    mDatabase.setTransactionSuccessful();
+                } finally {
+                    mDatabase.endTransaction();
+                }
+            }
+
+            if (mDatabase != null) {
+                // use per table Mutex lock, turn off database lock, this
+                // improves performance as database's ReentrantLock is expansive
+                mDatabase.setLockingEnabled(false);
+            }
+
+            try {
+                mCacheDatabase = context.openOrCreateDatabase(
+                        CACHE_DATABASE_FILE, 0, null);
+            } catch (SQLiteException e) {
+                // try again by deleting the old db and create a new one
+                if (context.deleteDatabase(CACHE_DATABASE_FILE)) {
+                    mCacheDatabase = context.openOrCreateDatabase(
+                            CACHE_DATABASE_FILE, 0, null);
+                }
+            }
+
+            // mCacheDatabase should not be null, 
+            // the only case is RequestAPI test has problem to create db 
+            if (mCacheDatabase != null
+                    && mCacheDatabase.getVersion() != CACHE_DATABASE_VERSION) {
+                mCacheDatabase.beginTransaction();
+                try {
+                    upgradeCacheDatabase();
+                    bootstrapCacheDatabase();
+                    mCacheDatabase.setTransactionSuccessful();
+                } finally {
+                    mCacheDatabase.endTransaction();
+                }
+                // Erase the files from the file system in the 
+                // case that the database was updated and the 
+                // there were existing cache content
+                CacheManager.removeAllCacheFiles();
+            }
+
+            if (mCacheDatabase != null) {
+                // use read_uncommitted to speed up READ
+                mCacheDatabase.execSQL("PRAGMA read_uncommitted = true;");
+                // as only READ can be called in the non-WebViewWorkerThread,
+                // and read_uncommitted is used, we can turn off database lock
+                // to use transaction.
+                mCacheDatabase.setLockingEnabled(false);
+
+                // use InsertHelper for faster insertion
+                mCacheInserter = new DatabaseUtils.InsertHelper(mCacheDatabase,
+                        "cache");
+                mCacheUrlColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_URL_COL);
+                mCacheFilePathColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_FILE_PATH_COL);
+                mCacheLastModifyColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_LAST_MODIFY_COL);
+                mCacheETagColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_ETAG_COL);
+                mCacheExpiresColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_EXPIRES_COL);
+                mCacheExpiresStringColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_EXPIRES_STRING_COL);
+                mCacheMimeTypeColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_MIMETYPE_COL);
+                mCacheEncodingColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_ENCODING_COL);
+                mCacheHttpStatusColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_HTTP_STATUS_COL);
+                mCacheLocationColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_LOCATION_COL);
+                mCacheContentLengthColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_CONTENTLENGTH_COL);
+                mCacheContentDispositionColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_CONTENTDISPOSITION_COL);
+                mCacheCrossDomainColIndex = mCacheInserter
+                        .getColumnIndex(CACHE_CROSSDOMAIN_COL);
+                mCacheLastAccessTimeIndex = mCacheInserter
+                        .getColumnIndex(CACHE_LASTACCESSTIME_COL);
+                mCacheAccessCounterIndex = mCacheInserter
+                        .getColumnIndex(CACHE_ACCESSCOUNTER_COL);
+                mCacheWeightIndex = mCacheInserter
+                        .getColumnIndex(CACHE_WEIGHT_COL);
+            }
         }
+
         return mInstance;
     }
 
-    private synchronized void init(Context context) {
-        if (mInitialized) {
-            return;
-        }
-
-        initDatabase(context);
-        if (JniUtil.useChromiumHttpStack()) {
-            context.deleteDatabase(CACHE_DATABASE_FILE);
-        } else {
-            initCacheDatabase(context);
-        }
-
-        // Thread done, notify.
-        mInitialized = true;
-        notify();
-    }
-
-    private void initDatabase(Context context) {
-        try {
-            mDatabase = context.openOrCreateDatabase(DATABASE_FILE, 0, null);
-        } catch (SQLiteException e) {
-            // try again by deleting the old db and create a new one
-            if (context.deleteDatabase(DATABASE_FILE)) {
-                mDatabase = context.openOrCreateDatabase(DATABASE_FILE, 0,
-                        null);
-            }
-        }
-        mDatabase.enableWriteAheadLogging();
-
-        // mDatabase should not be null,
-        // the only case is RequestAPI test has problem to create db
-        if (mDatabase == null) {
-            mInitialized = true;
-            notify();
-            return;
-        }
-
-        if (mDatabase.getVersion() != DATABASE_VERSION) {
-            mDatabase.beginTransactionNonExclusive();
-            try {
-                upgradeDatabase();
-                mDatabase.setTransactionSuccessful();
-            } finally {
-                mDatabase.endTransaction();
-            }
-        }
-
-        // use per table Mutex lock, turn off database lock, this
-        // improves performance as database's ReentrantLock is
-        // expansive
-        mDatabase.setLockingEnabled(false);
-    }
-
-    private void initCacheDatabase(Context context) {
-        assert !JniUtil.useChromiumHttpStack();
-
-        try {
-            mCacheDatabase = context.openOrCreateDatabase(
-                    CACHE_DATABASE_FILE, 0, null);
-        } catch (SQLiteException e) {
-            // try again by deleting the old db and create a new one
-            if (context.deleteDatabase(CACHE_DATABASE_FILE)) {
-                mCacheDatabase = context.openOrCreateDatabase(
-                        CACHE_DATABASE_FILE, 0, null);
-            }
-        }
-        mCacheDatabase.enableWriteAheadLogging();
-
-        // mCacheDatabase should not be null,
-        // the only case is RequestAPI test has problem to create db
-        if (mCacheDatabase == null) {
-            mInitialized = true;
-            notify();
-            return;
-        }
-
-        if (mCacheDatabase.getVersion() != CACHE_DATABASE_VERSION) {
-            mCacheDatabase.beginTransactionNonExclusive();
-            try {
-                upgradeCacheDatabase();
-                bootstrapCacheDatabase();
-                mCacheDatabase.setTransactionSuccessful();
-            } finally {
-                mCacheDatabase.endTransaction();
-            }
-            // Erase the files from the file system in the
-            // case that the database was updated and the
-            // there were existing cache content
-            CacheManager.removeAllCacheFiles();
-        }
-
-        // use read_uncommitted to speed up READ
-        mCacheDatabase.execSQL("PRAGMA read_uncommitted = true;");
-        // as only READ can be called in the
-        // non-WebViewWorkerThread, and read_uncommitted is used,
-        // we can turn off database lock to use transaction.
-        mCacheDatabase.setLockingEnabled(false);
-
-        // use InsertHelper for faster insertion
-        mCacheInserter =
-                new DatabaseUtils.InsertHelper(mCacheDatabase,
-                        "cache");
-        mCacheUrlColIndex = mCacheInserter
-                            .getColumnIndex(CACHE_URL_COL);
-        mCacheFilePathColIndex = mCacheInserter
-                .getColumnIndex(CACHE_FILE_PATH_COL);
-        mCacheLastModifyColIndex = mCacheInserter
-                .getColumnIndex(CACHE_LAST_MODIFY_COL);
-        mCacheETagColIndex = mCacheInserter
-                .getColumnIndex(CACHE_ETAG_COL);
-        mCacheExpiresColIndex = mCacheInserter
-                .getColumnIndex(CACHE_EXPIRES_COL);
-        mCacheExpiresStringColIndex = mCacheInserter
-                .getColumnIndex(CACHE_EXPIRES_STRING_COL);
-        mCacheMimeTypeColIndex = mCacheInserter
-                .getColumnIndex(CACHE_MIMETYPE_COL);
-        mCacheEncodingColIndex = mCacheInserter
-                .getColumnIndex(CACHE_ENCODING_COL);
-        mCacheHttpStatusColIndex = mCacheInserter
-                .getColumnIndex(CACHE_HTTP_STATUS_COL);
-        mCacheLocationColIndex = mCacheInserter
-                .getColumnIndex(CACHE_LOCATION_COL);
-        mCacheContentLengthColIndex = mCacheInserter
-                .getColumnIndex(CACHE_CONTENTLENGTH_COL);
-        mCacheContentDispositionColIndex = mCacheInserter
-                .getColumnIndex(CACHE_CONTENTDISPOSITION_COL);
-        mCacheCrossDomainColIndex = mCacheInserter
-                .getColumnIndex(CACHE_CROSSDOMAIN_COL);
-    }
-
     private static void upgradeDatabase() {
-        upgradeDatabaseToV10();
-        upgradeDatabaseFromV10ToV11();
-        // Add future database upgrade functions here, one version at a
-        // time.
-        mDatabase.setVersion(DATABASE_VERSION);
-    }
-
-    private static void upgradeDatabaseFromV10ToV11() {
         int oldVersion = mDatabase.getVersion();
-
-        if (oldVersion >= 11) {
-            // Nothing to do.
-            return;
-        }
-
-        if (JniUtil.useChromiumHttpStack()) {
-            // Clear out old java stack cookies - this data is now stored in
-            // a separate database managed by the Chrome stack.
-            mDatabase.execSQL("DROP TABLE IF EXISTS " + mTableNames[TABLE_COOKIES_ID]);
-
-            // Likewise for the old cache table.
-            mDatabase.execSQL("DROP TABLE IF EXISTS cache");
-        }
-
-        // Update form autocomplete  URLs to match new ICS formatting.
-        Cursor c = mDatabase.query(mTableNames[TABLE_FORMURL_ID], null, null,
-                null, null, null, null);
-        while (c.moveToNext()) {
-            String urlId = Long.toString(c.getLong(c.getColumnIndex(ID_COL)));
-            String url = c.getString(c.getColumnIndex(FORMURL_URL_COL));
-            ContentValues cv = new ContentValues(1);
-            cv.put(FORMURL_URL_COL, WebTextView.urlForAutoCompleteData(url));
-            mDatabase.update(mTableNames[TABLE_FORMURL_ID], cv, ID_COL + "=?",
-                    new String[] { urlId });
-        }
-        c.close();
-    }
-
-    private static void upgradeDatabaseToV10() {
-        int oldVersion = mDatabase.getVersion();
-
-        if (oldVersion >= 10) {
-            // Nothing to do.
-            return;
-        }
-
         if (oldVersion != 0) {
             Log.i(LOGTAG, "Upgrading database from version "
                     + oldVersion + " to "
                     + DATABASE_VERSION + ", which will destroy old data");
         }
-
-        if (9 == oldVersion) {
+        boolean justPasswords = 8 == oldVersion && 9 == DATABASE_VERSION;
+        boolean justAuth = 9 == oldVersion && 10 == DATABASE_VERSION;
+        if (justAuth) {
             mDatabase.execSQL("DROP TABLE IF EXISTS "
                     + mTableNames[TABLE_HTTPAUTH_ID]);
             mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_HTTPAUTH_ID]
@@ -397,49 +421,55 @@ public class WebViewDatabase {
             return;
         }
 
-        mDatabase.execSQL("DROP TABLE IF EXISTS "
-                + mTableNames[TABLE_COOKIES_ID]);
-        mDatabase.execSQL("DROP TABLE IF EXISTS cache");
-        mDatabase.execSQL("DROP TABLE IF EXISTS "
-                + mTableNames[TABLE_FORMURL_ID]);
-        mDatabase.execSQL("DROP TABLE IF EXISTS "
-                + mTableNames[TABLE_FORMDATA_ID]);
-        mDatabase.execSQL("DROP TABLE IF EXISTS "
-                + mTableNames[TABLE_HTTPAUTH_ID]);
+        if (!justPasswords) {
+            mDatabase.execSQL("DROP TABLE IF EXISTS "
+                    + mTableNames[TABLE_COOKIES_ID]);
+            mDatabase.execSQL("DROP TABLE IF EXISTS cache");
+            mDatabase.execSQL("DROP TABLE IF EXISTS "
+                    + mTableNames[TABLE_FORMURL_ID]);
+            mDatabase.execSQL("DROP TABLE IF EXISTS "
+                    + mTableNames[TABLE_FORMDATA_ID]);
+            mDatabase.execSQL("DROP TABLE IF EXISTS "
+                    + mTableNames[TABLE_HTTPAUTH_ID]);
+        }
         mDatabase.execSQL("DROP TABLE IF EXISTS "
                 + mTableNames[TABLE_PASSWORD_ID]);
 
-        // cookies
-        mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_COOKIES_ID]
-                + " (" + ID_COL + " INTEGER PRIMARY KEY, "
-                + COOKIES_NAME_COL + " TEXT, " + COOKIES_VALUE_COL
-                + " TEXT, " + COOKIES_DOMAIN_COL + " TEXT, "
-                + COOKIES_PATH_COL + " TEXT, " + COOKIES_EXPIRES_COL
-                + " INTEGER, " + COOKIES_SECURE_COL + " INTEGER" + ");");
-        mDatabase.execSQL("CREATE INDEX cookiesIndex ON "
-                + mTableNames[TABLE_COOKIES_ID] + " (path)");
+        mDatabase.setVersion(DATABASE_VERSION);
 
-        // formurl
-        mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_FORMURL_ID]
-                + " (" + ID_COL + " INTEGER PRIMARY KEY, " + FORMURL_URL_COL
-                + " TEXT" + ");");
+        if (!justPasswords) {
+            // cookies
+            mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_COOKIES_ID]
+                    + " (" + ID_COL + " INTEGER PRIMARY KEY, "
+                    + COOKIES_NAME_COL + " TEXT, " + COOKIES_VALUE_COL
+                    + " TEXT, " + COOKIES_DOMAIN_COL + " TEXT, "
+                    + COOKIES_PATH_COL + " TEXT, " + COOKIES_EXPIRES_COL
+                    + " INTEGER, " + COOKIES_SECURE_COL + " INTEGER" + ");");
+            mDatabase.execSQL("CREATE INDEX cookiesIndex ON "
+                    + mTableNames[TABLE_COOKIES_ID] + " (path)");
 
-        // formdata
-        mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_FORMDATA_ID]
-                + " (" + ID_COL + " INTEGER PRIMARY KEY, "
-                + FORMDATA_URLID_COL + " INTEGER, " + FORMDATA_NAME_COL
-                + " TEXT, " + FORMDATA_VALUE_COL + " TEXT," + " UNIQUE ("
-                + FORMDATA_URLID_COL + ", " + FORMDATA_NAME_COL + ", "
-                + FORMDATA_VALUE_COL + ") ON CONFLICT IGNORE);");
+            // formurl
+            mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_FORMURL_ID]
+                    + " (" + ID_COL + " INTEGER PRIMARY KEY, " + FORMURL_URL_COL
+                    + " TEXT" + ");");
 
-        // httpauth
-        mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_HTTPAUTH_ID]
-                + " (" + ID_COL + " INTEGER PRIMARY KEY, "
-                + HTTPAUTH_HOST_COL + " TEXT, " + HTTPAUTH_REALM_COL
-                + " TEXT, " + HTTPAUTH_USERNAME_COL + " TEXT, "
-                + HTTPAUTH_PASSWORD_COL + " TEXT," + " UNIQUE ("
-                + HTTPAUTH_HOST_COL + ", " + HTTPAUTH_REALM_COL
-                + ") ON CONFLICT REPLACE);");
+            // formdata
+            mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_FORMDATA_ID]
+                    + " (" + ID_COL + " INTEGER PRIMARY KEY, "
+                    + FORMDATA_URLID_COL + " INTEGER, " + FORMDATA_NAME_COL
+                    + " TEXT, " + FORMDATA_VALUE_COL + " TEXT," + " UNIQUE ("
+                    + FORMDATA_URLID_COL + ", " + FORMDATA_NAME_COL + ", "
+                    + FORMDATA_VALUE_COL + ") ON CONFLICT IGNORE);");
+
+            // httpauth
+            mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_HTTPAUTH_ID]
+                    + " (" + ID_COL + " INTEGER PRIMARY KEY, "
+                    + HTTPAUTH_HOST_COL + " TEXT, " + HTTPAUTH_REALM_COL
+                    + " TEXT, " + HTTPAUTH_USERNAME_COL + " TEXT, "
+                    + HTTPAUTH_PASSWORD_COL + " TEXT," + " UNIQUE ("
+                    + HTTPAUTH_HOST_COL + ", " + HTTPAUTH_REALM_COL
+                    + ") ON CONFLICT REPLACE);");
+        }
         // passwords
         mDatabase.execSQL("CREATE TABLE " + mTableNames[TABLE_PASSWORD_ID]
                 + " (" + ID_COL + " INTEGER PRIMARY KEY, "
@@ -454,7 +484,7 @@ public class WebViewDatabase {
         if (oldVersion != 0) {
             Log.i(LOGTAG, "Upgrading cache database from version "
                     + oldVersion + " to "
-                    + CACHE_DATABASE_VERSION + ", which will destroy all old data");
+                    + DATABASE_VERSION + ", which will destroy all old data");
         }
         mCacheDatabase.execSQL("DROP TABLE IF EXISTS cache");
         mCacheDatabase.setVersion(CACHE_DATABASE_VERSION);
@@ -473,31 +503,17 @@ public class WebViewDatabase {
                     + CACHE_LOCATION_COL + " TEXT, " + CACHE_CONTENTLENGTH_COL
                     + " INTEGER, " + CACHE_CONTENTDISPOSITION_COL + " TEXT, "
                     + CACHE_CROSSDOMAIN_COL + " TEXT,"
+                    + CACHE_LASTACCESSTIME_COL + " INTEGER,"
+                    + CACHE_ACCESSCOUNTER_COL + " INTEGER,"
+                    + CACHE_WEIGHT_COL + " INTEGER,"
                     + " UNIQUE (" + CACHE_URL_COL + ") ON CONFLICT REPLACE);");
             mCacheDatabase.execSQL("CREATE INDEX cacheUrlIndex ON cache ("
                     + CACHE_URL_COL + ")");
         }
     }
 
-    // Wait for the background initialization thread to complete and check the
-    // database creation status.
-    private boolean checkInitialized() {
-        synchronized (this) {
-            while (!mInitialized) {
-                try {
-                    wait();
-                } catch (InterruptedException e) {
-                    Log.e(LOGTAG, "Caught exception while checking " +
-                                  "initialization");
-                    Log.e(LOGTAG, Log.getStackTraceString(e));
-                }
-            }
-        }
-        return mDatabase != null;
-    }
-
     private boolean hasEntries(int tableId) {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return false;
         }
 
@@ -527,7 +543,7 @@ public class WebViewDatabase {
      */
     ArrayList<Cookie> getCookiesForDomain(String domain) {
         ArrayList<Cookie> list = new ArrayList<Cookie>();
-        if (domain == null || !checkInitialized()) {
+        if (domain == null || mDatabase == null) {
             return list;
         }
 
@@ -586,7 +602,7 @@ public class WebViewDatabase {
      *            deleted.
      */
     void deleteCookies(String domain, String path, String name) {
-        if (domain == null || !checkInitialized()) {
+        if (domain == null || mDatabase == null) {
             return;
         }
 
@@ -606,7 +622,7 @@ public class WebViewDatabase {
      */
     void addCookie(Cookie cookie) {
         if (cookie.domain == null || cookie.path == null || cookie.name == null
-                || !checkInitialized()) {
+                || mDatabase == null) {
             return;
         }
 
@@ -620,7 +636,11 @@ public class WebViewDatabase {
                 cookieVal.put(COOKIES_EXPIRES_COL, cookie.expires);
             }
             cookieVal.put(COOKIES_SECURE_COL, cookie.secure);
-            mDatabase.insert(mTableNames[TABLE_COOKIES_ID], null, cookieVal);
+            try {
+                mDatabase.insert(mTableNames[TABLE_COOKIES_ID], null, cookieVal);
+            } catch (Exception e) {
+                Log.e(LOGTAG, "addCookie", e);
+            }
         }
     }
 
@@ -639,7 +659,7 @@ public class WebViewDatabase {
      * Clear cookie database
      */
     void clearCookies() {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return;
         }
 
@@ -652,7 +672,7 @@ public class WebViewDatabase {
      * Clear session cookies, which means cookie doesn't have EXPIRES.
      */
     void clearSessionCookies() {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return;
         }
 
@@ -669,7 +689,7 @@ public class WebViewDatabase {
      * @param now Time for now
      */
     void clearExpiredCookies(long now) {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return;
         }
 
@@ -693,7 +713,7 @@ public class WebViewDatabase {
                         + "WebViewWorkerThread instead of from "
                         + Thread.currentThread().getName());
             }
-            mCacheDatabase.beginTransactionNonExclusive();
+            mCacheDatabase.beginTransaction();
             return true;
         }
         return false;
@@ -719,22 +739,59 @@ public class WebViewDatabase {
     }
 
     /**
+     * Update cache statistics
+     */
+    CacheAccessStat updateCacheStat(String url, CacheResult c) {
+        if (c.expires != 0) {
+            CacheAccessStat cacheStat;
+            synchronized (mCacheStatLock) {
+                cacheStat = mCacheStat.get(url);
+                if (cacheStat == null) {
+                    cacheStat = new CacheAccessStat(c);
+                    mCacheStat.put( url , cacheStat);
+                } else {
+                    cacheStat.hit();
+                }
+            }
+            return cacheStat;
+        }
+        return null;
+    }
+
+    /**
+     * Flush cache statistics
+     */
+    void flushCacheStat() {
+        synchronized (mCacheStatLock) {
+        if (!mCacheStat.isEmpty()) {
+                long start = System.currentTimeMillis();
+                for (Map.Entry<String, CacheAccessStat> entry : mCacheStat.entrySet()) {
+                    mCacheDatabase.execSQL("UPDATE cache SET " +
+                            CACHE_LASTACCESSTIME_COL + "=" + entry.getValue().mLastAccessTime + "," +
+                            CACHE_ACCESSCOUNTER_COL + "=" + entry.getValue().mCacheAccessCounter + "," +
+                            CACHE_WEIGHT_COL + "=" + entry.getValue().mWeight + " WHERE url = ?",
+                            new String[] { entry.getKey() } );
+                }
+                mCacheStat.clear();
+            }
+        }
+    }
+
+    /**
      * Get a cache item.
      * 
      * @param url The url
      * @return CacheResult The CacheManager.CacheResult
      */
     CacheResult getCache(String url) {
-        assert !JniUtil.useChromiumHttpStack();
-
-        if (url == null || !checkInitialized()) {
+        if (url == null || mCacheDatabase == null) {
             return null;
         }
 
         Cursor cursor = null;
         final String query = "SELECT filepath, lastmodify, etag, expires, "
                 + "expiresstring, mimetype, encoding, httpstatus, location, contentlength, "
-                + "contentdisposition, crossdomain FROM cache WHERE url = ?";
+                + "contentdisposition, crossdomain, accesscounter FROM cache WHERE url = ?";
         try {
             cursor = mCacheDatabase.rawQuery(query, new String[] { url });
             if (cursor.moveToFirst()) {
@@ -751,6 +808,8 @@ public class WebViewDatabase {
                 ret.contentLength = cursor.getLong(9);
                 ret.contentdisposition = cursor.getString(10);
                 ret.crossDomain = cursor.getString(11);
+                ret.accessCounter = cursor.getInt(12);
+                updateCacheStat(url, ret);
                 return ret;
             }
         } catch (IllegalStateException e) {
@@ -767,13 +826,13 @@ public class WebViewDatabase {
      * @param url The url
      */
     void removeCache(String url) {
-        assert !JniUtil.useChromiumHttpStack();
-
-        if (url == null || !checkInitialized()) {
+        if (url == null || mCacheDatabase == null) {
             return;
         }
-
         mCacheDatabase.execSQL("DELETE FROM cache WHERE url = ?", new String[] { url });
+        synchronized (mCacheStatLock) {
+            mCacheStat.remove(url);
+        }
     }
 
     /**
@@ -783,9 +842,7 @@ public class WebViewDatabase {
      * @param c The CacheManager.CacheResult
      */
     void addCache(String url, CacheResult c) {
-        assert !JniUtil.useChromiumHttpStack();
-
-        if (url == null || !checkInitialized()) {
+        if (url == null || mCacheDatabase == null) {
             return;
         }
 
@@ -804,6 +861,18 @@ public class WebViewDatabase {
         mCacheInserter.bind(mCacheContentDispositionColIndex,
                 c.contentdisposition);
         mCacheInserter.bind(mCacheCrossDomainColIndex, c.crossDomain);
+
+        CacheAccessStat cacheStat = updateCacheStat(url, c);
+        if (cacheStat == null) {
+            mCacheInserter.bind(mCacheLastAccessTimeIndex, System.currentTimeMillis());
+            mCacheInserter.bind(mCacheAccessCounterIndex, c.accessCounter+1);
+            mCacheInserter.bind(mCacheWeightIndex, 0);
+        }
+        else {
+            mCacheInserter.bind(mCacheLastAccessTimeIndex, cacheStat.mLastAccessTime);
+            mCacheInserter.bind(mCacheAccessCounterIndex, cacheStat.mCacheAccessCounter);
+            mCacheInserter.bind(mCacheWeightIndex, cacheStat.mWeight);
+        }
         mCacheInserter.execute();
     }
 
@@ -811,15 +880,18 @@ public class WebViewDatabase {
      * Clear cache database
      */
     void clearCache() {
-        if (!checkInitialized()) {
+        if (mCacheDatabase == null) {
             return;
         }
 
         mCacheDatabase.delete("cache", null, null);
+        synchronized (mCacheStatLock) {
+            mCacheStat.clear();
+        }
     }
 
     boolean hasCache() {
-        if (!checkInitialized()) {
+        if (mCacheDatabase == null) {
             return false;
         }
 
@@ -860,7 +932,13 @@ public class WebViewDatabase {
     List<String> trimCache(long amount) {
         ArrayList<String> pathList = new ArrayList<String>(100);
         Cursor cursor = null;
-        final String query = "SELECT contentlength, filepath FROM cache ORDER BY expires ASC";
+        flushCacheStat();
+        if (CACHE_EVICT_EXPIRED!=0) {
+            mCacheDatabase.execSQL("UPDATE cache SET " + CACHE_WEIGHT_COL + "=" + CACHE_LASTACCESSTIME_COL +
+                " WHERE " + CACHE_EXPIRES_COL + "<=" + System.currentTimeMillis() +
+                " AND " + CACHE_EXPIRES_COL + "!=0");
+        }
+        final String query = "SELECT contentlength, filepath FROM cache ORDER BY " + CACHE_ORDER_BY + " ASC";
         try {
             cursor = mCacheDatabase.rawQuery(query, null);
             if (cursor.moveToFirst()) {
@@ -945,7 +1023,7 @@ public class WebViewDatabase {
      */
     void setUsernamePassword(String schemePlusHost, String username,
                 String password) {
-        if (schemePlusHost == null || !checkInitialized()) {
+        if (schemePlusHost == null || mDatabase == null) {
             return;
         }
 
@@ -954,8 +1032,12 @@ public class WebViewDatabase {
             c.put(PASSWORD_HOST_COL, schemePlusHost);
             c.put(PASSWORD_USERNAME_COL, username);
             c.put(PASSWORD_PASSWORD_COL, password);
-            mDatabase.insert(mTableNames[TABLE_PASSWORD_ID], PASSWORD_HOST_COL,
-                    c);
+            try {
+                mDatabase.insert(mTableNames[TABLE_PASSWORD_ID],
+                        PASSWORD_HOST_COL, c);
+            } catch (Exception e) {
+                Log.e(LOGTAG, "setUsernamePassword", e);
+            }
         }
     }
 
@@ -967,7 +1049,7 @@ public class WebViewDatabase {
      *         String[1] is password. Return null if it can't find anything.
      */
     String[] getUsernamePassword(String schemePlusHost) {
-        if (schemePlusHost == null || !checkInitialized()) {
+        if (schemePlusHost == null || mDatabase == null) {
             return null;
         }
 
@@ -1013,7 +1095,7 @@ public class WebViewDatabase {
      * Clear password database
      */
     public void clearUsernamePassword() {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return;
         }
 
@@ -1038,7 +1120,7 @@ public class WebViewDatabase {
      */
     void setHttpAuthUsernamePassword(String host, String realm, String username,
             String password) {
-        if (host == null || realm == null || !checkInitialized()) {
+        if (host == null || realm == null || mDatabase == null) {
             return;
         }
 
@@ -1048,8 +1130,12 @@ public class WebViewDatabase {
             c.put(HTTPAUTH_REALM_COL, realm);
             c.put(HTTPAUTH_USERNAME_COL, username);
             c.put(HTTPAUTH_PASSWORD_COL, password);
-            mDatabase.insert(mTableNames[TABLE_HTTPAUTH_ID], HTTPAUTH_HOST_COL,
-                    c);
+            try {
+                mDatabase.insert(mTableNames[TABLE_HTTPAUTH_ID],
+                        HTTPAUTH_HOST_COL, c);
+            } catch (Exception e) {
+                Log.e(LOGTAG, "setHttpAuthUsernamePassword", e);
+            }
         }
     }
 
@@ -1063,7 +1149,7 @@ public class WebViewDatabase {
      *         String[1] is password. Return null if it can't find anything.
      */
     String[] getHttpAuthUsernamePassword(String host, String realm) {
-        if (host == null || realm == null || !checkInitialized()){
+        if (host == null || realm == null || mDatabase == null){
             return null;
         }
 
@@ -1110,7 +1196,7 @@ public class WebViewDatabase {
      * Clear HTTP authentication password database
      */
     public void clearHttpAuthUsernamePassword() {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return;
         }
 
@@ -1131,7 +1217,7 @@ public class WebViewDatabase {
      * @param formdata The form data in HashMap
      */
     void setFormData(String url, HashMap<String, String> formdata) {
-        if (url == null || formdata == null || !checkInitialized()) {
+        if (url == null || formdata == null || mDatabase == null) {
             return;
         }
 
@@ -1165,7 +1251,12 @@ public class WebViewDatabase {
                     Entry<String, String> entry = iter.next();
                     map.put(FORMDATA_NAME_COL, entry.getKey());
                     map.put(FORMDATA_VALUE_COL, entry.getValue());
-                    mDatabase.insert(mTableNames[TABLE_FORMDATA_ID], null, map);
+                    try {
+                        mDatabase.insert(mTableNames[TABLE_FORMDATA_ID], null,
+                                map);
+                    } catch (Exception e) {
+                        Log.e(LOGTAG, "setFormData", e);
+                    }
                 }
             }
         }
@@ -1180,7 +1271,7 @@ public class WebViewDatabase {
      */
     ArrayList<String> getFormData(String url, String name) {
         ArrayList<String> values = new ArrayList<String>();
-        if (url == null || name == null || !checkInitialized()) {
+        if (url == null || name == null || mDatabase == null) {
             return values;
         }
 
@@ -1193,7 +1284,7 @@ public class WebViewDatabase {
                 cursor = mDatabase.query(mTableNames[TABLE_FORMURL_ID],
                         ID_PROJECTION, urlSelection, new String[] { url }, null,
                         null, null);
-                while (cursor.moveToNext()) {
+                if (cursor.moveToFirst()) {
                     long urlid = cursor.getLong(cursor.getColumnIndex(ID_COL));
                     Cursor dataCursor = null;
                     try {
@@ -1240,7 +1331,7 @@ public class WebViewDatabase {
      * Clear form database
      */
     public void clearFormData() {
-        if (!checkInitialized()) {
+        if (mDatabase == null) {
             return;
         }
 

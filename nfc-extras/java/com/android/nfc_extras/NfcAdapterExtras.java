@@ -16,9 +16,8 @@
 
 package com.android.nfc_extras;
 
-import java.util.HashMap;
-
-import android.content.Context;
+import android.annotation.SdkConstant;
+import android.annotation.SdkConstant.SdkConstantType;
 import android.nfc.INfcAdapterExtras;
 import android.nfc.NfcAdapter;
 import android.os.RemoteException;
@@ -59,22 +58,16 @@ public final class NfcAdapterExtras {
     // protected by NfcAdapterExtras.class, and final after first construction,
     // except for attemptDeadServiceRecovery() when NFC crashes - we accept a
     // best effort recovery
+    private static NfcAdapter sAdapter;
     private static INfcAdapterExtras sService;
-    private static final CardEmulationRoute ROUTE_OFF =
-            new CardEmulationRoute(CardEmulationRoute.ROUTE_OFF, null);
-
-    // contents protected by NfcAdapterExtras.class
-    private static final HashMap<NfcAdapter, NfcAdapterExtras> sNfcExtras = new HashMap();
-
-    private final NfcExecutionEnvironment mEmbeddedEe;
-    private final CardEmulationRoute mRouteOnWhenScreenOn;
-
-    private final NfcAdapter mAdapter;
-    final String mPackageName;
+    private static NfcAdapterExtras sSingleton;
+    private static NfcExecutionEnvironment sEmbeddedEe;
+    private static CardEmulationRoute sRouteOff;
+    private static CardEmulationRoute sRouteOnWhenScreenOn;
 
     /** get service handles */
-    private static void initService(NfcAdapter adapter) {
-        final INfcAdapterExtras service = adapter.getNfcAdapterExtrasInterface();
+    private static void initService() {
+        final INfcAdapterExtras service = sAdapter.getNfcAdapterExtrasInterface();
         if (service != null) {
             // Leave stale rather than receive a null value.
             sService = service;
@@ -91,32 +84,31 @@ public final class NfcAdapterExtras {
      * @return the {@link NfcAdapterExtras} object for the given {@link NfcAdapter}
      */
     public static NfcAdapterExtras get(NfcAdapter adapter) {
-        Context context = adapter.getContext();
-        if (context == null) {
-            throw new UnsupportedOperationException(
-                    "You must pass a context to your NfcAdapter to use the NFC extras APIs");
-        }
-
-        synchronized (NfcAdapterExtras.class) {
-            if (sService == null) {
-                initService(adapter);
+        synchronized(NfcAdapterExtras.class) {
+            if (sSingleton == null) {
+                try {
+                    sAdapter = adapter;
+                    sSingleton = new NfcAdapterExtras();
+                    sEmbeddedEe = new NfcExecutionEnvironment(sSingleton);
+                    sRouteOff = new CardEmulationRoute(CardEmulationRoute.ROUTE_OFF, null);
+                    sRouteOnWhenScreenOn = new CardEmulationRoute(
+                            CardEmulationRoute.ROUTE_ON_WHEN_SCREEN_ON, sEmbeddedEe);
+                    initService();
+                } finally {
+                    if (sService == null) {
+                        sRouteOnWhenScreenOn = null;
+                        sRouteOff = null;
+                        sEmbeddedEe = null;
+                        sSingleton = null;
+                        sAdapter = null;
+                    }
+                }
             }
-            NfcAdapterExtras extras = sNfcExtras.get(adapter);
-            if (extras == null) {
-                extras = new NfcAdapterExtras(adapter);
-                sNfcExtras.put(adapter,  extras);
-            }
-            return extras;
+            return sSingleton;
         }
     }
 
-    private NfcAdapterExtras(NfcAdapter adapter) {
-        mAdapter = adapter;
-        mPackageName = adapter.getContext().getPackageName();
-        mEmbeddedEe = new NfcExecutionEnvironment(this);
-        mRouteOnWhenScreenOn = new CardEmulationRoute(CardEmulationRoute.ROUTE_ON_WHEN_SCREEN_ON,
-                mEmbeddedEe);
-    }
+    private NfcAdapterExtras() {}
 
     /**
      * Immutable data class that describes a card emulation route.
@@ -161,8 +153,8 @@ public final class NfcAdapterExtras {
      */
     void attemptDeadServiceRecovery(Exception e) {
         Log.e(TAG, "NFC Adapter Extras dead - attempting to recover");
-        mAdapter.attemptDeadServiceRecovery(e);
-        initService(mAdapter);
+        sAdapter.attemptDeadServiceRecovery(e);
+        initService();
     }
 
     INfcAdapterExtras getService() {
@@ -174,16 +166,18 @@ public final class NfcAdapterExtras {
      *
      * <p class="note">
      * Requires the {@link android.Manifest.permission#WRITE_SECURE_SETTINGS} permission.
+     *
+     * @return
      */
     public CardEmulationRoute getCardEmulationRoute() {
         try {
-            int route = sService.getCardEmulationRoute(mPackageName);
+            int route = sService.getCardEmulationRoute();
             return route == CardEmulationRoute.ROUTE_OFF ?
-                    ROUTE_OFF :
-                    mRouteOnWhenScreenOn;
+                    sRouteOff :
+                    sRouteOnWhenScreenOn;
         } catch (RemoteException e) {
             attemptDeadServiceRecovery(e);
-            return ROUTE_OFF;
+            return sRouteOff;
         }
     }
 
@@ -195,11 +189,11 @@ public final class NfcAdapterExtras {
      * <p class="note">
      * Requires the {@link android.Manifest.permission#WRITE_SECURE_SETTINGS} permission.
      *
-     * @param route a {@link CardEmulationRoute}
+     * @param route a {@link #CardEmulationRoute}
      */
     public void setCardEmulationRoute(CardEmulationRoute route) {
         try {
-            sService.setCardEmulationRoute(mPackageName, route.route);
+            sService.setCardEmulationRoute(route.route);
         } catch (RemoteException e) {
             attemptDeadServiceRecovery(e);
         }
@@ -207,7 +201,7 @@ public final class NfcAdapterExtras {
 
     /**
      * Get the {@link NfcExecutionEnvironment} that is embedded with the
-     * {@link NfcAdapter}.
+     * {@link NFcAdapter}.
      *
      * <p class="note">
      * Requires the {@link android.Manifest.permission#WRITE_SECURE_SETTINGS} permission.
@@ -215,7 +209,7 @@ public final class NfcAdapterExtras {
      * @return a {@link NfcExecutionEnvironment}, or null if there is no embedded NFC-EE
      */
     public NfcExecutionEnvironment getEmbeddedExecutionEnvironment() {
-        return mEmbeddedEe;
+        return sEmbeddedEe;
     }
 
     /**
@@ -224,12 +218,12 @@ public final class NfcAdapterExtras {
      * Some implementations of NFC Adapter Extras may require applications
      * to authenticate with a token, before using other methods.
      *
-     * @param token a implementation specific token
-     * @throws java.lang.SecurityException if authentication failed
+     * @param a implementation specific token
+     * @throws a {@link java.lang.SecurityException} if authentication failed
      */
     public void authenticate(byte[] token) {
         try {
-            sService.authenticate(mPackageName, token);
+            sService.authenticate(token);
         } catch (RemoteException e) {
             attemptDeadServiceRecovery(e);
         }

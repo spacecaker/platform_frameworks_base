@@ -19,7 +19,11 @@ package com.android.internal.telephony.cdma;
 import android.os.Parcel;
 import android.os.SystemProperties;
 import android.telephony.PhoneNumberUtils;
+import android.text.format.Time;
+import android.util.Config;
 import android.util.Log;
+import com.android.internal.telephony.EncodeException;
+import com.android.internal.telephony.GsmAlphabet;
 import com.android.internal.telephony.IccUtils;
 import com.android.internal.telephony.SmsHeader;
 import com.android.internal.telephony.SmsMessageBase;
@@ -32,6 +36,7 @@ import com.android.internal.telephony.cdma.sms.UserData;
 import com.android.internal.util.BitwiseInputStream;
 import com.android.internal.util.HexDump;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -111,6 +116,30 @@ public class SmsMessage extends SmsMessageBase {
             Log.e(LOG_TAG, "SMS PDU parsing failed: ", ex);
             return null;
         }
+    }
+
+    /**
+     * Note: This function is a GSM specific functionality which is not supported in CDMA mode.
+     */
+    public static SmsMessage newFromCMT(String[] lines) {
+        Log.w(LOG_TAG, "newFromCMT: is not supported in CDMA mode.");
+        return null;
+    }
+
+    /**
+     * Note: This function is a GSM specific functionality which is not supported in CDMA mode.
+     */
+    public static SmsMessage newFromCMTI(String line) {
+        Log.w(LOG_TAG, "newFromCMTI: is not supported in CDMA mode.");
+        return null;
+    }
+
+    /**
+     * Note: This function is a GSM specific functionality which is not supported in CDMA mode.
+     */
+    public static SmsMessage newFromCDS(String line) {
+        Log.w(LOG_TAG, "newFromCDS: is not supported in CDMA mode.");
+        return null;
     }
 
     /**
@@ -670,7 +699,7 @@ public class SmsMessage extends SmsMessageBase {
             if (mEnvelope.bearerData != null) {
                 mBearerData.numberOfMessages = 0x000000FF & mEnvelope.bearerData[0];
             }
-            if (false) {
+            if (Config.DEBUG) {
                 Log.d(LOG_TAG, "parseSms: get MWI " +
                       Integer.toString(mBearerData.numberOfMessages));
             }
@@ -691,7 +720,7 @@ public class SmsMessage extends SmsMessageBase {
 
         if (originatingAddress != null) {
             originatingAddress.address = new String(originatingAddress.origBytes);
-            if (false) Log.v(LOG_TAG, "SMS originating address: "
+            if (Config.LOGV) Log.v(LOG_TAG, "SMS originating address: "
                     + originatingAddress.address);
         }
 
@@ -699,7 +728,7 @@ public class SmsMessage extends SmsMessageBase {
             scTimeMillis = mBearerData.msgCenterTimeStamp.toMillis(true);
         }
 
-        if (false) Log.d(LOG_TAG, "SMS SC timestamp: " + scTimeMillis);
+        if (Config.LOGD) Log.d(LOG_TAG, "SMS SC timestamp: " + scTimeMillis);
 
         // Message Type (See 3GPP2 C.S0015-B, v2, 4.5.1)
         if (mBearerData.messageType == BearerData.MESSAGE_TYPE_DELIVERY_ACK) {
@@ -724,9 +753,9 @@ public class SmsMessage extends SmsMessageBase {
         }
 
         if (messageBody != null) {
-            if (false) Log.v(LOG_TAG, "SMS message body: '" + messageBody + "'");
+            if (Config.LOGV) Log.v(LOG_TAG, "SMS message body: '" + messageBody + "'");
             parseMessageBody();
-        } else if ((userData != null) && (false)) {
+        } else if ((userData != null) && (Config.LOGV)) {
             Log.v(LOG_TAG, "SMS payload: '" + IccUtils.bytesToHexString(userData) + "'");
         }
     }

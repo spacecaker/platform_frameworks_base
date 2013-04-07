@@ -29,11 +29,14 @@
 #include <libsonivox/eas_reverb.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
-
-#include <system/audio.h>
 
 #include "MidiFile.h"
+
+#ifdef HAVE_GETTID
+static pid_t myTid() { return gettid(); }
+#else
+static pid_t myTid() { return getpid(); }
+#endif
 
 // ----------------------------------------------------------------------------
 
@@ -55,7 +58,7 @@ static const S_EAS_LIB_CONFIG* pLibConfig = NULL;
 MidiFile::MidiFile() :
     mEasData(NULL), mEasHandle(NULL), mAudioBuffer(NULL),
     mPlayTime(-1), mDuration(-1), mState(EAS_STATE_ERROR),
-    mStreamType(AUDIO_STREAM_MUSIC), mLoop(false), mExit(false),
+    mStreamType(AudioSystem::MUSIC), mLoop(false), mExit(false),
     mPaused(false), mRender(false), mTid(-1)
 {
     LOGV("constructor");
@@ -420,7 +423,7 @@ status_t MidiFile::setLooping(int loop)
 }
 
 status_t MidiFile::createOutputTrack() {
-    if (mAudioSink->open(pLibConfig->sampleRate, pLibConfig->numChannels, AUDIO_FORMAT_PCM_16_BIT, 2) != NO_ERROR) {
+    if (mAudioSink->open(pLibConfig->sampleRate, pLibConfig->numChannels, AudioSystem::PCM_16_BIT, 2) != NO_ERROR) {
         LOGE("mAudioSink open failed");
         return ERROR_OPEN_FAILED;
     }
@@ -450,7 +453,7 @@ int MidiFile::render() {
     // signal main thread that we started
     {
         Mutex::Autolock l(mMutex);
-        mTid = gettid();
+        mTid = myTid();
         LOGV("render thread(%d) signal", mTid);
         mCondition.signal();
     }

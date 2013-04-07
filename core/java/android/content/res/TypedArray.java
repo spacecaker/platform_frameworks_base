@@ -42,7 +42,7 @@ public class TypedArray {
     /*package*/ int[] mData;
     /*package*/ int[] mIndices;
     /*package*/ int mLength;
-    /*package*/ TypedValue mValue = new TypedValue();
+    private TypedValue mValue = new TypedValue();
    
     /**
      * Return the number of values in this array.

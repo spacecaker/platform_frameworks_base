@@ -18,26 +18,20 @@ package android.media;
 
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
-import android.app.PendingIntent;
+import android.app.ProfileGroup;
+import android.app.ProfileManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
-import android.database.ContentObserver;
-import android.graphics.Bitmap;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
-import android.os.SystemClock;
 import android.os.ServiceManager;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.KeyEvent;
-import android.view.VolumePanel;
 
-import java.util.Iterator;
 import java.util.HashMap;
 
 /**
@@ -50,10 +44,12 @@ public class AudioManager {
 
     private final Context mContext;
     private final Handler mHandler;
-    private long mVolumeKeyUpTime;
-    private int  mVolumeControlStream = -1;
+
+    private final ProfileManager mProfileManager;
+
     private static String TAG = "AudioManager";
-    private static boolean localLOGV = false;
+    private static boolean DEBUG = false;
+    private static boolean localLOGV = DEBUG || android.util.Config.LOGV;
 
     /**
      * Broadcast intent, a hint for applications that audio is about to become
@@ -180,10 +176,11 @@ public class AudioManager {
         11, // STREAM_MUSIC
         6,  // STREAM_ALARM
         5,  // STREAM_NOTIFICATION
-        7,  // STREAM_BLUETOOTH_SCO
+        11,  // STREAM_BLUETOOTH_SCO
         7,  // STREAM_SYSTEM_ENFORCED
         11, // STREAM_DTMF
-        11  // STREAM_TTS
+        11,  // STREAM_TTS
+        11 // STREAM_FM
     };
 
     /**
@@ -265,13 +262,6 @@ public class AudioManager {
     public static final int FLAG_VIBRATE = 1 << 4;
 
     /**
-     * forces use of specified stream
-     * @hide
-     */
-    public static final int FLAG_FORCE_STREAM = 1 << 5;
-
-
-    /**
      * Ringer mode that will be silent and will not vibrate. (This overrides the
      * vibrate setting.)
      *
@@ -299,9 +289,6 @@ public class AudioManager {
      * @see #getRingerMode()
      */
     public static final int RINGER_MODE_NORMAL = 2;
-
-    // maximum valid ringer mode value. Values must start from 0 and be contiguous.
-    private static final int RINGER_MODE_MAX = RINGER_MODE_NORMAL;
 
     /**
      * Vibrate type that corresponds to the ringer.
@@ -360,6 +347,7 @@ public class AudioManager {
     public AudioManager(Context context) {
         mContext = context;
         mHandler = new Handler(context.getMainLooper());
+        mProfileManager = (ProfileManager)context.getSystemService(Context.PROFILE_SERVICE);
     }
 
     private static IAudioService getService()
@@ -370,85 +358,6 @@ public class AudioManager {
         IBinder b = ServiceManager.getService(Context.AUDIO_SERVICE);
         sService = IAudioService.Stub.asInterface(b);
         return sService;
-    }
-
-    /**
-     * @hide
-     */
-    public void preDispatchKeyEvent(int keyCode, int stream) {
-        /*
-         * If the user hits another key within the play sound delay, then
-         * cancel the sound
-         */
-        if (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && keyCode != KeyEvent.KEYCODE_VOLUME_UP
-                && keyCode != KeyEvent.KEYCODE_VOLUME_MUTE
-                && mVolumeKeyUpTime + VolumePanel.PLAY_SOUND_DELAY
-                        > SystemClock.uptimeMillis()) {
-            /*
-             * The user has hit another key during the delay (e.g., 300ms)
-             * since the last volume key up, so cancel any sounds.
-             */
-            adjustSuggestedStreamVolume(AudioManager.ADJUST_SAME,
-                        stream, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
-        }
-    }
-
-    /**
-     * @hide
-     */
-    public void handleKeyDown(int keyCode, int stream) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_VOLUME_UP:
-            case KeyEvent.KEYCODE_VOLUME_DOWN:
-                /*
-                 * Adjust the volume in on key down since it is more
-                 * responsive to the user.
-                 */
-                int flags = FLAG_SHOW_UI | FLAG_VIBRATE;
-                if (mVolumeControlStream != -1) {
-                    stream = mVolumeControlStream;
-                    flags |= FLAG_FORCE_STREAM;
-                }
-                adjustSuggestedStreamVolume(
-                        keyCode == KeyEvent.KEYCODE_VOLUME_UP
-                                ? ADJUST_RAISE
-                                : ADJUST_LOWER,
-                        stream,
-                        flags);
-                break;
-            case KeyEvent.KEYCODE_VOLUME_MUTE:
-                // TODO: Actually handle MUTE.
-                break;
-        }
-    }
-
-    /**
-     * @hide
-     */
-    public void handleKeyUp(int keyCode, int stream) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_VOLUME_UP:
-            case KeyEvent.KEYCODE_VOLUME_DOWN:
-                /*
-                 * Play a sound. This is done on key up since we don't want the
-                 * sound to play when a user holds down volume down to mute.
-                 */
-                int flags = FLAG_PLAY_SOUND;
-                if (mVolumeControlStream != -1) {
-                    stream = mVolumeControlStream;
-                    flags |= FLAG_FORCE_STREAM;
-                }
-                adjustSuggestedStreamVolume(
-                        ADJUST_SAME,
-                        stream,
-                        flags);
-
-                mVolumeKeyUpTime = SystemClock.uptimeMillis();
-                break;
-            case KeyEvent.KEYCODE_VOLUME_MUTE:
-                // TODO: Actually handle MUTE.
-                break;
-        }
     }
 
     /**
@@ -546,21 +455,6 @@ public class AudioManager {
     }
 
     /**
-     * Checks valid ringer mode values.
-     *
-     * @return true if the ringer mode indicated is valid, false otherwise.
-     *
-     * @see #setRingerMode(int)
-     * @hide
-     */
-    public static boolean isValidRingerMode(int ringerMode) {
-        if (ringerMode < 0 || ringerMode > RINGER_MODE_MAX) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
      * Returns the maximum volume index for a particular stream.
      *
      * @param streamType The stream type whose maximum volume index is returned.
@@ -596,21 +490,6 @@ public class AudioManager {
     }
 
     /**
-     * Get last audible volume before stream was muted.
-     *
-     * @hide
-     */
-    public int getLastAudibleStreamVolume(int streamType) {
-        IAudioService service = getService();
-        try {
-            return service.getLastAudibleStreamVolume(streamType);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in getLastAudibleStreamVolume", e);
-            return 0;
-        }
-    }
-
-    /**
      * Sets the ringer mode.
      * <p>
      * Silent mode will mute the volume and will not vibrate. Vibrate mode will
@@ -622,9 +501,6 @@ public class AudioManager {
      * @see #getRingerMode()
      */
     public void setRingerMode(int ringerMode) {
-        if (!isValidRingerMode(ringerMode)) {
-            return;
-        }
         IAudioService service = getService();
         try {
             service.setRingerMode(ringerMode);
@@ -708,32 +584,6 @@ public class AudioManager {
     }
 
     /**
-     * get stream mute state.
-     *
-     * @hide
-     */
-    public boolean isStreamMute(int streamType) {
-        IAudioService service = getService();
-        try {
-            return service.isStreamMute(streamType);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in isStreamMute", e);
-            return false;
-        }
-    }
-
-    /**
-     * forces the stream controlled by hard volume keys
-     * specifying streamType == -1 releases control to the
-     * logic.
-     *
-     * @hide
-     */
-    public void forceVolumeControlStream(int streamType) {
-        mVolumeControlStream = streamType;
-    }
-
-    /**
      * Returns whether a particular type should vibrate according to user
      * settings and the current ringer mode.
      * <p>
@@ -751,6 +601,26 @@ public class AudioManager {
      * @see #getVibrateSetting(int)
      */
     public boolean shouldVibrate(int vibrateType) {
+        String packageName = mContext.getPackageName();
+        // Don't apply profiles for "android" context, as these could
+        // come from the NotificationManager, and originate from a real package.
+        if(!packageName.equals("android")){
+            ProfileGroup profileGroup = mProfileManager.getActiveProfileGroup(packageName);
+            if(profileGroup != null){
+                Log.v(TAG, "shouldVibrate, group: " + profileGroup.getUuid()
+                        + " mode: " + profileGroup.getVibrateMode());
+                switch(profileGroup.getVibrateMode()){
+                    case OVERRIDE :
+                        return true;
+                    case SUPPRESS :
+                        return false;
+                    case DEFAULT :
+                        // Drop through
+                }
+            }
+        }else{
+            Log.v(TAG, "Not applying override for 'android' package");
+        }
         IAudioService service = getService();
         try {
             return service.shouldVibrate(vibrateType);
@@ -852,64 +722,29 @@ public class AudioManager {
      * or {@link #SCO_AUDIO_STATE_CONNECTED}
      *
      * @see #startBluetoothSco()
-     * @deprecated Use  {@link #ACTION_SCO_AUDIO_STATE_UPDATED} instead
      */
-    @Deprecated
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_SCO_AUDIO_STATE_CHANGED =
             "android.media.SCO_AUDIO_STATE_CHANGED";
-
-     /**
-     * Sticky broadcast intent action indicating that the bluetoooth SCO audio
-     * connection state has been updated.
-     * <p>This intent has two extras:
-     * <ul>
-     *   <li> {@link #EXTRA_SCO_AUDIO_STATE} - The new SCO audio state. </li>
-     *   <li> {@link #EXTRA_SCO_AUDIO_PREVIOUS_STATE}- The previous SCO audio state. </li>
-     * </ul>
-     * <p> EXTRA_SCO_AUDIO_STATE or EXTRA_SCO_AUDIO_PREVIOUS_STATE can be any of:
-     * <ul>
-     *   <li> {@link #SCO_AUDIO_STATE_DISCONNECTED}, </li>
-     *   <li> {@link #SCO_AUDIO_STATE_CONNECTING} or </li>
-     *   <li> {@link #SCO_AUDIO_STATE_CONNECTED}, </li>
-     * </ul>
-     * @see #startBluetoothSco()
-     */
-    @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
-    public static final String ACTION_SCO_AUDIO_STATE_UPDATED =
-            "android.media.ACTION_SCO_AUDIO_STATE_UPDATED";
-
     /**
-     * Extra for intent {@link #ACTION_SCO_AUDIO_STATE_CHANGED} or
-     * {@link #ACTION_SCO_AUDIO_STATE_UPDATED} containing the new bluetooth SCO connection state.
+     * Extra for intent {@link #ACTION_SCO_AUDIO_STATE_CHANGED} containing the new
+     * bluetooth SCO connection state.
      */
     public static final String EXTRA_SCO_AUDIO_STATE =
             "android.media.extra.SCO_AUDIO_STATE";
 
     /**
-     * Extra for intent {@link #ACTION_SCO_AUDIO_STATE_UPDATED} containing the previous
-     * bluetooth SCO connection state.
-     */
-    public static final String EXTRA_SCO_AUDIO_PREVIOUS_STATE =
-            "android.media.extra.SCO_AUDIO_PREVIOUS_STATE";
-
-    /**
-     * Value for extra EXTRA_SCO_AUDIO_STATE or EXTRA_SCO_AUDIO_PREVIOUS_STATE
-     * indicating that the SCO audio channel is not established
+     * Value for extra {@link #EXTRA_SCO_AUDIO_STATE} indicating that the
+     * SCO audio channel is not established
      */
     public static final int SCO_AUDIO_STATE_DISCONNECTED = 0;
     /**
-     * Value for extra {@link #EXTRA_SCO_AUDIO_STATE} or {@link #EXTRA_SCO_AUDIO_PREVIOUS_STATE}
-     * indicating that the SCO audio channel is established
+     * Value for extra {@link #EXTRA_SCO_AUDIO_STATE} indicating that the
+     * SCO audio channel is established
      */
     public static final int SCO_AUDIO_STATE_CONNECTED = 1;
     /**
-     * Value for extra EXTRA_SCO_AUDIO_STATE or EXTRA_SCO_AUDIO_PREVIOUS_STATE
-     * indicating that the SCO audio channel is being established
-     */
-    public static final int SCO_AUDIO_STATE_CONNECTING = 2;
-    /**
-     * Value for extra EXTRA_SCO_AUDIO_STATE indicating that
+     * Value for extra {@link #EXTRA_SCO_AUDIO_STATE} indicating that
      * there was an error trying to obtain the state
      */
     public static final int SCO_AUDIO_STATE_ERROR = -1;
@@ -937,37 +772,29 @@ public class AudioManager {
      * to/from a bluetooth SCO headset while the phone is not in call.
      * <p>As the SCO connection establishment can take several seconds,
      * applications should not rely on the connection to be available when the method
-     * returns but instead register to receive the intent {@link #ACTION_SCO_AUDIO_STATE_UPDATED}
+     * returns but instead register to receive the intent {@link #ACTION_SCO_AUDIO_STATE_CHANGED}
      * and wait for the state to be {@link #SCO_AUDIO_STATE_CONNECTED}.
-     * <p>As the ACTION_SCO_AUDIO_STATE_UPDATED intent is sticky, the application can check the SCO
-     * audio state before calling startBluetoothSco() by reading the intent returned by the receiver
-     * registration. If the state is already CONNECTED, no state change will be received via the
-     * intent after calling startBluetoothSco(). It is however useful to call startBluetoothSco()
-     * so that the connection stays active in case the current initiator stops the connection.
-     * <p>Unless the connection is already active as described above, the state will always
-     * transition from DISCONNECTED to CONNECTING and then either to CONNECTED if the connection
-     * succeeds or back to DISCONNECTED if the connection fails (e.g no headset is connected).
-     * <p>When finished with the SCO connection or if the establishment fails, the application must
-     * call {@link #stopBluetoothSco()} to clear the request and turn down the bluetooth connection.
+     * <p>As the connection is not guaranteed to succeed, applications must wait for this intent with
+     * a timeout.
+     * <p>When finished with the SCO connection or if the establishment times out,
+     * the application must call {@link #stopBluetoothSco()} to clear the request and turn
+     * down the bluetooth connection.
      * <p>Even if a SCO connection is established, the following restrictions apply on audio
      * output streams so that they can be routed to SCO headset:
-     * <ul>
-     *   <li> the stream type must be {@link #STREAM_VOICE_CALL} </li>
-     *   <li> the format must be mono </li>
-     *   <li> the sampling must be 16kHz or 8kHz </li>
-     * </ul>
+     * - the stream type must be {@link #STREAM_VOICE_CALL}
+     * - the format must be mono
+     * - the sampling must be 16kHz or 8kHz
      * <p>The following restrictions apply on input streams:
-     * <ul>
-     *   <li> the format must be mono </li>
-     *   <li> the sampling must be 8kHz </li>
-     * </ul>
+     * - the format must be mono
+     * - the sampling must be 8kHz
+     *
      * <p>Note that the phone application always has the priority on the usage of the SCO
      * connection for telephony. If this method is called while the phone is in call
      * it will be ignored. Similarly, if a call is received or sent while an application
      * is using the SCO connection, the connection will be lost for the application and NOT
      * returned automatically when the call ends.
      * @see #stopBluetoothSco()
-     * @see #ACTION_SCO_AUDIO_STATE_UPDATED
+     * @see #ACTION_SCO_AUDIO_STATE_CHANGED
      */
     public void startBluetoothSco(){
         IAudioService service = getService();
@@ -984,7 +811,7 @@ public class AudioManager {
      *   {@link android.Manifest.permission#MODIFY_AUDIO_SETTINGS}.
      * <p>This method must be called by applications having requested the use of
      * bluetooth SCO audio with {@link #startBluetoothSco()}
-     * when finished with the SCO connection or if connection fails.
+     * when finished with the SCO connection or if the establishment times out.
      * @see #startBluetoothSco()
      */
     public void stopBluetoothSco(){
@@ -1045,7 +872,7 @@ public class AudioManager {
      *         false if otherwise
      */
     public boolean isBluetoothA2dpOn() {
-        if (AudioSystem.getDeviceConnectionState(DEVICE_OUT_BLUETOOTH_A2DP,"")
+        if (AudioSystem.getDeviceConnectionState(AudioSystem.DEVICE_OUT_BLUETOOTH_A2DP,"")
             == AudioSystem.DEVICE_STATE_UNAVAILABLE) {
             return false;
         } else {
@@ -1064,18 +891,15 @@ public class AudioManager {
     }
 
     /**
-     * Checks whether a wired headset is connected or not.
-     * <p>This is not a valid indication that audio playback is
-     * actually over the wired headset as audio routing depends on other conditions.
+     * Checks whether audio routing to the wired headset is on or off.
      *
-     * @return true if a wired headset is connected.
+     * @return true if audio is being routed to/from wired headset;
      *         false if otherwise
-     * @deprecated Use only to check is a headset is connected or not.
      */
     public boolean isWiredHeadsetOn() {
-        if (AudioSystem.getDeviceConnectionState(DEVICE_OUT_WIRED_HEADSET,"")
+        if (AudioSystem.getDeviceConnectionState(AudioSystem.DEVICE_OUT_WIRED_HEADSET,"")
                 == AudioSystem.DEVICE_STATE_UNAVAILABLE &&
-            AudioSystem.getDeviceConnectionState(DEVICE_OUT_WIRED_HEADPHONE,"")
+            AudioSystem.getDeviceConnectionState(AudioSystem.DEVICE_OUT_WIRED_HEADPHONE,"")
                 == AudioSystem.DEVICE_STATE_UNAVAILABLE) {
             return false;
         } else {
@@ -1115,8 +939,7 @@ public class AudioManager {
      * application when it places a phone call, as it will cause signals from the radio layer
      * to feed the platform mixer.
      *
-     * @param mode  the requested audio mode ({@link #MODE_NORMAL}, {@link #MODE_RINGTONE},
-     *              {@link #MODE_IN_CALL} or {@link #MODE_IN_COMMUNICATION}).
+     * @param mode  the requested audio mode (NORMAL, RINGTONE, or IN_CALL).
      *              Informs the HAL about the current audio state so that
      *              it can route the audio appropriately.
      */
@@ -1132,8 +955,7 @@ public class AudioManager {
     /**
      * Returns the current audio mode.
      *
-     * @return      the current audio mode ({@link #MODE_NORMAL}, {@link #MODE_RINGTONE},
-     *              {@link #MODE_IN_CALL} or {@link #MODE_IN_COMMUNICATION}).
+     * @return      the current audio mode (NORMAL, RINGTONE, or IN_CALL).
      *              Returns the current current audio state from the HAL.
      */
     public int getMode() {
@@ -1171,6 +993,7 @@ public class AudioManager {
      */
     public static final int MODE_IN_CALL            = AudioSystem.MODE_IN_CALL;
     /**
+     * @hide
      * In communication audio mode. An audio/video chat or VoIP call is established.
      */
     public static final int MODE_IN_COMMUNICATION   = AudioSystem.MODE_IN_COMMUNICATION;
@@ -1255,7 +1078,7 @@ public class AudioManager {
      * @return true if any music tracks are active.
      */
     public boolean isMusicActive() {
-        return AudioSystem.isStreamActive(STREAM_MUSIC, 0);
+        return AudioSystem.isStreamActive(STREAM_MUSIC);
     }
 
     /*
@@ -1420,6 +1243,13 @@ public class AudioManager {
         return Settings.System.getInt(mContext.getContentResolver(), Settings.System.SOUND_EFFECTS_ENABLED, 0) != 0;
     }
 
+    /**
+     * See if haptic feedback is enabled for screen touches of objects (called by ViewRoot)
+     * @hide
+     */
+    public boolean queryHapticsAllEnabled() {
+        return Settings.System.getInt(mContext.getContentResolver(), Settings.System.HAPTIC_FEEDBACK_ALL_ENABLED, 0) != 0;
+    }
 
     /**
      *  Load Sound effects.
@@ -1652,8 +1482,7 @@ public class AudioManager {
         IAudioService service = getService();
         try {
             status = service.requestAudioFocus(streamType, durationHint, mICallBack,
-                    mAudioFocusDispatcher, getIdForAudioFocusListener(l),
-                    mContext.getPackageName() /* package name */);
+                    mAudioFocusDispatcher, getIdForAudioFocusListener(l));
         } catch (RemoteException e) {
             Log.e(TAG, "Can't call requestAudioFocus() from AudioService due to "+e);
         }
@@ -1672,7 +1501,7 @@ public class AudioManager {
         IAudioService service = getService();
         try {
             status = service.abandonAudioFocus(mAudioFocusDispatcher,
-                    getIdForAudioFocusListener(l));
+                    getIdForAudioFocusListener(l), mICallBack);
         } catch (RemoteException e) {
             Log.e(TAG, "Can't call abandonAudioFocus() from AudioService due to "+e);
         }
@@ -1686,42 +1515,15 @@ public class AudioManager {
      * Register a component to be the sole receiver of MEDIA_BUTTON intents.
      * @param eventReceiver identifier of a {@link android.content.BroadcastReceiver}
      *      that will receive the media button intent. This broadcast receiver must be declared
-     *      in the application manifest. The package of the component must match that of
-     *      the context you're registering from.
+     *      in the application manifest.
      */
     public void registerMediaButtonEventReceiver(ComponentName eventReceiver) {
-        if (eventReceiver == null) {
-            return;
-        }
-        if (!eventReceiver.getPackageName().equals(mContext.getPackageName())) {
-            Log.e(TAG, "registerMediaButtonEventReceiver() error: " +
-                    "receiver and context package names don't match");
-            return;
-        }
-        // construct a PendingIntent for the media button and register it
-        Intent mediaButtonIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
-        //     the associated intent will be handled by the component being registered
-        mediaButtonIntent.setComponent(eventReceiver);
-        PendingIntent pi = PendingIntent.getBroadcast(mContext,
-                0/*requestCode, ignored*/, mediaButtonIntent, 0/*flags*/);
-        registerMediaButtonIntent(pi, eventReceiver);
-    }
-
-    /**
-     * @hide
-     * no-op if (pi == null) or (eventReceiver == null)
-     */
-    public void registerMediaButtonIntent(PendingIntent pi, ComponentName eventReceiver) {
-        if ((pi == null) || (eventReceiver == null)) {
-            Log.e(TAG, "Cannot call registerMediaButtonIntent() with a null parameter");
-            return;
-        }
+        //TODO enforce the rule about the receiver being declared in the manifest
         IAudioService service = getService();
         try {
-            // pi != null
-            service.registerMediaButtonIntent(pi, eventReceiver);
+            service.registerMediaButtonEventReceiver(eventReceiver);
         } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in registerMediaButtonIntent"+e);
+            Log.e(TAG, "Dead object in registerMediaButtonEventReceiver"+e);
         }
     }
 
@@ -1731,182 +1533,13 @@ public class AudioManager {
      *      that was registered with {@link #registerMediaButtonEventReceiver(ComponentName)}.
      */
     public void unregisterMediaButtonEventReceiver(ComponentName eventReceiver) {
-        if (eventReceiver == null) {
-            return;
-        }
-        // construct a PendingIntent for the media button and unregister it
-        Intent mediaButtonIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
-        //     the associated intent will be handled by the component being registered
-        mediaButtonIntent.setComponent(eventReceiver);
-        PendingIntent pi = PendingIntent.getBroadcast(mContext,
-                0/*requestCode, ignored*/, mediaButtonIntent, 0/*flags*/);
-        unregisterMediaButtonIntent(pi, eventReceiver);
-    }
-
-    /**
-     * @hide
-     */
-    public void unregisterMediaButtonIntent(PendingIntent pi, ComponentName eventReceiver) {
         IAudioService service = getService();
         try {
-            service.unregisterMediaButtonIntent(pi, eventReceiver);
+            service.unregisterMediaButtonEventReceiver(eventReceiver);
         } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in unregisterMediaButtonIntent"+e);
+            Log.e(TAG, "Dead object in unregisterMediaButtonEventReceiver"+e);
         }
     }
-
-    /**
-     * Registers the remote control client for providing information to display on the remote
-     * controls.
-     * @param rcClient The remote control client from which remote controls will receive
-     *      information to display.
-     * @see RemoteControlClient
-     */
-    public void registerRemoteControlClient(RemoteControlClient rcClient) {
-        if ((rcClient == null) || (rcClient.getRcMediaIntent() == null)) {
-            return;
-        }
-        IAudioService service = getService();
-        try {
-            service.registerRemoteControlClient(rcClient.getRcMediaIntent(),   /* mediaIntent   */
-                    rcClient.getIRemoteControlClient(),                        /* rcClient      */
-                    // used to match media button event receiver and audio focus
-                    mContext.getPackageName());                                /* packageName   */
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in registerRemoteControlClient"+e);
-        }
-    }
-
-    /**
-     * Unregisters the remote control client that was providing information to display on the
-     * remote controls.
-     * @param rcClient The remote control client to unregister.
-     * @see #registerRemoteControlClient(RemoteControlClient)
-     */
-    public void unregisterRemoteControlClient(RemoteControlClient rcClient) {
-        if ((rcClient == null) || (rcClient.getRcMediaIntent() == null)) {
-            return;
-        }
-        IAudioService service = getService();
-        try {
-            service.unregisterRemoteControlClient(rcClient.getRcMediaIntent(), /* mediaIntent   */
-                    rcClient.getIRemoteControlClient());                       /* rcClient      */
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in unregisterRemoteControlClient"+e);
-        }
-    }
-
-    /**
-     * @hide
-     * Registers a remote control display that will be sent information by remote control clients.
-     * @param rcd
-     */
-    public void registerRemoteControlDisplay(IRemoteControlDisplay rcd) {
-        if (rcd == null) {
-            return;
-        }
-        IAudioService service = getService();
-        try {
-            service.registerRemoteControlDisplay(rcd);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in registerRemoteControlDisplay " + e);
-        }
-    }
-
-    /**
-     * @hide
-     * Unregisters a remote control display that was sent information by remote control clients.
-     * @param rcd
-     */
-    public void unregisterRemoteControlDisplay(IRemoteControlDisplay rcd) {
-        if (rcd == null) {
-            return;
-        }
-        IAudioService service = getService();
-        try {
-            service.unregisterRemoteControlDisplay(rcd);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in unregisterRemoteControlDisplay " + e);
-        }
-    }
-
-    /**
-     * @hide
-     * Sets the artwork size a remote control display expects when receiving bitmaps.
-     * @param rcd
-     * @param w the maximum width of the expected bitmap. Negative values indicate it is
-     *   useless to send artwork.
-     * @param h the maximum height of the expected bitmap. Negative values indicate it is
-     *   useless to send artwork.
-     */
-    public void remoteControlDisplayUsesBitmapSize(IRemoteControlDisplay rcd, int w, int h) {
-        if (rcd == null) {
-            return;
-        }
-        IAudioService service = getService();
-        try {
-            service.remoteControlDisplayUsesBitmapSize(rcd, w, h);
-        } catch (RemoteException e) {
-            Log.e(TAG, "Dead object in remoteControlDisplayUsesBitmapSize " + e);
-        }
-    }
-
-    // FIXME remove because we are not using intents anymore between AudioService and RcDisplay
-    /**
-     * @hide
-     * Broadcast intent action indicating that the displays on the remote controls
-     * should be updated because a new remote control client is now active. If there is no
-     * {@link #EXTRA_REMOTE_CONTROL_CLIENT}, the remote control display should be cleared
-     * because there is no valid client to supply it with information.
-     *
-     * @see #EXTRA_REMOTE_CONTROL_CLIENT
-     */
-    public static final String REMOTE_CONTROL_CLIENT_CHANGED =
-            "android.media.REMOTE_CONTROL_CLIENT_CHANGED";
-
-    // FIXME remove because we are not using intents anymore between AudioService and RcDisplay
-    /**
-     * @hide
-     * The IRemoteControlClientDispatcher monotonically increasing generation counter.
-     *
-     * @see #REMOTE_CONTROL_CLIENT_CHANGED_ACTION
-     */
-    public static final String EXTRA_REMOTE_CONTROL_CLIENT_GENERATION =
-            "android.media.EXTRA_REMOTE_CONTROL_CLIENT_GENERATION";
-
-    // FIXME remove because we are not using intents anymore between AudioService and RcDisplay
-    /**
-     * @hide
-     * The name of the RemoteControlClient.
-     * This String is passed as the client name when calling methods from the
-     * IRemoteControlClientDispatcher interface.
-     *
-     * @see #REMOTE_CONTROL_CLIENT_CHANGED_ACTION
-     */
-    public static final String EXTRA_REMOTE_CONTROL_CLIENT_NAME =
-            "android.media.EXTRA_REMOTE_CONTROL_CLIENT_NAME";
-
-    // FIXME remove because we are not using intents anymore between AudioService and RcDisplay
-    /**
-     * @hide
-     * The media button event receiver associated with the RemoteControlClient.
-     * The {@link android.content.ComponentName} value of the event receiver can be retrieved with
-     * {@link android.content.ComponentName#unflattenFromString(String)}
-     *
-     * @see #REMOTE_CONTROL_CLIENT_CHANGED_ACTION
-     */
-    public static final String EXTRA_REMOTE_CONTROL_EVENT_RECEIVER =
-            "android.media.EXTRA_REMOTE_CONTROL_EVENT_RECEIVER";
-
-    // FIXME remove because we are not using intents anymore between AudioService and RcDisplay
-    /**
-     * @hide
-     * The flags describing what information has changed in the current remote control client.
-     *
-     * @see #REMOTE_CONTROL_CLIENT_CHANGED_ACTION
-     */
-    public static final String EXTRA_REMOTE_CONTROL_CLIENT_INFO_CHANGED =
-            "android.media.EXTRA_REMOTE_CONTROL_CLIENT_INFO_CHANGED";
 
     /**
      *  @hide
@@ -1927,123 +1560,4 @@ public class AudioManager {
       * {@hide}
       */
      private IBinder mICallBack = new Binder();
-
-    /**
-     * Checks whether the phone is in silent mode, with or without vibrate.
-     *
-     * @return true if phone is in silent mode, with or without vibrate.
-     *
-     * @see #getRingerMode()
-     *
-     * @hide pending API Council approval
-     */
-    public boolean isSilentMode() {
-        int ringerMode = getRingerMode();
-        boolean silentMode =
-            (ringerMode == RINGER_MODE_SILENT) ||
-            (ringerMode == RINGER_MODE_VIBRATE);
-        return silentMode;
-    }
-
-    // This section re-defines new output device constants from AudioSystem, because the AudioSystem
-    // class is not used by other parts of the framework, which instead use definitions and methods
-    // from AudioManager. AudioSystem is an internal class used by AudioManager and AudioService.
-
-    /** {@hide} The audio output device code for the small speaker at the front of the device used
-     *  when placing calls.  Does not refer to an in-ear headphone without attached microphone,
-     *  such as earbuds, earphones, or in-ear monitors (IEM). Those would be handled as a
-     *  {@link #DEVICE_OUT_WIRED_HEADPHONE}.
-     */
-    public static final int DEVICE_OUT_EARPIECE = AudioSystem.DEVICE_OUT_EARPIECE;
-    /** {@hide} The audio output device code for the built-in speaker */
-    public static final int DEVICE_OUT_SPEAKER = AudioSystem.DEVICE_OUT_SPEAKER;
-    /** {@hide} The audio output device code for a wired headset with attached microphone */
-    public static final int DEVICE_OUT_WIRED_HEADSET = AudioSystem.DEVICE_OUT_WIRED_HEADSET;
-    /** {@hide} The audio output device code for a wired headphone without attached microphone */
-    public static final int DEVICE_OUT_WIRED_HEADPHONE = AudioSystem.DEVICE_OUT_WIRED_HEADPHONE;
-    /** {@hide} The audio output device code for generic Bluetooth SCO, for voice */
-    public static final int DEVICE_OUT_BLUETOOTH_SCO = AudioSystem.DEVICE_OUT_BLUETOOTH_SCO;
-    /** {@hide} The audio output device code for Bluetooth SCO Headset Profile (HSP) and
-     *  Hands-Free Profile (HFP), for voice
-     */
-    public static final int DEVICE_OUT_BLUETOOTH_SCO_HEADSET =
-            AudioSystem.DEVICE_OUT_BLUETOOTH_SCO_HEADSET;
-    /** {@hide} The audio output device code for Bluetooth SCO car audio, for voice */
-    public static final int DEVICE_OUT_BLUETOOTH_SCO_CARKIT =
-            AudioSystem.DEVICE_OUT_BLUETOOTH_SCO_CARKIT;
-    /** {@hide} The audio output device code for generic Bluetooth A2DP, for music */
-    public static final int DEVICE_OUT_BLUETOOTH_A2DP = AudioSystem.DEVICE_OUT_BLUETOOTH_A2DP;
-    /** {@hide} The audio output device code for Bluetooth A2DP headphones, for music */
-    public static final int DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES =
-            AudioSystem.DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES;
-    /** {@hide} The audio output device code for Bluetooth A2DP external speaker, for music */
-    public static final int DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER =
-            AudioSystem.DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER;
-    /** {@hide} The audio output device code for S/PDIF or HDMI */
-    public static final int DEVICE_OUT_AUX_DIGITAL = AudioSystem.DEVICE_OUT_AUX_DIGITAL;
-    /** {@hide} The audio output device code for an analog wired headset attached via a
-     *  docking station
-     */
-    public static final int DEVICE_OUT_ANLG_DOCK_HEADSET = AudioSystem.DEVICE_OUT_ANLG_DOCK_HEADSET;
-    /** {@hide} The audio output device code for a digital wired headset attached via a
-     *  docking station
-     */
-    public static final int DEVICE_OUT_DGTL_DOCK_HEADSET = AudioSystem.DEVICE_OUT_DGTL_DOCK_HEADSET;
-    /** {@hide} This is not used as a returned value from {@link #getDevicesForStream}, but could be
-     *  used in the future in a set method to select whatever default device is chosen by the
-     *  platform-specific implementation.
-     */
-    public static final int DEVICE_OUT_DEFAULT = AudioSystem.DEVICE_OUT_DEFAULT;
-
-    /**
-     * Return the enabled devices for the specified output stream type.
-     *
-     * @param streamType The stream type to query. One of
-     *            {@link #STREAM_VOICE_CALL},
-     *            {@link #STREAM_SYSTEM},
-     *            {@link #STREAM_RING},
-     *            {@link #STREAM_MUSIC},
-     *            {@link #STREAM_ALARM},
-     *            {@link #STREAM_NOTIFICATION},
-     *            {@link #STREAM_DTMF}.
-     *
-     * @return The bit-mask "or" of audio output device codes for all enabled devices on this
-     *         stream. Zero or more of
-     *            {@link #DEVICE_OUT_EARPIECE},
-     *            {@link #DEVICE_OUT_SPEAKER},
-     *            {@link #DEVICE_OUT_WIRED_HEADSET},
-     *            {@link #DEVICE_OUT_WIRED_HEADPHONE},
-     *            {@link #DEVICE_OUT_BLUETOOTH_SCO},
-     *            {@link #DEVICE_OUT_BLUETOOTH_SCO_HEADSET},
-     *            {@link #DEVICE_OUT_BLUETOOTH_SCO_CARKIT},
-     *            {@link #DEVICE_OUT_BLUETOOTH_A2DP},
-     *            {@link #DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES},
-     *            {@link #DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER},
-     *            {@link #DEVICE_OUT_AUX_DIGITAL},
-     *            {@link #DEVICE_OUT_ANLG_DOCK_HEADSET},
-     *            {@link #DEVICE_OUT_DGTL_DOCK_HEADSET}.
-     *            {@link #DEVICE_OUT_DEFAULT} is not used here.
-     *
-     * The implementation may support additional device codes beyond those listed, so
-     * the application should ignore any bits which it does not recognize.
-     * Note that the information may be imprecise when the implementation
-     * cannot distinguish whether a particular device is enabled.
-     *
-     * {@hide}
-     */
-    public int getDevicesForStream(int streamType) {
-        switch (streamType) {
-        case STREAM_VOICE_CALL:
-        case STREAM_SYSTEM:
-        case STREAM_RING:
-        case STREAM_MUSIC:
-        case STREAM_ALARM:
-        case STREAM_NOTIFICATION:
-        case STREAM_DTMF:
-            return AudioSystem.getDevicesForStream(streamType);
-        default:
-            return 0;
-        }
-    }
-
 }

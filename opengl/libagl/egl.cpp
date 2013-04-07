@@ -40,6 +40,9 @@
 #include <pixelflinger/pixelflinger.h>
 
 #include <private/ui/android_natives_priv.h>
+#include <private/ui/sw_gralloc_handle.h>
+
+#include <hardware/copybit.h>
 
 #include "context.h"
 #include "state.h"
@@ -48,11 +51,6 @@
 
 #undef NELEM
 #define NELEM(x) (sizeof(x)/sizeof(*(x)))
-
-
-EGLBoolean EGLAPI eglSetSwapRectangleANDROID(EGLDisplay dpy, EGLSurface draw,
-        EGLint left, EGLint top, EGLint width, EGLint height);
-
 
 // ----------------------------------------------------------------------------
 namespace android {
@@ -85,11 +83,6 @@ static GLint getError() {
     if (ggl_unlikely(gEGLErrorKey == -1))
         return EGL_SUCCESS;
     GLint error = (GLint)pthread_getspecific(gEGLErrorKey);
-    if (error == 0) {
-        // The TLS key has been created by another thread, but the value for
-        // this thread has not been initialized.
-        return EGL_SUCCESS;
-    }
     pthread_setspecific(gEGLErrorKey, (void*)EGL_SUCCESS);
     return error;
 }
@@ -165,9 +158,7 @@ struct egl_surface_t
     virtual     EGLint      getSwapBehavior() const;
     virtual     EGLBoolean  swapBuffers();
     virtual     EGLBoolean  setSwapRectangle(EGLint l, EGLint t, EGLint w, EGLint h);
-#ifdef QCOM_HARDWARE
     virtual     EGLClientBuffer getRenderBuffer() const;
-#endif
 protected:
     GGLSurface              depth;
 };
@@ -211,11 +202,9 @@ EGLBoolean egl_surface_t::setSwapRectangle(
 {
     return EGL_FALSE;
 }
-#ifdef QCOM_HARDWARE
 EGLClientBuffer egl_surface_t::getRenderBuffer() const {
     return 0;
 }
-#endif
 
 // ----------------------------------------------------------------------------
 
@@ -241,17 +230,16 @@ struct egl_window_surface_v2_t : public egl_surface_t
     virtual     EGLint      getRefreshRate() const;
     virtual     EGLint      getSwapBehavior() const;
     virtual     EGLBoolean  setSwapRectangle(EGLint l, EGLint t, EGLint w, EGLint h);
-#ifdef QCOM_HARDWARE
     virtual     EGLClientBuffer  getRenderBuffer() const;
-#endif
-    
+
 private:
-    status_t lock(ANativeWindowBuffer* buf, int usage, void** vaddr);
-    status_t unlock(ANativeWindowBuffer* buf);
+    status_t lock(android_native_buffer_t* buf, int usage, void** vaddr);
+    status_t unlock(android_native_buffer_t* buf);
     ANativeWindow*   nativeWindow;
-    ANativeWindowBuffer*   buffer;
-    ANativeWindowBuffer*   previousBuffer;
+    android_native_buffer_t*   buffer;
+    android_native_buffer_t*   previousBuffer;
     gralloc_module_t const*    module;
+    copybit_device_t*          blitengine;
     int width;
     int height;
     void* bits;
@@ -337,9 +325,27 @@ private:
         ssize_t count;
     };
     
+    struct region_iterator : public copybit_region_t {
+        region_iterator(const Region& region)
+            : b(region.begin()), e(region.end()) {
+            this->next = iterate;
+        }
+    private:
+        static int iterate(copybit_region_t const * self, copybit_rect_t* rect) {
+            region_iterator const* me = static_cast<region_iterator const*>(self);
+            if (me->b != me->e) {
+                *reinterpret_cast<Rect*>(rect) = *me->b++;
+                return 1;
+            }
+            return 0;
+        }
+        mutable Region::const_iterator b;
+        Region::const_iterator const e;
+    };
+
     void copyBlt(
-            ANativeWindowBuffer* dst, void* dst_vaddr,
-            ANativeWindowBuffer* src, void const* src_vaddr,
+            android_native_buffer_t* dst, void* dst_vaddr,
+            android_native_buffer_t* src, void const* src_vaddr,
             const Region& clip);
 
     Rect dirtyRegion;
@@ -352,11 +358,15 @@ egl_window_surface_v2_t::egl_window_surface_v2_t(EGLDisplay dpy,
         ANativeWindow* window)
     : egl_surface_t(dpy, config, depthFormat), 
     nativeWindow(window), buffer(0), previousBuffer(0), module(0),
-    bits(NULL)
+    blitengine(0), bits(NULL)
 {
     hw_module_t const* pModule;
     hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &pModule);
     module = reinterpret_cast<gralloc_module_t const*>(pModule);
+
+    if (hw_get_module(COPYBIT_HARDWARE_MODULE_ID, &pModule) == 0) {
+        copybit_open(pModule, &blitengine);
+    }
 
     pixelFormatTable = gglGetPixelFormatTable();
     
@@ -374,6 +384,9 @@ egl_window_surface_v2_t::~egl_window_surface_v2_t() {
         previousBuffer->common.decRef(&previousBuffer->common); 
     }
     nativeWindow->common.decRef(&nativeWindow->common);
+    if (blitengine) {
+        copybit_close(blitengine);
+    }
 }
 
 EGLBoolean egl_window_surface_v2_t::connect() 
@@ -435,60 +448,93 @@ void egl_window_surface_v2_t::disconnect()
 }
 
 status_t egl_window_surface_v2_t::lock(
-        ANativeWindowBuffer* buf, int usage, void** vaddr)
+        android_native_buffer_t* buf, int usage, void** vaddr)
 {
     int err;
-
-    err = module->lock(module, buf->handle,
-            usage, 0, 0, buf->width, buf->height, vaddr);
-
+    if (sw_gralloc_handle_t::validate(buf->handle) < 0) {
+        err = module->lock(module, buf->handle,
+                usage, 0, 0, buf->width, buf->height, vaddr);
+    } else {
+        sw_gralloc_handle_t const* hnd =
+                reinterpret_cast<sw_gralloc_handle_t const*>(buf->handle);
+        *vaddr = (void*)hnd->base;
+        err = NO_ERROR;
+    }
     return err;
 }
 
-status_t egl_window_surface_v2_t::unlock(ANativeWindowBuffer* buf)
+status_t egl_window_surface_v2_t::unlock(android_native_buffer_t* buf)
 {
     if (!buf) return BAD_VALUE;
     int err = NO_ERROR;
-
-    err = module->unlock(module, buf->handle);
-
+    if (sw_gralloc_handle_t::validate(buf->handle) < 0) {
+        err = module->unlock(module, buf->handle);
+    }
     return err;
 }
 
 void egl_window_surface_v2_t::copyBlt(
-        ANativeWindowBuffer* dst, void* dst_vaddr,
-        ANativeWindowBuffer* src, void const* src_vaddr,
+        android_native_buffer_t* dst, void* dst_vaddr,
+        android_native_buffer_t* src, void const* src_vaddr,
         const Region& clip)
 {
+    // FIXME: use copybit if possible
     // NOTE: dst and src must be the same format
     
-    Region::const_iterator cur = clip.begin();
-    Region::const_iterator end = clip.end();
+    status_t err = NO_ERROR;
+    copybit_device_t* const copybit = blitengine;
+    if (copybit)  {
+        copybit_image_t simg;
+        simg.w = src->stride;
+        simg.h = src->height;
+        simg.format = src->format;
+        simg.handle = const_cast<native_handle_t*>(src->handle);
 
-    const size_t bpp = pixelFormatTable[src->format].size;
-    const size_t dbpr = dst->stride * bpp;
-    const size_t sbpr = src->stride * bpp;
-
-    uint8_t const * const src_bits = (uint8_t const *)src_vaddr;
-    uint8_t       * const dst_bits = (uint8_t       *)dst_vaddr;
-
-    while (cur != end) {
-        const Rect& r(*cur++);
-        ssize_t w = r.right - r.left;
-        ssize_t h = r.bottom - r.top;
-        if (w <= 0 || h<=0) continue;
-        size_t size = w * bpp;
-        uint8_t const * s = src_bits + (r.left + src->stride * r.top) * bpp;
-        uint8_t       * d = dst_bits + (r.left + dst->stride * r.top) * bpp;
-        if (dbpr==sbpr && size==sbpr) {
-            size *= h;
-            h = 1;
+        copybit_image_t dimg;
+        dimg.w = dst->stride;
+        dimg.h = dst->height;
+        dimg.format = dst->format;
+        dimg.handle = const_cast<native_handle_t*>(dst->handle);
+        
+        copybit->set_parameter(copybit, COPYBIT_TRANSFORM, 0);
+        copybit->set_parameter(copybit, COPYBIT_PLANE_ALPHA, 255);
+        copybit->set_parameter(copybit, COPYBIT_DITHER, COPYBIT_DISABLE);
+        region_iterator it(clip);
+        err = copybit->blit(copybit, &dimg, &simg, &it);
+        if (err != NO_ERROR) {
+            LOGE("copybit failed (%s)", strerror(err));
         }
-        do {
-            memcpy(d, s, size);
-            d += dbpr;
-            s += sbpr;
-        } while (--h > 0);
+    }
+
+    if (!copybit || err) {
+        Region::const_iterator cur = clip.begin();
+        Region::const_iterator end = clip.end();
+        
+        const size_t bpp = pixelFormatTable[src->format].size;
+        const size_t dbpr = dst->stride * bpp;
+        const size_t sbpr = src->stride * bpp;
+
+        uint8_t const * const src_bits = (uint8_t const *)src_vaddr;
+        uint8_t       * const dst_bits = (uint8_t       *)dst_vaddr;
+
+        while (cur != end) {
+            const Rect& r(*cur++);
+            ssize_t w = r.right - r.left;
+            ssize_t h = r.bottom - r.top;
+            if (w <= 0 || h<=0) continue;
+            size_t size = w * bpp;
+            uint8_t const * s = src_bits + (r.left + src->stride * r.top) * bpp;
+            uint8_t       * d = dst_bits + (r.left + dst->stride * r.top) * bpp;
+            if (dbpr==sbpr && size==sbpr) {
+                size *= h;
+                h = 1;
+            }
+            do {
+                memcpy(d, s, size);
+                d += dbpr;
+                s += sbpr;
+            } while (--h > 0);
+        }
     }
 }
 
@@ -505,9 +551,7 @@ EGLBoolean egl_window_surface_v2_t::swapBuffers()
     if (!dirtyRegion.isEmpty()) {
         dirtyRegion.andSelf(Rect(buffer->width, buffer->height));
         if (previousBuffer) {
-            // This was const Region copyBack, but that causes an
-            // internal compile error on simulator builds
-            /*const*/ Region copyBack(Region::subtract(oldDirtyRegion, dirtyRegion));
+            const Region copyBack(Region::subtract(oldDirtyRegion, dirtyRegion));
             if (!copyBack.isEmpty()) {
                 void* prevBits;
                 if (lock(previousBuffer, 
@@ -582,10 +626,25 @@ EGLBoolean egl_window_surface_v2_t::setSwapRectangle(
     return EGL_TRUE;
 }
 
-#ifdef QCOM_HARDWARE
 EGLClientBuffer egl_window_surface_v2_t::getRenderBuffer() const
 {
     return buffer;
+}
+
+#ifdef LIBAGL_USE_GRALLOC_COPYBITS
+
+static bool supportedCopybitsDestinationFormat(int format) {
+    // Hardware supported
+    switch (format) {
+    case HAL_PIXEL_FORMAT_RGB_565:
+    case HAL_PIXEL_FORMAT_RGBA_8888:
+    case HAL_PIXEL_FORMAT_RGBX_8888:
+    case HAL_PIXEL_FORMAT_RGBA_4444:
+    case HAL_PIXEL_FORMAT_RGBA_5551:
+    case HAL_PIXEL_FORMAT_BGRA_8888:
+        return true;
+    }
+    return false;
 }
 #endif
 
@@ -601,6 +660,18 @@ EGLBoolean egl_window_surface_v2_t::bindDrawSurface(ogles_context_t* gl)
     gl->rasterizer.procs.colorBuffer(gl, &buffer);
     if (depth.data != gl->rasterizer.state.buffers.depth.data)
         gl->rasterizer.procs.depthBuffer(gl, &depth);
+
+#ifdef LIBAGL_USE_GRALLOC_COPYBITS
+    gl->copybits.drawSurfaceBuffer = 0;
+    if (gl->copybits.blitEngine != NULL) {
+        if (supportedCopybitsDestinationFormat(buffer.format)) {
+            buffer_handle_t handle = this->buffer->handle;
+            if (handle != NULL) {
+                gl->copybits.drawSurfaceBuffer = this->buffer;
+            }
+        }
+    }
+#endif // LIBAGL_USE_GRALLOC_COPYBITS
 
     return EGL_TRUE;
 }
@@ -818,9 +889,7 @@ static char const * const gExtensionsString =
         // "KHR_image_pixmap "
         "EGL_ANDROID_image_native_buffer "
         "EGL_ANDROID_swap_rectangle "
-#ifdef QCOM_HARDWARE
         "EGL_ANDROID_get_render_buffer "
-#endif
         ;
 
 // ----------------------------------------------------------------------------
@@ -873,10 +942,8 @@ static const extention_map_t gExtentionMap[] = {
             (__eglMustCastToProperFunctionPointerType)&eglDestroyImageKHR }, 
     { "eglSetSwapRectangleANDROID", 
             (__eglMustCastToProperFunctionPointerType)&eglSetSwapRectangleANDROID }, 
-#ifdef QCOM_HARDWARE
     { "eglGetRenderBufferANDROID",
             (__eglMustCastToProperFunctionPointerType)&eglGetRenderBufferANDROID },
-#endif
 };
 
 /*
@@ -1955,6 +2022,10 @@ EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval)
     if (egl_display_t::is_valid(dpy) == EGL_FALSE)
         return setError(EGL_BAD_DISPLAY, EGL_FALSE);
     // TODO: eglSwapInterval()
+    /* TODO: [ahatala 2009-10-09] changing this to default to succeeding,
+       as this will cause eglSwapInterval to fail even if the hw implementation
+       correctly supports it. */
+    //return setError(EGL_BAD_PARAMETER, EGL_FALSE);
     return EGL_TRUE;
 }
 
@@ -2037,12 +2108,12 @@ EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target,
         return setError(EGL_BAD_PARAMETER, EGL_NO_IMAGE_KHR);
     }
 
-    ANativeWindowBuffer* native_buffer = (ANativeWindowBuffer*)buffer;
+    android_native_buffer_t* native_buffer = (android_native_buffer_t*)buffer;
 
     if (native_buffer->common.magic != ANDROID_NATIVE_BUFFER_MAGIC)
         return setError(EGL_BAD_PARAMETER, EGL_NO_IMAGE_KHR);
 
-    if (native_buffer->common.version != sizeof(ANativeWindowBuffer))
+    if (native_buffer->common.version != sizeof(android_native_buffer_t))
         return setError(EGL_BAD_PARAMETER, EGL_NO_IMAGE_KHR);
 
     switch (native_buffer->format) {
@@ -2068,12 +2139,12 @@ EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR img)
         return setError(EGL_BAD_DISPLAY, EGL_FALSE);
     }
 
-    ANativeWindowBuffer* native_buffer = (ANativeWindowBuffer*)img;
+    android_native_buffer_t* native_buffer = (android_native_buffer_t*)img;
 
     if (native_buffer->common.magic != ANDROID_NATIVE_BUFFER_MAGIC)
         return setError(EGL_BAD_PARAMETER, EGL_FALSE);
 
-    if (native_buffer->common.version != sizeof(ANativeWindowBuffer))
+    if (native_buffer->common.version != sizeof(android_native_buffer_t))
         return setError(EGL_BAD_PARAMETER, EGL_FALSE);
 
     native_buffer->common.decRef(&native_buffer->common);
@@ -2103,7 +2174,6 @@ EGLBoolean eglSetSwapRectangleANDROID(EGLDisplay dpy, EGLSurface draw,
     return EGL_TRUE;
 }
 
-#ifdef QCOM_HARDWARE
 EGLClientBuffer eglGetRenderBufferANDROID(EGLDisplay dpy, EGLSurface draw)
 {
     if (egl_display_t::is_valid(dpy) == EGL_FALSE)
@@ -2118,4 +2188,3 @@ EGLClientBuffer eglGetRenderBufferANDROID(EGLDisplay dpy, EGLSurface draw)
     // post the surface
     return d->getRenderBuffer();
 }
-#endif

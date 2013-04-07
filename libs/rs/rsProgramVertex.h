@@ -25,39 +25,66 @@ namespace renderscript {
 
 class ProgramVertexState;
 
-class ProgramVertex : public Program {
+class ProgramVertex : public Program
+{
 public:
+    const static uint32_t MAX_LIGHTS = 8;
+
     ProgramVertex(Context *,const char * shaderText, uint32_t shaderLength,
                   const uint32_t * params, uint32_t paramLength);
+    ProgramVertex(Context *, bool texMat);
     virtual ~ProgramVertex();
 
-    virtual void setup(Context *rsc, ProgramVertexState *state);
+    virtual void setupGL(const Context *rsc, ProgramVertexState *state);
+    virtual void setupGL2(const Context *rsc, ProgramVertexState *state, ShaderCache *sc);
 
-    void setProjectionMatrix(Context *, const rsc_Matrix *) const;
-    void getProjectionMatrix(Context *, rsc_Matrix *) const;
-    void setModelviewMatrix(Context *, const rsc_Matrix *) const;
-    void setTextureMatrix(Context *, const rsc_Matrix *) const;
 
-    void transformToScreen(Context *, float *v4out, const float *v3in) const;
+    void setTextureMatrixEnable(bool e) {mTextureMatrixEnable = e;}
+    void addLight(const Light *);
 
-    virtual void serialize(OStream *stream) const;
-    virtual RsA3DClassID getClassId() const { return RS_A3D_CLASS_ID_PROGRAM_VERTEX; }
-    static ProgramVertex *createFromStream(Context *rsc, IStream *stream);
+    void setProjectionMatrix(const rsc_Matrix *) const;
+    void setModelviewMatrix(const rsc_Matrix *) const;
+    void setTextureMatrix(const rsc_Matrix *) const;
+
+    void transformToScreen(const Context *, float *v4out, const float *v3in) const;
+
+    virtual void createShader();
+    virtual void loadShader(Context *);
+    virtual void init(Context *);
+
+
+protected:
+    uint32_t mLightCount;
+    ObjectBaseRef<const Light> mLights[MAX_LIGHTS];
+
+    // Hacks to create a program for now
+    bool mTextureMatrixEnable;
+
+private:
+    void initAddUserElement(const Element *e, String8 *names, uint32_t *count, const char *prefix);
 };
 
-class ProgramVertexState {
+
+class ProgramVertexState
+{
 public:
     ProgramVertexState();
     ~ProgramVertexState();
 
-    void init(Context *rsc);
+    void init(Context *rsc, int32_t w, int32_t h);
     void deinit(Context *rsc);
-    void updateSize(Context *rsc);
+    void updateSize(Context *rsc, int32_t w, int32_t h);
 
     ObjectBaseRef<ProgramVertex> mDefault;
     ObjectBaseRef<ProgramVertex> mLast;
     ObjectBaseRef<Allocation> mDefaultAlloc;
+
+    ObjectBaseRef<Type> mAllocType;
+
+
+    float color[4];
 };
+
 
 }
 }

@@ -16,45 +16,33 @@
 
 package android.database;
 
+import android.database.sqlite.SQLiteMisuseException;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.util.Config;
 import android.util.Log;
+
+import java.util.Map;
 
 
 /**
  * Wraps a BulkCursor around an existing Cursor making it remotable.
- * <p>
- * If the wrapped cursor returns non-null from {@link CrossProcessCursor#getWindow}
- * then it is assumed to own the window.  Otherwise, the adaptor provides a
- * window to be filled and ensures it gets closed as needed during deactivation
- * and requeries.
- * </p>
  *
  * {@hide}
  */
 public final class CursorToBulkCursorAdaptor extends BulkCursorNative 
         implements IBinder.DeathRecipient {
     private static final String TAG = "Cursor";
-
-    private final Object mLock = new Object();
+    private final CrossProcessCursor mCursor;
+    private CursorWindow mWindow;
     private final String mProviderName;
+    private final boolean mReadOnly;
     private ContentObserverProxy mObserver;
 
-    /**
-     * The cursor that is being adapted.
-     * This field is set to null when the cursor is closed.
-     */
-    private CrossProcessCursor mCursor;
-
-    /**
-     * The cursor window that was filled by the cross process cursor in the
-     * case where the cursor does not support getWindow.
-     * This field is only ever non-null when the window has actually be filled.
-     */
-    private CursorWindow mFilledWindow;
-
-    private static final class ContentObserverProxy extends ContentObserver {
+    private static final class ContentObserverProxy extends ContentObserver 
+            {
         protected IContentObserver mRemote;
 
         public ContentObserverProxy(IContentObserver remoteObserver, DeathRecipient recipient) {
@@ -87,163 +75,103 @@ public final class CursorToBulkCursorAdaptor extends BulkCursorNative
         }
     }
 
-    public CursorToBulkCursorAdaptor(Cursor cursor, IContentObserver observer,
-            String providerName) {
-        if (cursor instanceof CrossProcessCursor) {
-            mCursor = (CrossProcessCursor)cursor;
-        } else {
-            mCursor = new CrossProcessCursorWrapper(cursor);
+    public CursorToBulkCursorAdaptor(Cursor cursor, IContentObserver observer, String providerName,
+            boolean allowWrite, CursorWindow window) {
+        try {
+            mCursor = (CrossProcessCursor) cursor;
+            if (mCursor instanceof AbstractWindowedCursor) {
+                AbstractWindowedCursor windowedCursor = (AbstractWindowedCursor) cursor;
+                if (windowedCursor.hasWindow()) {
+                    if (Log.isLoggable(TAG, Log.VERBOSE) || Config.LOGV) {
+                        Log.v(TAG, "Cross process cursor has a local window before setWindow in "
+                                + providerName, new RuntimeException());
+                    }
+                }
+                windowedCursor.setWindow(window);
+            } else {
+                mWindow = window;
+                mCursor.fillWindow(0, window);
+            }
+        } catch (ClassCastException e) {
+            // TODO Implement this case.
+            throw new UnsupportedOperationException(
+                    "Only CrossProcessCursor cursors are supported across process for now", e);
         }
         mProviderName = providerName;
+        mReadOnly = !allowWrite;
 
-        synchronized (mLock) {
-            createAndRegisterObserverProxyLocked(observer);
-        }
+        createAndRegisterObserverProxy(observer);
     }
-
-    private void closeFilledWindowLocked() {
-        if (mFilledWindow != null) {
-            mFilledWindow.close();
-            mFilledWindow = null;
-        }
-    }
-
-    private void disposeLocked() {
-        if (mCursor != null) {
-            unregisterObserverProxyLocked();
-            mCursor.close();
-            mCursor = null;
-        }
-
-        closeFilledWindowLocked();
-    }
-
-    private void throwIfCursorIsClosed() {
-        if (mCursor == null) {
-            throw new StaleDataException("Attempted to access a cursor after it has been closed.");
-        }
-    }
-
-    @Override
+    
     public void binderDied() {
-        synchronized (mLock) {
-            disposeLocked();
+        mCursor.close();
+        if (mWindow != null) {
+            mWindow.close();
         }
     }
-
-    @Override
+    
     public CursorWindow getWindow(int startPos) {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            if (!mCursor.moveToPosition(startPos)) {
-                closeFilledWindowLocked();
-                return null;
-            }
-
-            CursorWindow window = mCursor.getWindow();
-            if (window != null) {
-                closeFilledWindowLocked();
-            } else {
-                window = mFilledWindow;
-                if (window == null) {
-                    mFilledWindow = new CursorWindow(mProviderName);
-                    window = mFilledWindow;
-                    mCursor.fillWindow(startPos, window);
-                } else if (startPos < window.getStartPosition()
-                        || startPos >= window.getStartPosition() + window.getNumRows()) {
-                    window.clear();
-                    mCursor.fillWindow(startPos, window);
-                }
-            }
-
-            // Acquire a reference before returning from this RPC.
-            // The Binder proxy will decrement the reference count again as part of writing
-            // the CursorWindow to the reply parcel as a return value.
-            if (window != null) {
-                window.acquireReference();
-            }
-            return window;
+        mCursor.moveToPosition(startPos);
+        
+        if (mWindow != null) {
+            if (startPos < mWindow.getStartPosition() ||
+                    startPos >= (mWindow.getStartPosition() + mWindow.getNumRows())) {
+                mCursor.fillWindow(startPos, mWindow);
+            }            
+            return mWindow;
+        } else {
+            return ((AbstractWindowedCursor)mCursor).getWindow();
         }
     }
 
-    @Override
     public void onMove(int position) {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            mCursor.onMove(mCursor.getPosition(), position);
-        }
+        mCursor.onMove(mCursor.getPosition(), position);
     }
 
-    @Override
     public int count() {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            return mCursor.getCount();
-        }
+        return mCursor.getCount();
     }
 
-    @Override
     public String[] getColumnNames() {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            return mCursor.getColumnNames();
-        }
+        return mCursor.getColumnNames();
     }
 
-    @Override
     public void deactivate() {
-        synchronized (mLock) {
-            if (mCursor != null) {
-                unregisterObserverProxyLocked();
-                mCursor.deactivate();
-            }
-
-            closeFilledWindowLocked();
-        }
+        maybeUnregisterObserverProxy();
+        mCursor.deactivate();
     }
 
-    @Override
     public void close() {
-        synchronized (mLock) {
-            disposeLocked();
-        }
+        maybeUnregisterObserverProxy();
+        mCursor.close();
     }
 
-    @Override
-    public int requery(IContentObserver observer) {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            closeFilledWindowLocked();
-
-            try {
-                if (!mCursor.requery()) {
-                    return -1;
-                }
-            } catch (IllegalStateException e) {
-                IllegalStateException leakProgram = new IllegalStateException(
-                        mProviderName + " Requery misuse db, mCursor isClosed:" +
-                        mCursor.isClosed(), e);
-                throw leakProgram;
+    public int requery(IContentObserver observer, CursorWindow window) {
+        if (mWindow == null) {
+            ((AbstractWindowedCursor)mCursor).setWindow(window);
+        }
+        try {
+            if (!mCursor.requery()) {
+                return -1;
             }
-
-            unregisterObserverProxyLocked();
-            createAndRegisterObserverProxyLocked(observer);
-            return mCursor.getCount();
+        } catch (IllegalStateException e) {
+            IllegalStateException leakProgram = new IllegalStateException(
+                    mProviderName + " Requery misuse db, mCursor isClosed:" +
+                    mCursor.isClosed(), e);
+            throw leakProgram;
         }
+        
+        if (mWindow != null) {
+            mCursor.fillWindow(0, window);
+            mWindow = window;
+        }
+        maybeUnregisterObserverProxy();
+        createAndRegisterObserverProxy(observer);
+        return mCursor.getCount();
     }
 
-    @Override
     public boolean getWantsAllOnMoveCalls() {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            return mCursor.getWantsAllOnMoveCalls();
-        }
+        return mCursor.getWantsAllOnMoveCalls();
     }
 
     /**
@@ -252,7 +180,7 @@ public final class CursorToBulkCursorAdaptor extends BulkCursorNative
      * @param observer the IContentObserver that wants to monitor the cursor
      * @throws IllegalStateException if an observer is already registered
      */
-    private void createAndRegisterObserverProxyLocked(IContentObserver observer) {
+    private void createAndRegisterObserverProxy(IContentObserver observer) {
         if (mObserver != null) {
             throw new IllegalStateException("an observer is already registered");
         }
@@ -261,7 +189,7 @@ public final class CursorToBulkCursorAdaptor extends BulkCursorNative
     }
 
     /** Unregister the observer if it is already registered. */
-    private void unregisterObserverProxyLocked() {
+    private void maybeUnregisterObserverProxy() {
         if (mObserver != null) {
             mCursor.unregisterContentObserver(mObserver);
             mObserver.unlinkToDeath(this);
@@ -269,21 +197,36 @@ public final class CursorToBulkCursorAdaptor extends BulkCursorNative
         }
     }
 
-    @Override
-    public Bundle getExtras() {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            return mCursor.getExtras();
+    public boolean updateRows(Map<? extends Long, ? extends Map<String, Object>> values) {
+        if (mReadOnly) {
+            Log.w("ContentProvider", "Permission Denial: modifying "
+                    + mProviderName
+                    + " from pid=" + Binder.getCallingPid()
+                    + ", uid=" + Binder.getCallingUid());
+            return false;
         }
+        return mCursor.commitUpdates(values);
     }
 
-    @Override
-    public Bundle respond(Bundle extras) {
-        synchronized (mLock) {
-            throwIfCursorIsClosed();
-
-            return mCursor.respond(extras);
+    public boolean deleteRow(int position) {
+        if (mReadOnly) {
+            Log.w("ContentProvider", "Permission Denial: modifying "
+                    + mProviderName
+                    + " from pid=" + Binder.getCallingPid()
+                    + ", uid=" + Binder.getCallingUid());
+            return false;
         }
+        if (mCursor.moveToPosition(position) == false) {
+            return false;
+        }
+        return mCursor.deleteRow();
+    }
+
+    public Bundle getExtras() {
+        return mCursor.getExtras();
+    }
+
+    public Bundle respond(Bundle extras) {
+        return mCursor.respond(extras);
     }
 }

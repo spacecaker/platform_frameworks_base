@@ -52,5 +52,10 @@ int main(int argc, const char* const argv[])
     LOGW("*** Current priority: %d\n", getpriority(PRIO_PROCESS, 0));
     setpriority(PRIO_PROCESS, 0, -1);
 
+    #if HAVE_ANDROID_OS
+    //setgid(GID_SYSTEM);
+    //setuid(UID_SYSTEM);
+    #endif
+
     system_init();    
 }

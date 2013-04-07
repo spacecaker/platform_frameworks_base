@@ -474,7 +474,7 @@ public final class Matrix_Delegate {
         }
 
         Matrix_Delegate other = sManager.getDelegate(other_matrix);
-        if (other == null) {
+        if (d == null) {
             return false;
         }
 
@@ -570,7 +570,7 @@ public final class Matrix_Delegate {
         }
 
         Matrix_Delegate other = sManager.getDelegate(other_matrix);
-        if (other == null) {
+        if (d == null) {
             return false;
         }
 

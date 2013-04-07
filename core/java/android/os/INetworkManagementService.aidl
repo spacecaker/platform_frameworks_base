@@ -19,8 +19,6 @@ package android.os;
 
 import android.net.InterfaceConfiguration;
 import android.net.INetworkManagementEventObserver;
-import android.net.NetworkStats;
-import android.net.RouteInfo;
 import android.net.wifi.WifiConfiguration;
 
 /**
@@ -59,64 +57,6 @@ interface INetworkManagementService
     void setInterfaceConfig(String iface, in InterfaceConfiguration cfg);
 
     /**
-     * Clear all IP addresses on the specified interface
-     */
-    void clearInterfaceAddresses(String iface);
-
-    /**
-     * Set interface down
-     */
-    void setInterfaceDown(String iface);
-
-    /**
-     * Set interface up
-     */
-    void setInterfaceUp(String iface);
-
-    /**
-     * Set interface IPv6 privacy extensions
-     */
-    void setInterfaceIpv6PrivacyExtensions(String iface, boolean enable);
-
-    /**
-     * Disable IPv6 on an interface
-     */
-    void disableIpv6(String iface);
-
-    /**
-     * Enable IPv6 on an interface
-     */
-    void enableIpv6(String iface);
-
-    /**
-     * Retrieves the network routes currently configured on the specified
-     * interface
-     */
-    RouteInfo[] getRoutes(String iface);
-
-    /**
-     * Add the specified route to the interface.
-     */
-    void addRoute(String iface, in RouteInfo route);
-
-    /**
-     * Remove the specified route from the interface.
-     */
-    void removeRoute(String iface, in RouteInfo route);
-
-    /**
-     * Add the specified route to a secondary interface
-     * This will go into a special route table to be accessed
-     * via ip rules
-     */
-    void addSecondaryRoute(String iface, in RouteInfo route);
-
-    /**
-     * Remove the specified secondary route.
-     */
-    void removeSecondaryRoute(String iface, in RouteInfo route);
-
-    /**
      * Shuts down the service
      */
     void shutdown();
@@ -124,6 +64,7 @@ interface INetworkManagementService
     /**
      ** TETHERING RELATED
      **/
+
 
     /**
      * Returns true if IP forwarding is enabled
@@ -210,10 +151,19 @@ interface INetworkManagementService
     void detachPppd(String tty);
 
     /**
-     * Load firmware for operation in the given mode. Currently the three
-     * modes supported are "AP", "STA" and "P2P".
+     * Turn on USB RNDIS support - this will turn off thinks like adb/mass-storage
      */
-    void wifiFirmwareReload(String wlanIface, String mode);
+    void startUsbRNDIS();
+
+    /**
+     * Turn off USB RNDIS support
+     */
+    void stopUsbRNDIS();
+
+    /**
+     * Check the status of USB RNDIS support
+     */
+    boolean isUsbRNDISStarted();
 
     /**
      * Start Wifi Access Point
@@ -223,7 +173,7 @@ interface INetworkManagementService
     /**
      * Stop Wifi Access Point
      */
-    void stopAccessPoint(String wlanIface);
+    void stopAccessPoint();
 
     /**
      * Set Access Point config
@@ -231,71 +181,17 @@ interface INetworkManagementService
     void setAccessPoint(in WifiConfiguration wifiConfig, String wlanIface, String softapIface);
 
     /**
-     ** DATA USAGE RELATED
-     **/
-
-    /**
-     * Return global network statistics summarized at an interface level,
-     * without any UID-level granularity.
+     * Read number of bytes sent over an interface
      */
-    NetworkStats getNetworkStatsSummary();
+    long getInterfaceTxCounter(String iface);
 
     /**
-     * Return detailed network statistics with UID-level granularity,
-     * including interface and tag details.
+     * Read number of bytes received over an interface
      */
-    NetworkStats getNetworkStatsDetail();
+    long getInterfaceRxCounter(String iface);
 
     /**
-     * Return detailed network statistics for the requested UID,
-     * including interface and tag details.
-     */
-    NetworkStats getNetworkStatsUidDetail(int uid);
-
-    /**
-     * Return summary of network statistics for the requested pairs of
-     * tethering interfaces.  Even indexes are remote interface, and odd
-     * indexes are corresponding local interfaces.
-     */
-    NetworkStats getNetworkStatsTethering(in String[] ifacePairs);
-
-    /**
-     * Set quota for an interface.
-     */
-    void setInterfaceQuota(String iface, long quotaBytes);
-
-    /**
-     * Remove quota for an interface.
-     */
-    void removeInterfaceQuota(String iface);
-
-    /**
-     * Set alert for an interface; requires that iface already has quota.
-     */
-    void setInterfaceAlert(String iface, long alertBytes);
-
-    /**
-     * Remove alert for an interface.
-     */
-    void removeInterfaceAlert(String iface);
-
-    /**
-     * Set alert across all interfaces.
-     */
-    void setGlobalAlert(long alertBytes);
-
-    /**
-     * Control network activity of a UID over interfaces with a quota limit.
-     */
-    void setUidNetworkRules(int uid, boolean rejectOnQuotaInterfaces);
-
-    /**
-     * Return status of bandwidth control module.
-     */
-    boolean isBandwidthControlEnabled();
-
-    /**
-     * Configures bandwidth throttling on an interface.
+     * Configures bandwidth throttling on an interface
      */
     void setInterfaceThrottle(String iface, int rxKbps, int txKbps);
 
@@ -312,22 +208,12 @@ interface INetworkManagementService
     int getInterfaceTxThrottle(String iface);
 
     /**
-     * Sets the name of the default interface in the DNS resolver.
+     * Start Bluetooth NAP service
      */
-    void setDefaultInterfaceForDns(String iface);
+    void startPan();
 
     /**
-     * Bind name servers to an interface in the DNS resolver.
+     * Stop Bluetooth NAP service
      */
-    void setDnsServersForInterface(String iface, in String[] servers);
-
-    /**
-     * Flush the DNS cache associated with the default interface.
-     */
-    void flushDefaultDnsCache();
-
-    /**
-     * Flush the DNS cache associated with the specified interface.
-     */
-    void flushInterfaceDnsCache(String iface);
+    void stopPan();
 }

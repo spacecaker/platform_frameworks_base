@@ -27,6 +27,7 @@
 #include <media/AudioEffect.h>
 
 #include <utils/Log.h>
+#include <cutils/atomic.h>
 #include <binder/IPCThreadState.h>
 
 
@@ -47,11 +48,11 @@ AudioEffect::AudioEffect(const effect_uuid_t *type,
                 effect_callback_t cbf,
                 void* user,
                 int sessionId,
-                audio_io_handle_t io
+                audio_io_handle_t output
                 )
     : mStatus(NO_INIT)
 {
-    mStatus = set(type, uuid, priority, cbf, user, sessionId, io);
+    mStatus = set(type, uuid, priority, cbf, user, sessionId, output);
 }
 
 AudioEffect::AudioEffect(const char *typeStr,
@@ -60,7 +61,7 @@ AudioEffect::AudioEffect(const char *typeStr,
                 effect_callback_t cbf,
                 void* user,
                 int sessionId,
-                audio_io_handle_t io
+                audio_io_handle_t output
                 )
     : mStatus(NO_INIT)
 {
@@ -83,7 +84,7 @@ AudioEffect::AudioEffect(const char *typeStr,
         }
     }
 
-    mStatus = set(pType, pUuid, priority, cbf, user, sessionId, io);
+    mStatus = set(pType, pUuid, priority, cbf, user, sessionId, output);
 }
 
 status_t AudioEffect::set(const effect_uuid_t *type,
@@ -92,13 +93,13 @@ status_t AudioEffect::set(const effect_uuid_t *type,
                 effect_callback_t cbf,
                 void* user,
                 int sessionId,
-                audio_io_handle_t io)
+                audio_io_handle_t output)
 {
     sp<IEffect> iEffect;
     sp<IMemory> cblk;
     int enabled;
 
-    LOGV("set %p mUserData: %p uuid: %p timeLow %08x", this, user, type, type ? type->timeLow : 0);
+    LOGV("set %p mUserData: %p", this, user);
 
     if (mIEffect != 0) {
         LOGW("Effect already in use");
@@ -135,7 +136,7 @@ status_t AudioEffect::set(const effect_uuid_t *type,
     mIEffectClient = new EffectClient(this);
 
     iEffect = audioFlinger->createEffect(getpid(), (effect_descriptor_t *)&mDescriptor,
-            mIEffectClient, priority, io, mSessionId, &mStatus, &mId, &enabled);
+            mIEffectClient, priority, output, mSessionId, &mStatus, &mId, &enabled);
 
     if (iEffect == 0 || (mStatus != NO_ERROR && mStatus != ALREADY_EXISTS)) {
         LOGE("set(): AudioFlinger could not create effect, status: %d", mStatus);
@@ -170,6 +171,7 @@ AudioEffect::~AudioEffect()
     LOGV("Destructor %p", this);
 
     if (mStatus == NO_ERROR || mStatus == ALREADY_EXISTS) {
+        setEnabled(false);
         if (mIEffect != NULL) {
             mIEffect->disconnect();
             mIEffect->asBinder()->unlinkToDeath(mIEffectClient);
@@ -205,22 +207,18 @@ status_t AudioEffect::setEnabled(bool enabled)
         return INVALID_OPERATION;
     }
 
-    status_t status = NO_ERROR;
-
-    AutoMutex lock(mLock);
-    if (enabled != mEnabled) {
-        if (enabled) {
-            LOGV("enable %p", this);
-            status = mIEffect->enable();
-        } else {
-            LOGV("disable %p", this);
-            status = mIEffect->disable();
+    if (enabled) {
+        LOGV("enable %p", this);
+        if (android_atomic_or(1, &mEnabled) == 0) {
+           return mIEffect->enable();
         }
-        if (status == NO_ERROR) {
-            mEnabled = enabled;
+    } else {
+        LOGV("disable %p", this);
+        if (android_atomic_and(~1, &mEnabled) == 1) {
+           return mIEffect->disable();
         }
     }
-    return status;
+    return NO_ERROR;
 }
 
 status_t AudioEffect::command(uint32_t cmdCode,
@@ -234,26 +232,26 @@ status_t AudioEffect::command(uint32_t cmdCode,
         return INVALID_OPERATION;
     }
 
-    if (cmdCode == EFFECT_CMD_ENABLE || cmdCode == EFFECT_CMD_DISABLE) {
-        if (mEnabled == (cmdCode == EFFECT_CMD_ENABLE)) {
-            return NO_ERROR;
-        }
-        if (replySize == NULL || *replySize != sizeof(status_t) || replyData == NULL) {
-            return BAD_VALUE;
-        }
-        mLock.lock();
+    if ((cmdCode == EFFECT_CMD_ENABLE || cmdCode == EFFECT_CMD_DISABLE) &&
+            (replySize == NULL || *replySize != sizeof(status_t) || replyData == NULL)) {
+        return BAD_VALUE;
     }
 
     status_t status = mIEffect->command(cmdCode, cmdSize, cmdData, replySize, replyData);
+    if (status != NO_ERROR) {
+        return status;
+    }
 
     if (cmdCode == EFFECT_CMD_ENABLE || cmdCode == EFFECT_CMD_DISABLE) {
-        if (status == NO_ERROR) {
-            status = *(status_t *)replyData;
+        status = *(status_t *)replyData;
+        if (status != NO_ERROR) {
+            return status;
         }
-        if (status == NO_ERROR) {
-            mEnabled = (cmdCode == EFFECT_CMD_ENABLE);
+        if (cmdCode == EFFECT_CMD_ENABLE) {
+            android_atomic_or(1, &mEnabled);
+        } else {
+            android_atomic_and(~1, &mEnabled);
         }
-        mLock.unlock();
     }
 
     return status;
@@ -372,7 +370,11 @@ void AudioEffect::enableStatusChanged(bool enabled)
 {
     LOGV("enableStatusChanged %p enabled %d mCbf %p", this, enabled, mCbf);
     if (mStatus == ALREADY_EXISTS) {
-        mEnabled = enabled;
+        if (enabled) {
+            android_atomic_or(1, &mEnabled);
+        } else {
+            android_atomic_and(~1, &mEnabled);
+        }
         if (mCbf) {
             mCbf(EVENT_ENABLE_STATUS_CHANGED, mUserData, &enabled);
         }
@@ -398,6 +400,20 @@ void AudioEffect::commandExecuted(uint32_t cmdCode,
 
 // -------------------------------------------------------------------------
 
+status_t AudioEffect::loadEffectLibrary(const char *libPath, int *handle)
+{
+    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
+    if (af == 0) return PERMISSION_DENIED;
+    return af->loadEffectLibrary(libPath, handle);
+}
+
+status_t AudioEffect::unloadEffectLibrary(int handle)
+{
+    const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
+    if (af == 0) return PERMISSION_DENIED;
+    return af->unloadEffectLibrary(handle);
+}
+
 status_t AudioEffect::queryNumberEffects(uint32_t *numEffects)
 {
     const sp<IAudioFlinger>& af = AudioSystem::get_audio_flinger();
@@ -419,15 +435,6 @@ status_t AudioEffect::getEffectDescriptor(effect_uuid_t *uuid, effect_descriptor
     return af->getEffectDescriptor(uuid, descriptor);
 }
 
-
-status_t AudioEffect::queryDefaultPreProcessing(int audioSession,
-                                          effect_descriptor_t *descriptors,
-                                          uint32_t *count)
-{
-    const sp<IAudioPolicyService>& aps = AudioSystem::get_audio_policy_service();
-    if (aps == 0) return PERMISSION_DENIED;
-    return aps->queryDefaultPreProcessing(audioSession, descriptors, count);
-}
 // -------------------------------------------------------------------------
 
 status_t AudioEffect::stringToGuid(const char *str, effect_uuid_t *guid)

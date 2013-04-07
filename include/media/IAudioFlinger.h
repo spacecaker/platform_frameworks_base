@@ -27,7 +27,7 @@
 #include <media/IAudioTrack.h>
 #include <media/IAudioRecord.h>
 #include <media/IAudioFlingerClient.h>
-#include <hardware/audio_effect.h>
+#include <media/EffectApi.h>
 #include <media/IEffect.h>
 #include <media/IEffectClient.h>
 #include <utils/String8.h>
@@ -48,8 +48,8 @@ public:
                                 pid_t pid,
                                 int streamType,
                                 uint32_t sampleRate,
-                                uint32_t format,
-                                uint32_t channelMask,
+                                int format,
+                                int channelCount,
                                 int frameCount,
                                 uint32_t flags,
                                 const sp<IMemory>& sharedBuffer,
@@ -57,28 +57,12 @@ public:
                                 int *sessionId,
                                 status_t *status) = 0;
 
-#ifdef WITH_QCOM_LPA
-    virtual     void        createSession(
-                                pid_t pid,
-                                uint32_t sampleRate,
-                                int channelCount,
-                                int *sessionId,
-                                status_t *status) = 0;
-
-    virtual     void        deleteSession() = 0;
-
-    virtual     void        applyEffectsOn(
-                                int16_t *buffer1,
-                                int16_t *buffer2,
-                                int size) = 0;
-#endif
-
     virtual sp<IAudioRecord> openRecord(
                                 pid_t pid,
                                 int input,
                                 uint32_t sampleRate,
-                                uint32_t format,
-                                uint32_t channelMask,
+                                int format,
+                                int channelCount,
                                 int frameCount,
                                 uint32_t flags,
                                 int *sessionId,
@@ -89,7 +73,7 @@ public:
      */
     virtual     uint32_t    sampleRate(int output) const = 0;
     virtual     int         channelCount(int output) const = 0;
-    virtual     uint32_t    format(int output) const = 0;
+    virtual     int         format(int output) const = 0;
     virtual     size_t      frameCount(int output) const = 0;
     virtual     uint32_t    latency(int output) const = 0;
 
@@ -102,15 +86,17 @@ public:
     virtual     float       masterVolume() const = 0;
     virtual     bool        masterMute() const = 0;
 
-#ifdef WITH_QCOM_LPA
-    virtual     status_t    setSessionVolume(int stream, float value, float right) = 0;
-#endif
     /* set/get stream type state. This will probably be used by
      * the preference panel, mostly.
      */
     virtual     status_t    setStreamVolume(int stream, float value, int output) = 0;
     virtual     status_t    setStreamMute(int stream, bool muted) = 0;
-
+#ifdef OMAP_ENHANCEMENT
+    /* This will tell playback thread that FM Rx is active
+     * and device will not go to standby
+     */
+    virtual     status_t    setFMRxActive(bool state)=0;
+#endif
     virtual     float       streamVolume(int stream, int output) const = 0;
     virtual     bool        streamMute(int stream) const = 0;
 
@@ -120,6 +106,9 @@ public:
     // mic mute/state
     virtual     status_t    setMicMute(bool state) = 0;
     virtual     bool        getMicMute() const = 0;
+
+    // is any track active on this stream?
+    virtual     bool        isStreamActive(int stream) const = 0;
 
     virtual     status_t    setParameters(int ioHandle, const String8& keyValuePairs) = 0;
     virtual     String8     getParameters(int ioHandle, const String8& keys) = 0;
@@ -136,37 +125,18 @@ public:
                                     uint32_t *pChannels,
                                     uint32_t *pLatencyMs,
                                     uint32_t flags) = 0;
-#ifdef WITH_QCOM_LPA
-    virtual int openSession(uint32_t *pDevices,
-                                 uint32_t *pFormat,
-                                 uint32_t flags,
-                                 int32_t  stream,
-                                 int32_t  sessionId){return 0;};
-    virtual status_t pauseSession(int output, int32_t  stream) = 0;
-    virtual status_t resumeSession(int output, int32_t  stream) = 0;
-    virtual status_t closeSession(int output) = 0;
-#endif
     virtual int openDuplicateOutput(int output1, int output2) = 0;
     virtual status_t closeOutput(int output) = 0;
     virtual status_t suspendOutput(int output) = 0;
     virtual status_t restoreOutput(int output) = 0;
 
-#ifdef STE_AUDIO
-    virtual uint32_t *addInputClient(uint32_t clientId) = 0;
-    virtual status_t removeInputClient(uint32_t *pClientId) = 0;
-#endif
     virtual int openInput(uint32_t *pDevices,
                                     uint32_t *pSamplingRate,
                                     uint32_t *pFormat,
                                     uint32_t *pChannels,
-#ifdef STE_AUDIO
-                                    uint32_t acoustics,
-                                    uint32_t *pInputClientId = NULL) = 0;
-    virtual status_t closeInput(int input, uint32_t* inputClientId = NULL) = 0;
-#else
                                     uint32_t acoustics) = 0;
     virtual status_t closeInput(int input) = 0;
-#endif
+
     virtual status_t setStreamOutput(uint32_t stream, int output) = 0;
 
     virtual status_t setVoiceVolume(float volume) = 0;
@@ -177,8 +147,9 @@ public:
 
     virtual int newAudioSessionId() = 0;
 
-    virtual void acquireAudioSessionId(int audioSession) = 0;
-    virtual void releaseAudioSessionId(int audioSession) = 0;
+    virtual status_t loadEffectLibrary(const char *libPath, int *handle) = 0;
+
+    virtual status_t unloadEffectLibrary(int handle) = 0;
 
     virtual status_t queryNumberEffects(uint32_t *numEffects) = 0;
 
@@ -197,11 +168,9 @@ public:
                                     int *enabled) = 0;
 
     virtual status_t moveEffects(int session, int srcOutput, int dstOutput) = 0;
-#ifdef WITH_QCOM_LPA
-    virtual status_t deregisterClient(const sp<IAudioFlingerClient>& client) { return false; };
-#endif
-#ifdef STE_AUDIO
-    virtual size_t readInput(uint32_t *input, uint32_t inputClientId, void *buffer, uint32_t bytes, uint32_t *pOverwrittenBytes) = 0;
+
+#ifdef HAVE_FM_RADIO
+    virtual status_t setFmVolume(float volume) = 0;
 #endif
 };
 

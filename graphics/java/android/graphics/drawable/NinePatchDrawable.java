@@ -21,6 +21,7 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.TypedValue;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
@@ -31,15 +32,9 @@ import java.io.InputStream;
 /**
  * 
  * A resizeable bitmap, with stretchable areas that you define. This type of image
- * is defined in a .png file with a special format.
+ * is defined in a .png file with a special format, described in <a link="../../../resources.html#ninepatch">
+ * Resources</a>.
  *
- * <div class="special reference">
- * <h3>Developer Guides</h3>
- * <p>For more information about how to use a NinePatchDrawable, read the
- * <a href="{@docRoot}guide/topics/graphics/2d-graphics.html#nine-patch">
- * Canvas and Drawables</a> developer guide. For information about creating a NinePatch image
- * file using the draw9patch tool, see the
- * <a href="{@docRoot}guide/developing/tools/draw9patch.html">Draw 9-patch</a> tool guide.</p></div>
  */
 public class NinePatchDrawable extends Drawable {
     // dithering helps a lot, and is pretty cheap, so default is true
@@ -104,8 +99,7 @@ public class NinePatchDrawable extends Drawable {
         mPadding = state.mPadding;
         mTargetDensity = res != null ? res.getDisplayMetrics().densityDpi
                 : state.mTargetDensity;
-        //noinspection PointlessBooleanExpression
-        if (state.mDither != DEFAULT_DITHER) {
+        if (DEFAULT_DITHER != state.mDither) {
             // avoid calling the setter unless we need to, since it does a
             // lazy allocation of a paint
             setDither(state.mDither);
@@ -138,7 +132,10 @@ public class NinePatchDrawable extends Drawable {
      * @see android.graphics.Bitmap#getDensity()
      */
     public void setTargetDensity(DisplayMetrics metrics) {
-        setTargetDensity(metrics.densityDpi);
+        mTargetDensity = metrics.densityDpi;
+        if (mNinePatch != null) {
+            computeBitmapSize();
+        }
     }
 
     /**
@@ -150,12 +147,9 @@ public class NinePatchDrawable extends Drawable {
      * @see android.graphics.Bitmap#getDensity()
      */
     public void setTargetDensity(int density) {
-        if (density != mTargetDensity) {
-            mTargetDensity = density == 0 ? DisplayMetrics.DENSITY_DEFAULT : density;
-            if (mNinePatch != null) {
-                computeBitmapSize();
-            }
-            invalidateSelf();
+        mTargetDensity = density == 0 ? DisplayMetrics.DENSITY_DEFAULT : density;
+        if (mNinePatch != null) {
+            computeBitmapSize();
         }
     }
 
@@ -183,9 +177,16 @@ public class NinePatchDrawable extends Drawable {
             }
         }
     }
+    
+    // overrides
 
     @Override
     public void draw(Canvas canvas) {
+        if (false) {
+            float[] pts = new float[2];
+            canvas.getMatrix().mapPoints(pts);
+            Log.v("9patch", "Drawing 9-patch @ " + pts[0] + "," + pts[1] + ": " + getBounds());
+        }
         mNinePatch.draw(canvas, getBounds(), mPaint);
     }
 
@@ -202,38 +203,25 @@ public class NinePatchDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
-        if (mPaint == null && alpha == 0xFF) {
-            // Fast common case -- leave at normal alpha.
-            return;
-        }
         getPaint().setAlpha(alpha);
-        invalidateSelf();
     }
     
     @Override
     public void setColorFilter(ColorFilter cf) {
-        if (mPaint == null && cf == null) {
-            // Fast common case -- leave at no color filter.
-            return;
-        }
         getPaint().setColorFilter(cf);
-        invalidateSelf();
     }
 
     @Override
     public void setDither(boolean dither) {
-        if (mPaint == null && dither == DEFAULT_DITHER) {
-            // Fast common case -- leave at default dither.
-            return;
-        }
         getPaint().setDither(dither);
-        invalidateSelf();
     }
 
     @Override
     public void setFilterBitmap(boolean filter) {
-        getPaint().setFilterBitmap(filter);
-        invalidateSelf();
+        // at the moment, we see no quality improvement, but a big slowdown
+        // with filtering, so ignore this call for now
+        //
+        //getPaint().setFilterBitmap(filter);
     }
 
     @Override

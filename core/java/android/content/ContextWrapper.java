@@ -20,7 +20,6 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
-import android.database.DatabaseErrorHandler;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteDatabase.CursorFactory;
 import android.graphics.Bitmap;
@@ -106,12 +105,6 @@ public class ContextWrapper extends Context {
         mBase.setTheme(resid);
     }
 
-    /** @hide */
-    @Override
-    public int getThemeResId() {
-        return mBase.getThemeResId();
-    }
-
     @Override
     public Resources.Theme getTheme() {
         return mBase.getTheme();
@@ -191,11 +184,6 @@ public class ContextWrapper extends Context {
     }
     
     @Override
-    public File getObbDir() {
-        return mBase.getObbDir();
-    }
-    
-    @Override
     public File getCacheDir() {
         return mBase.getCacheDir();
     }
@@ -213,12 +201,6 @@ public class ContextWrapper extends Context {
     @Override
     public SQLiteDatabase openOrCreateDatabase(String name, int mode, CursorFactory factory) {
         return mBase.openOrCreateDatabase(name, mode, factory);
-    }
-
-    @Override
-    public SQLiteDatabase openOrCreateDatabase(String name, int mode, CursorFactory factory,
-            DatabaseErrorHandler errorHandler) {
-        return mBase.openOrCreateDatabase(name, mode, factory, errorHandler);
     }
 
     @Override
@@ -274,11 +256,6 @@ public class ContextWrapper extends Context {
     @Override
     public void startActivity(Intent intent) {
         mBase.startActivity(intent);
-    }
-
-    @Override
-    public void startActivities(Intent[] intents) {
-        mBase.startActivities(intents);
     }
 
     @Override

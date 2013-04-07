@@ -3,6 +3,7 @@
 #define RETURN_NULL_IF_NULL(value) \
     do { if (!(value)) { SkASSERT(0); return NULL; } } while (false)
 
+static jclass       gInputStream_Clazz;
 static jmethodID    gInputStream_resetMethodID;
 static jmethodID    gInputStream_markMethodID;
 static jmethodID    gInputStream_availableMethodID;
@@ -18,10 +19,10 @@ public:
         SkASSERT(fCapacity > 0);
         fBytesRead  = 0;
     }
-
+    
 	virtual bool rewind() {
         JNIEnv* env = fEnv;
-
+        
         fBytesRead = 0;
 
         env->CallVoidMethod(fJavaInputStream, gInputStream_resetMethodID);
@@ -33,7 +34,7 @@ public:
         }
         return true;
     }
-
+    
     size_t doRead(void* buffer, size_t size) {
         JNIEnv* env = fEnv;
         size_t bytesRead = 0;
@@ -42,7 +43,7 @@ public:
             size_t requested = size;
             if (requested > fCapacity)
                 requested = fCapacity;
-
+            
             jint n = env->CallIntMethod(fJavaInputStream,
                                         gInputStream_readMethodID, fJavaByteArray, 0, requested);
             if (env->ExceptionCheck()) {
@@ -51,11 +52,11 @@ public:
                 SkDebugf("---- read threw an exception\n");
                 return 0;
             }
-
+            
             if (n < 0) { // n == 0 should not be possible, see InputStream read() specifications.
                 break;  // eof
             }
-
+            
             env->GetByteArrayRegion(fJavaByteArray, 0, n,
                                     reinterpret_cast<jbyte*>(buffer));
             if (env->ExceptionCheck()) {
@@ -64,16 +65,16 @@ public:
                 SkDebugf("---- read:GetByteArrayRegion threw an exception\n");
                 return 0;
             }
-
+            
             buffer = (void*)((char*)buffer + n);
             bytesRead += n;
             size -= n;
             fBytesRead += n;
         } while (size != 0);
-
+        
         return bytesRead;
     }
-
+    
     size_t doSkip(size_t size) {
         JNIEnv* env = fEnv;
 
@@ -91,7 +92,7 @@ public:
 
         return (size_t)skipped;
     }
-
+    
     size_t doSize() {
         JNIEnv* env = fEnv;
         jint avail = env->CallIntMethod(fJavaInputStream,
@@ -104,7 +105,7 @@ public:
         }
         return avail;
     }
-
+    
 	virtual size_t read(void* buffer, size_t size) {
         JNIEnv* env = fEnv;
         if (NULL == buffer) {
@@ -133,7 +134,7 @@ public:
         }
         return this->doRead(buffer, size);
     }
-
+    
 private:
     JNIEnv*     fEnv;
     jobject     fJavaInputStream;   // the caller owns this object
@@ -147,18 +148,19 @@ SkStream* CreateJavaInputStreamAdaptor(JNIEnv* env, jobject stream,
     static bool gInited;
 
     if (!gInited) {
-        jclass inputStream_Clazz = env->FindClass("java/io/InputStream");
-        RETURN_NULL_IF_NULL(inputStream_Clazz);
+        gInputStream_Clazz = env->FindClass("java/io/InputStream");
+        RETURN_NULL_IF_NULL(gInputStream_Clazz);
+        gInputStream_Clazz = (jclass)env->NewGlobalRef(gInputStream_Clazz);
 
-        gInputStream_resetMethodID      = env->GetMethodID(inputStream_Clazz,
+        gInputStream_resetMethodID      = env->GetMethodID(gInputStream_Clazz,
                                                            "reset", "()V");
-        gInputStream_markMethodID       = env->GetMethodID(inputStream_Clazz,
+        gInputStream_markMethodID       = env->GetMethodID(gInputStream_Clazz,
                                                            "mark", "(I)V");
-        gInputStream_availableMethodID  = env->GetMethodID(inputStream_Clazz,
+        gInputStream_availableMethodID  = env->GetMethodID(gInputStream_Clazz,
                                                            "available", "()I");
-        gInputStream_readMethodID       = env->GetMethodID(inputStream_Clazz,
+        gInputStream_readMethodID       = env->GetMethodID(gInputStream_Clazz,
                                                            "read", "([BII)I");
-        gInputStream_skipMethodID       = env->GetMethodID(inputStream_Clazz,
+        gInputStream_skipMethodID       = env->GetMethodID(gInputStream_Clazz,
                                                            "skip", "(J)J");
 
         RETURN_NULL_IF_NULL(gInputStream_resetMethodID);
@@ -179,6 +181,7 @@ SkStream* CreateJavaInputStreamAdaptor(JNIEnv* env, jobject stream,
 
 ///////////////////////////////////////////////////////////////////////////////
 
+static jclass       gOutputStream_Clazz;
 static jmethodID    gOutputStream_writeMethodID;
 static jmethodID    gOutputStream_flushMethodID;
 
@@ -188,11 +191,11 @@ public:
         : fEnv(env), fJavaOutputStream(stream), fJavaByteArray(storage) {
         fCapacity = env->GetArrayLength(storage);
     }
-
+    
 	virtual bool write(const void* buffer, size_t size) {
         JNIEnv* env = fEnv;
         jbyteArray storage = fJavaByteArray;
-
+        
         while (size > 0) {
             size_t requested = size;
             if (requested > fCapacity) {
@@ -207,7 +210,7 @@ public:
                 SkDebugf("--- write:SetByteArrayElements threw an exception\n");
                 return false;
             }
-
+            
             fEnv->CallVoidMethod(fJavaOutputStream, gOutputStream_writeMethodID,
                                  storage, 0, requested);
             if (env->ExceptionCheck()) {
@@ -216,17 +219,17 @@ public:
                 SkDebugf("------- write threw an exception\n");
                 return false;
             }
-
+            
             buffer = (void*)((char*)buffer + requested);
             size -= requested;
         }
         return true;
     }
-
+    
     virtual void flush() {
         fEnv->CallVoidMethod(fJavaOutputStream, gOutputStream_flushMethodID);
     }
-
+    
 private:
     JNIEnv*     fEnv;
     jobject     fJavaOutputStream;  // the caller owns this object
@@ -239,13 +242,14 @@ SkWStream* CreateJavaOutputStreamAdaptor(JNIEnv* env, jobject stream,
     static bool gInited;
 
     if (!gInited) {
-        jclass outputStream_Clazz = env->FindClass("java/io/OutputStream");
-        RETURN_NULL_IF_NULL(outputStream_Clazz);
+        gOutputStream_Clazz = env->FindClass("java/io/OutputStream");
+        RETURN_NULL_IF_NULL(gOutputStream_Clazz);
+        gOutputStream_Clazz = (jclass)env->NewGlobalRef(gOutputStream_Clazz);
 
-        gOutputStream_writeMethodID = env->GetMethodID(outputStream_Clazz,
+        gOutputStream_writeMethodID = env->GetMethodID(gOutputStream_Clazz,
                                                        "write", "([BII)V");
         RETURN_NULL_IF_NULL(gOutputStream_writeMethodID);
-        gOutputStream_flushMethodID = env->GetMethodID(outputStream_Clazz,
+        gOutputStream_flushMethodID = env->GetMethodID(gOutputStream_Clazz,
                                                        "flush", "()V");
         RETURN_NULL_IF_NULL(gOutputStream_flushMethodID);
 
@@ -254,3 +258,4 @@ SkWStream* CreateJavaOutputStreamAdaptor(JNIEnv* env, jobject stream,
 
     return new SkJavaOutputStream(env, stream, storage);
 }
+

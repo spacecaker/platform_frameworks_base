@@ -228,11 +228,11 @@ public class StaticLayoutTest extends TestCase {
         }
     }
 
-    /* package */ static LayoutBuilder builder() {
+    private static LayoutBuilder builder() {
         return new LayoutBuilder();
     }
 
-    /* package */ static class LayoutBuilder {
+    private static class LayoutBuilder {
         String text = "This is a test";
         TextPaint paint = new TextPaint(); // default
         int width = 100;

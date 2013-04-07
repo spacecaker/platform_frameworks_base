@@ -131,23 +131,20 @@ public class InsetDrawable extends Drawable implements Drawable.Callback
     // overrides from Drawable.Callback
 
     public void invalidateDrawable(Drawable who) {
-        final Callback callback = getCallback();
-        if (callback != null) {
-            callback.invalidateDrawable(this);
+        if (mCallback != null) {
+            mCallback.invalidateDrawable(this);
         }
     }
 
     public void scheduleDrawable(Drawable who, Runnable what, long when) {
-        final Callback callback = getCallback();
-        if (callback != null) {
-            callback.scheduleDrawable(this, what, when);
+        if (mCallback != null) {
+            mCallback.scheduleDrawable(this, what, when);
         }
     }
 
     public void unscheduleDrawable(Drawable who, Runnable what) {
-        final Callback callback = getCallback();
-        if (callback != null) {
-            callback.unscheduleDrawable(this, what);
+        if (mCallback != null) {
+            mCallback.unscheduleDrawable(this, what);
         }
     }
 

@@ -8,14 +8,6 @@
 
 #include <utils/ByteOrder.h>
 
-#if HAVE_PRINTF_ZD
-#  define ZD "%zd"
-#  define ZD_TYPE ssize_t
-#else
-#  define ZD "%ld"
-#  define ZD_TYPE long
-#endif
-
 #define NOISY(x) //x
 
 void strcpy16_htod(uint16_t* dst, const uint16_t* src)
@@ -38,7 +30,7 @@ void printStringPool(const ResStringPool* pool)
             str = String8(pool->stringAt(s, &len)).string();
         }
 
-        printf("String #" ZD ": %s\n", (ZD_TYPE) s, str);
+        printf("String #%ld: %s\n", s, str);
     }
 }
 

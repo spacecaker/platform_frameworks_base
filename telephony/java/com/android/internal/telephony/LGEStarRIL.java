@@ -50,6 +50,7 @@ import android.util.Log;
 import com.android.internal.telephony.CallForwardInfo;
 import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.DataCallState;
+import com.android.internal.telephony.gsm.NetworkInfo;
 import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.IccCardApplication;
@@ -84,13 +85,16 @@ import android.telephony.TelephonyManager;
  * {@hide}
  */
 public class LGEStarRIL extends RIL implements CommandsInterface {
+    public LGEStarRIL(Context context) {
+        super(context);
+    }
 
     protected int mCallState = TelephonyManager.CALL_STATE_IDLE;
     public LGEStarRIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
         /* The star needs to ignore SCREEN_X states, in order to keep the
          * batt updates running. The others don't need this */
-        if (SystemProperties.get("ro.build.product").indexOf("p99") == 0) {
+        if (SystemProperties.get("ro.cm.device").indexOf("p99") == 0) {
             context.unregisterReceiver(mIntentReceiver);
             BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
                 @Override
@@ -147,7 +151,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
     public void
     setRadioPower(boolean on, Message result) {
         if(mPrepSetupPending) {
-            if (SystemProperties.get("ro.build.product").equals("p999")) {
+            if (SystemProperties.get("ro.cm.device").equals("p999")) {
                 /* Set radio access tech */
                 RILRequest rrSPR = RILRequest.obtain(
                         296, null);
@@ -207,15 +211,15 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
                     RIL_REQUEST_SET_PREFERRED_NETWORK_TYPE, null);
 
             rrPnt.mp.writeInt(1);
-            rrPnt.mp.writeInt(mPreferredNetworkType);
+            rrPnt.mp.writeInt(mNetworkMode);
             if (RILJ_LOGD) riljLog(rrPnt.serialString() + "> "
-                    + requestToString(rrPnt.mRequest) + " : " + mPreferredNetworkType);
+                    + requestToString(rrPnt.mRequest) + " : " + mNetworkMode);
 
             send(rrPnt);
 
             /* Set "ready" */
             RILRequest rrSc = RILRequest.obtain(
-                    (SystemProperties.get("ro.build.product").equals("p999") ? 304 : 298), null);
+                    (SystemProperties.get("ro.cm.device").equals("p999") ? 304 : 298), null);
             rrSc.mp.writeInt(1);
             rrSc.mp.writeInt(0);
             if (RILJ_LOGD) riljLog(rrSc.serialString() + "> "
@@ -344,13 +348,14 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
     }
 
     public void
-    deactivateDataCall(int cid, int reason, Message result) {
+    deactivateDataCall(int cid, Message result) {
         RILRequest rr
                 = RILRequest.obtain(RIL_REQUEST_DEACTIVATE_DATA_CALL, result);
 
         rr.mp.writeInt(2);
-        rr.mp.writeInt(cid);
+        rr.mp.writeInt(cid); 
         rr.mp.writeInt(1); //cid
+        rr.mp.writeString(Integer.toString(cid));
 
         if (RILJ_LOGD) riljLog(rr.serialString() + "> " +
                 requestToString(rr.mRequest) + " " + cid);
@@ -406,7 +411,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
 
         /* Request service line */
         RILRequest rrSL = RILRequest.obtain(
-                (SystemProperties.get("ro.build.product").equals("p999") ? 294 : 286), null);
+                (SystemProperties.get("ro.cm.device").equals("p999") ? 294 : 286), null);
         rrSL.mp.writeInt(0);
         if (RILJ_LOGD) riljLog(rrSL.serialString() + "> "
                 + requestToString(rrSL.mRequest));
@@ -456,8 +461,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_REQUEST_UDUB: ret =  responseVoid(p); break;
             case RIL_REQUEST_LAST_CALL_FAIL_CAUSE: ret =  responseInts(p); break;
             case RIL_REQUEST_SIGNAL_STRENGTH: ret =  responseSignalStrength(p); break;
-            case RIL_REQUEST_VOICE_REGISTRATION_STATE: ret =  responseStrings(p); break;
-            case RIL_REQUEST_DATA_REGISTRATION_STATE: ret =  responseStrings(p); break;
+            case RIL_REQUEST_REGISTRATION_STATE: ret =  responseStrings(p); break;
+            case RIL_REQUEST_GPRS_REGISTRATION_STATE: ret =  responseStrings(p); break;
             case RIL_REQUEST_OPERATOR: ret =  responseStrings(p); break;
             case RIL_REQUEST_RADIO_POWER: ret =  responseVoid(p); break;
             case RIL_REQUEST_DTMF: ret =  responseVoid(p); break;
@@ -484,7 +489,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_REQUEST_QUERY_NETWORK_SELECTION_MODE: ret =  responseInts(p); break;
             case RIL_REQUEST_SET_NETWORK_SELECTION_AUTOMATIC: ret =  responseVoid(p); break;
             case RIL_REQUEST_SET_NETWORK_SELECTION_MANUAL: ret =  responseVoid(p); break;
-            case RIL_REQUEST_QUERY_AVAILABLE_NETWORKS : ret =  responseOperatorInfos(p); break;
+            case RIL_REQUEST_QUERY_AVAILABLE_NETWORKS : ret =  responseNetworkInfos(p); break;
             case RIL_REQUEST_DTMF_START: ret =  responseVoid(p); break;
             case RIL_REQUEST_DTMF_STOP: ret =  responseVoid(p); break;
             case RIL_REQUEST_BASEBAND_VERSION: ret =  responseString(p); break;
@@ -513,7 +518,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_REQUEST_GET_PREFERRED_NETWORK_TYPE: ret =  responseInts(p); break;
             case RIL_REQUEST_GET_NEIGHBORING_CELL_IDS: ret = responseCellList(p); break;
             case RIL_REQUEST_SET_LOCATION_UPDATES: ret =  responseVoid(p); break;
-            case RIL_REQUEST_CDMA_SET_SUBSCRIPTION_SOURCE: ret =  responseVoid(p); break;
+            case RIL_REQUEST_CDMA_SET_SUBSCRIPTION: ret =  responseVoid(p); break;
             case RIL_REQUEST_CDMA_SET_ROAMING_PREFERENCE: ret =  responseVoid(p); break;
             case RIL_REQUEST_CDMA_QUERY_ROAMING_PREFERENCE: ret =  responseInts(p); break;
             case RIL_REQUEST_SET_TTY_MODE: ret =  responseVoid(p); break;
@@ -578,7 +583,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
 
         if (rr.mRequest == RIL_REQUEST_SETUP_DATA_CALL) {
             String[] strings = (String[]) ret;
-            if (strings.length <=2 || strings[1].indexOf("vsnet") == 0) {
+            if (strings.length <=2 || strings[1].indexOf("gan") != 0) {
                 rr.release();
                 showPdpAddress(saveDataCall);
                 return;
@@ -598,24 +603,31 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
 
     protected Object
     responseDataCallListChanged(Parcel p) {
+        int num;
         ArrayList<DataCallState> response;
 
-        int ver = p.readInt();
-        int num = p.readInt();
-        riljLog("responseDataCallList ver=" + ver + " num=" + num);
-
+        num = p.readInt();
         response = new ArrayList<DataCallState>(num);
+
         for (int i = 0; i < num; i++) {
-            DataCallState tmpRes = getDataCallState(p, ver);
-            if (tmpRes.active != 0 && 
-                 tmpRes.ifname.indexOf("vsnet") == 0)
+            DataCallState dataCall = new DataCallState();
+
+            dataCall.cid = p.readInt();
+            dataCall.active = p.readInt();
+            dataCall.type = p.readString();
+            dataCall.apn = p.readString();
+            String address = p.readString();
+            if (address != null) {
+                address = address.split(" ")[0];
+            }
+            dataCall.address = address;
+            if (dataCall.active != 0)
                 showPdpAddress(null);
-            response.add(tmpRes);
+            response.add(dataCall);
         }
 
         return response;
     }
-
 
 
     protected void
@@ -628,7 +640,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
         try {switch(response) {
             case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: ret =  responseVoid(p); break;
             case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED: ret =  responseVoid(p); break;
-            case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED: ret =  responseVoid(p); break;
+            case RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED: ret =  responseVoid(p); break;
             case RIL_UNSOL_RESPONSE_NEW_SMS: ret =  responseString(p); break;
             case RIL_UNSOL_RESPONSE_NEW_SMS_STATUS_REPORT: ret =  responseString(p); break;
             case RIL_UNSOL_RESPONSE_NEW_SMS_ON_SIM: ret =  responseInts(p); break;
@@ -680,10 +692,10 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
                 mCallStateRegistrants
                     .notifyRegistrants(new AsyncResult(null, null, null));
             break;
-            case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED:
+            case RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED:
                 if (RILJ_LOGD) unsljLog(response);
 
-                mVoiceNetworkStateRegistrants
+                mNetworkStateRegistrants
                     .notifyRegistrants(new AsyncResult(null, null, null));
             break;
             case RIL_UNSOL_RESPONSE_NEW_SMS: {
@@ -697,8 +709,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
                 SmsMessage sms;
 
                 sms = SmsMessage.newFromCMT(a);
-                if (mGsmSmsRegistrant != null) {
-                    mGsmSmsRegistrant
+                if (mSMSRegistrant != null) {
+                    mSMSRegistrant
                         .notifyRegistrant(new AsyncResult(null, sms, null));
                 }
             break;
@@ -776,7 +788,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_DATA_CALL_LIST_CHANGED:
                 if (RILJ_LOGD) unsljLogRet(response, ret);
 
-                mDataNetworkStateRegistrants.notifyRegistrants(new AsyncResult(null, ret, null));
+                mDataConnectionRegistrants.notifyRegistrants(new AsyncResult(null, ret, null));
             break;
 
             case RIL_UNSOL_SUPP_SVC_NOTIFICATION:
@@ -791,8 +803,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_STK_SESSION_END:
                 if (RILJ_LOGD) unsljLog(response);
 
-                if (mCatSessionEndRegistrant != null) {
-                    mCatSessionEndRegistrant.notifyRegistrant(
+                if (mStkSessionEndRegistrant != null) {
+                    mStkSessionEndRegistrant.notifyRegistrant(
                                         new AsyncResult (null, ret, null));
                 }
                 break;
@@ -800,8 +812,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_STK_PROACTIVE_COMMAND:
                 if (RILJ_LOGD) unsljLogRet(response, ret);
 
-                if (mCatProCmdRegistrant != null) {
-                    mCatProCmdRegistrant.notifyRegistrant(
+                if (mStkProCmdRegistrant != null) {
+                    mStkProCmdRegistrant.notifyRegistrant(
                                         new AsyncResult (null, ret, null));
                 }
                 break;
@@ -809,8 +821,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_STK_EVENT_NOTIFY:
                 if (RILJ_LOGD) unsljLogRet(response, ret);
 
-                if (mCatEventRegistrant != null) {
-                    mCatEventRegistrant.notifyRegistrant(
+                if (mStkEventRegistrant != null) {
+                    mStkEventRegistrant.notifyRegistrant(
                                         new AsyncResult (null, ret, null));
                 }
                 break;
@@ -818,8 +830,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_STK_CALL_SETUP:
                 if (RILJ_LOGD) unsljLogRet(response, ret);
 
-                if (mCatCallSetUpRegistrant != null) {
-                    mCatCallSetUpRegistrant.notifyRegistrant(
+                if (mStkCallSetUpRegistrant != null) {
+                    mStkCallSetUpRegistrant.notifyRegistrant(
                                         new AsyncResult (null, ret, null));
                 }
                 break;
@@ -835,8 +847,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_SIM_REFRESH:
                 if (RILJ_LOGD) unsljLogRet(response, ret);
 
-                if (mIccRefreshRegistrants != null) {
-                    mIccRefreshRegistrants.notifyRegistrants(
+                if (mIccRefreshRegistrant != null) {
+                    mIccRefreshRegistrant.notifyRegistrant(
                             new AsyncResult (null, ret, null));
                 }
                 break;
@@ -871,8 +883,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
 
                 SmsMessage sms = (SmsMessage) ret;
 
-                if (mCdmaSmsRegistrant != null) {
-                    mCdmaSmsRegistrant
+                if (mSMSRegistrant != null) {
+                    mSMSRegistrant
                         .notifyRegistrant(new AsyncResult(null, sms, null));
                 }
                 break;
@@ -963,9 +975,6 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
         int num;
         String response[];
         String ifname;
-        DataCallState callState;
-        String dnses[] = new String[2];
-        String gateways[] = new String[1];
 
         num = p.readInt();
 
@@ -976,30 +985,11 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
         ifname = p.readString();
         response[1] = ifname;
 
-        if (ifname.length() > 0) {
-            SystemProperties.set("net."+ifname+".ip",response[2]);
-            dnses[0] = p.readString();
-            dnses[1] = p.readString();
-            gateways[0] = p.readString();
-            if (dnses[0].length() > 0)
-                SystemProperties.set("net."+ifname+".dns1",dnses[0]);
-            if (dnses[1].length() > 0)
-                SystemProperties.set("net."+ifname+".dns2",dnses[1]);
-            SystemProperties.set("net."+ifname+".gw",gateways[0]);
-        }
-
-        callState = new DataCallState();
-        callState.version = 4;
-        callState.status = 0;
-        callState.cid = Integer.parseInt(response[0]);
-        callState.active = 1;
-        callState.ifname = response[1];
-        callState.dnses = dnses;
-        callState.gateways = gateways;
-        callState.addresses = response[2].split(" ");
-
-
-        return callState;
+        SystemProperties.set("net."+ifname+".ip",response[2]);
+        SystemProperties.set("net."+ifname+".dns1",p.readString());
+        SystemProperties.set("net."+ifname+".dns2",p.readString());
+        SystemProperties.set("net."+ifname+".gw",p.readString());
+        return response;
     }
 
     protected Object
@@ -1009,7 +999,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
         String response;
         SimpleDateFormat dateFormatter;
         SimpleDateFormat dateParser;
-        boolean isIfx = !SystemProperties.get("ro.build.product").equals("p999");
+        boolean isIfx = !SystemProperties.get("ro.cm.device").equals("p999");
+        boolean usesLocalTime = isIfx && !SystemProperties.get("ro.cm.device").equals("p920");
 
         num = p.readInt(); // TZ diff in quarter-hours
 
@@ -1018,9 +1009,9 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
 
         /* Infineon modems need some additional hax... */
         if (isIfx) {
-            String [] parcelarray = parceldata.split(",");
-            parceldata = parcelarray[0] + "," + parcelarray[1]; // assuming there is always one comma at least
-            parcelextra = (parcelarray.length > 2 ? parcelarray[2] : "0");
+            String [] parcelitem = parceldata.split(",");
+            parceldata = parcelitem[0] + "," + parcelitem[1]; // assuming there is always one comma at least
+            parcelextra = (parcelitem.length > 2 ? parcelitem[2] : "0");
             dst = Integer.parseInt(parcelextra);
         }
 
@@ -1030,7 +1021,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             dateParser = new SimpleDateFormat("yy/MM/dd,HH:mm:ss");
 
             /* Ifx delivers localtime, convert to UTC */
-            if (isIfx) {
+            if (usesLocalTime) {
                 /* Directly calculate UTC time using DST Offset */
                 int offset = num*15*60*1000;	// DST corrected
                 long when = dateParser.parse(parceldata).getTime() - offset;
@@ -1078,8 +1069,8 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_REQUEST_UDUB: return "UDUB";
             case RIL_REQUEST_LAST_CALL_FAIL_CAUSE: return "LAST_CALL_FAIL_CAUSE";
             case RIL_REQUEST_SIGNAL_STRENGTH: return "SIGNAL_STRENGTH";
-            case RIL_REQUEST_VOICE_REGISTRATION_STATE: return "REGISTRATION_STATE";
-            case RIL_REQUEST_DATA_REGISTRATION_STATE: return "GPRS_REGISTRATION_STATE";
+            case RIL_REQUEST_REGISTRATION_STATE: return "REGISTRATION_STATE";
+            case RIL_REQUEST_GPRS_REGISTRATION_STATE: return "GPRS_REGISTRATION_STATE";
             case RIL_REQUEST_OPERATOR: return "OPERATOR";
             case RIL_REQUEST_RADIO_POWER: return "RADIO_POWER";
             case RIL_REQUEST_DTMF: return "DTMF";
@@ -1135,7 +1126,7 @@ public class LGEStarRIL extends RIL implements CommandsInterface {
             case RIL_REQUEST_GET_PREFERRED_NETWORK_TYPE: return "REQUEST_GET_PREFERRED_NETWORK_TYPE";
             case RIL_REQUEST_GET_NEIGHBORING_CELL_IDS: return "REQUEST_GET_NEIGHBORING_CELL_IDS";
             case RIL_REQUEST_SET_LOCATION_UPDATES: return "REQUEST_SET_LOCATION_UPDATES";
-            case RIL_REQUEST_CDMA_SET_SUBSCRIPTION_SOURCE: return "RIL_REQUEST_CDMA_SET_SUBSCRIPTION_SOURCE";
+            case RIL_REQUEST_CDMA_SET_SUBSCRIPTION: return "RIL_REQUEST_CDMA_SET_SUBSCRIPTION";
             case RIL_REQUEST_CDMA_SET_ROAMING_PREFERENCE: return "RIL_REQUEST_CDMA_SET_ROAMING_PREFERENCE";
             case RIL_REQUEST_CDMA_QUERY_ROAMING_PREFERENCE: return "RIL_REQUEST_CDMA_QUERY_ROAMING_PREFERENCE";
             case RIL_REQUEST_SET_TTY_MODE: return "RIL_REQUEST_SET_TTY_MODE";

@@ -35,18 +35,12 @@ if (truncatedTicker != null && truncatedTicker.length() > maxTickerLen) {
 */
 
 public class StatusBarNotification implements Parcelable {
-    public static int PRIORITY_JIFFY_EXPRESS = -100;
-    public static int PRIORITY_NORMAL        = 0;
-    public static int PRIORITY_ONGOING       = 100;
-    public static int PRIORITY_SYSTEM        = 200;
-
     public String pkg;
     public int id;
     public String tag;
     public int uid;
     public int initialPid;
     public Notification notification;
-    public int priority = PRIORITY_NORMAL;
 
     public StatusBarNotification() {
     }
@@ -62,8 +56,6 @@ public class StatusBarNotification implements Parcelable {
         this.uid = uid;
         this.initialPid = initialPid;
         this.notification = notification;
-
-        this.priority = PRIORITY_NORMAL;
     }
 
     public StatusBarNotification(Parcel in) {
@@ -80,7 +72,6 @@ public class StatusBarNotification implements Parcelable {
         }
         this.uid = in.readInt();
         this.initialPid = in.readInt();
-        this.priority = in.readInt();
         this.notification = new Notification(in);
     }
 
@@ -95,7 +86,6 @@ public class StatusBarNotification implements Parcelable {
         }
         out.writeInt(this.uid);
         out.writeInt(this.initialPid);
-        out.writeInt(this.priority);
         this.notification.writeToParcel(out, flags);
     }
 
@@ -124,17 +114,13 @@ public class StatusBarNotification implements Parcelable {
 
     public String toString() {
         return "StatusBarNotification(package=" + pkg + " id=" + id + " tag=" + tag
-                + " notification=" + notification + " priority=" + priority + ")";
+                + " notification=" + notification + ")";
     }
 
     public boolean isOngoing() {
         return (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0;
     }
 
-    public boolean isClearable() {
-        return ((notification.flags & Notification.FLAG_ONGOING_EVENT) == 0)
-                && ((notification.flags & Notification.FLAG_NO_CLEAR) == 0);
-    }
 }
 
 

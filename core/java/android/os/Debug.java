@@ -18,6 +18,7 @@ package android.os;
 
 import com.android.internal.util.TypedProperties;
 
+import android.util.Config;
 import android.util.Log;
 
 import java.io.FileDescriptor;
@@ -39,7 +40,6 @@ import org.apache.harmony.dalvik.ddmc.Chunk;
 import org.apache.harmony.dalvik.ddmc.ChunkHandler;
 import org.apache.harmony.dalvik.ddmc.DdmServer;
 
-import dalvik.bytecode.OpcodeInfo;
 import dalvik.bytecode.Opcodes;
 import dalvik.system.VMDebug;
 
@@ -94,8 +94,7 @@ public final class Debug
     /**
      * Default trace file path and file
      */
-    private static final String DEFAULT_TRACE_PATH_PREFIX =
-        Environment.getExternalStorageDirectory().getPath() + "/";
+    private static final String DEFAULT_TRACE_PATH_PREFIX = "/sdcard/";
     private static final String DEFAULT_TRACE_BODY = "dmtrace";
     private static final String DEFAULT_TRACE_EXTENSION = ".trace";
     private static final String DEFAULT_TRACE_FILE_PATH =
@@ -128,12 +127,7 @@ public final class Debug
         public int otherPrivateDirty;
         /** The shared dirty pages used by everything else. */
         public int otherSharedDirty;
-
-        /** @hide */
-        public static final int NUM_OTHER_STATS = 9;
-
-        private int[] otherStats = new int[NUM_OTHER_STATS*3];
-
+        
         public MemoryInfo() {
         }
 
@@ -143,53 +137,21 @@ public final class Debug
         public int getTotalPss() {
             return dalvikPss + nativePss + otherPss;
         }
-
+        
         /**
          * Return total private dirty memory usage in kB.
          */
         public int getTotalPrivateDirty() {
             return dalvikPrivateDirty + nativePrivateDirty + otherPrivateDirty;
         }
-
+        
         /**
          * Return total shared dirty memory usage in kB.
          */
         public int getTotalSharedDirty() {
             return dalvikSharedDirty + nativeSharedDirty + otherSharedDirty;
         }
-
-        /* @hide */
-        public int getOtherPss(int which) {
-            return otherStats[which*3];
-        }
-
-        /* @hide */
-        public int getOtherPrivateDirty(int which) {
-            return otherStats[which*3 + 1];
-        }
-
-        /* @hide */
-        public int getOtherSharedDirty(int which) {
-            return otherStats[which*3 + 2];
-        }
-
-
-        /* @hide */
-        public static String getOtherLabel(int which) {
-            switch (which) {
-                case 0: return "Cursor";
-                case 1: return "Ashmem";
-                case 2: return "Other dev";
-                case 3: return ".so mmap";
-                case 4: return ".jar mmap";
-                case 5: return ".apk mmap";
-                case 6: return ".ttf mmap";
-                case 7: return ".dex mmap";
-                case 8: return "Other mmap";
-                default: return "????";
-            }
-        }
-
+        
         public int describeContents() {
             return 0;
         }
@@ -204,7 +166,6 @@ public final class Debug
             dest.writeInt(otherPss);
             dest.writeInt(otherPrivateDirty);
             dest.writeInt(otherSharedDirty);
-            dest.writeIntArray(otherStats);
         }
 
         public void readFromParcel(Parcel source) {
@@ -217,9 +178,8 @@ public final class Debug
             otherPss = source.readInt();
             otherPrivateDirty = source.readInt();
             otherSharedDirty = source.readInt();
-            otherStats = source.createIntArray();
         }
-
+        
         public static final Creator<MemoryInfo> CREATOR = new Creator<MemoryInfo>() {
             public MemoryInfo createFromParcel(Parcel source) {
                 return new MemoryInfo(source);
@@ -500,7 +460,7 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
      * Like startMethodTracing(String, int, int), but taking an already-opened
      * FileDescriptor in which the trace is written.  The file name is also
      * supplied simply for logging.  Makes a dup of the file descriptor.
-     *
+     * 
      * Not exposed in the SDK unless we are really comfortable with supporting
      * this and find it would be useful.
      * @hide
@@ -552,27 +512,21 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     }
 
     /**
-     * Start counting the number and aggregate size of memory allocations.
+     * Count the number and aggregate size of memory allocations between
+     * two points.
      *
-     * <p>The {@link #startAllocCounting() start} function resets the counts and enables counting.
-     * The {@link #stopAllocCounting() stop} function disables the counting so that the analysis
-     * code doesn't cause additional allocations.  The various <code>get</code> functions return
-     * the specified value. And the various <code>reset</code> functions reset the specified
-     * count.</p>
+     * The "start" function resets the counts and enables counting.  The
+     * "stop" function disables the counting so that the analysis code
+     * doesn't cause additional allocations.  The "get" function returns
+     * the specified value.
      *
-     * <p>Counts are kept for the system as a whole and for each thread.
+     * Counts are kept for the system as a whole and for each thread.
      * The per-thread counts for threads other than the current thread
-     * are not cleared by the "reset" or "start" calls.</p>
+     * are not cleared by the "reset" or "start" calls.
      */
     public static void startAllocCounting() {
         VMDebug.startAllocCounting();
     }
-
-    /**
-     * Stop counting the number and aggregate size of memory allocations.
-     *
-     * @see #startAllocCounting()
-     */
     public static void stopAllocCounting() {
         VMDebug.stopAllocCounting();
     }
@@ -597,57 +551,18 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
         /* cumulative elapsed time for class initialization, in usec */
         return VMDebug.getAllocCount(VMDebug.KIND_GLOBAL_CLASS_INIT_TIME);
     }
-
-    /**
-     * Returns the global count of external allocation requests.  The
-     * external allocation tracking feature was removed in Honeycomb.
-     * This method exists for compatibility and always returns 0.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
     public static int getGlobalExternalAllocCount() {
-        return 0;
+        return VMDebug.getAllocCount(VMDebug.KIND_GLOBAL_EXT_ALLOCATED_OBJECTS);
     }
-
-    /**
-     * Returns the global count of bytes externally allocated.  The
-     * external allocation tracking feature was removed in Honeycomb.
-     * This method exists for compatibility and always returns 0.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
     public static int getGlobalExternalAllocSize() {
-        return 0;
+        return VMDebug.getAllocCount(VMDebug.KIND_GLOBAL_EXT_ALLOCATED_BYTES);
     }
-
-    /**
-     * Returns the global count of freed external allocation requests.
-     * The external allocation tracking feature was removed in
-     * Honeycomb.  This method exists for compatibility and always
-     * returns 0.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
     public static int getGlobalExternalFreedCount() {
-        return 0;
+        return VMDebug.getAllocCount(VMDebug.KIND_GLOBAL_EXT_FREED_OBJECTS);
     }
-
-    /**
-     * Returns the global count of freed bytes from external
-     * allocation requests.  The external allocation tracking feature
-     * was removed in Honeycomb.  This method exists for compatibility
-     * and always returns 0.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
     public static int getGlobalExternalFreedSize() {
-        return 0;
+        return VMDebug.getAllocCount(VMDebug.KIND_GLOBAL_EXT_FREED_BYTES);
     }
-
     public static int getGlobalGcInvocationCount() {
         return VMDebug.getAllocCount(VMDebug.KIND_GLOBAL_GC_INVOCATIONS);
     }
@@ -657,32 +572,12 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     public static int getThreadAllocSize() {
         return VMDebug.getAllocCount(VMDebug.KIND_THREAD_ALLOCATED_BYTES);
     }
-
-    /**
-     * Returns the count of external allocation requests made by the
-     * current thread.  The external allocation tracking feature was
-     * removed in Honeycomb.  This method exists for compatibility and
-     * always returns 0.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
     public static int getThreadExternalAllocCount() {
-        return 0;
+        return VMDebug.getAllocCount(VMDebug.KIND_THREAD_EXT_ALLOCATED_OBJECTS);
     }
-
-    /**
-     * Returns the global count of bytes externally allocated.  The
-     * external allocation tracking feature was removed in Honeycomb.
-     * This method exists for compatibility and always returns 0.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
     public static int getThreadExternalAllocSize() {
-        return 0;
+        return VMDebug.getAllocCount(VMDebug.KIND_THREAD_EXT_ALLOCATED_BYTES);
     }
-
     public static int getThreadGcInvocationCount() {
         return VMDebug.getAllocCount(VMDebug.KIND_THREAD_GC_INVOCATIONS);
     }
@@ -705,48 +600,18 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     public static void resetGlobalClassInitTime() {
         VMDebug.resetAllocCount(VMDebug.KIND_GLOBAL_CLASS_INIT_TIME);
     }
-
-    /**
-     * Resets the global count of external allocation requests.  The
-     * external allocation tracking feature was removed in Honeycomb.
-     * This method exists for compatibility and has no effect.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
-    public static void resetGlobalExternalAllocCount() {}
-
-    /**
-     * Resets the global count of bytes externally allocated.  The
-     * external allocation tracking feature was removed in Honeycomb.
-     * This method exists for compatibility and has no effect.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
-    public static void resetGlobalExternalAllocSize() {}
-
-    /**
-     * Resets the global count of freed external allocations.  The
-     * external allocation tracking feature was removed in Honeycomb.
-     * This method exists for compatibility and has no effect.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
-    public static void resetGlobalExternalFreedCount() {}
-
-    /**
-     * Resets the global count counter of freed bytes from external
-     * allocations.  The external allocation tracking feature was
-     * removed in Honeycomb.  This method exists for compatibility and
-     * has no effect.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
-    public static void resetGlobalExternalFreedSize() {}
-
+    public static void resetGlobalExternalAllocCount() {
+        VMDebug.resetAllocCount(VMDebug.KIND_GLOBAL_EXT_ALLOCATED_OBJECTS);
+    }
+    public static void resetGlobalExternalAllocSize() {
+        VMDebug.resetAllocCount(VMDebug.KIND_GLOBAL_EXT_ALLOCATED_BYTES);
+    }
+    public static void resetGlobalExternalFreedCount() {
+        VMDebug.resetAllocCount(VMDebug.KIND_GLOBAL_EXT_FREED_OBJECTS);
+    }
+    public static void resetGlobalExternalFreedSize() {
+        VMDebug.resetAllocCount(VMDebug.KIND_GLOBAL_EXT_FREED_BYTES);
+    }
     public static void resetGlobalGcInvocationCount() {
         VMDebug.resetAllocCount(VMDebug.KIND_GLOBAL_GC_INVOCATIONS);
     }
@@ -756,29 +621,12 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     public static void resetThreadAllocSize() {
         VMDebug.resetAllocCount(VMDebug.KIND_THREAD_ALLOCATED_BYTES);
     }
-
-    /**
-     * Resets the count of external allocation requests made by the
-     * current thread.  The external allocation tracking feature was
-     * removed in Honeycomb.  This method exists for compatibility and
-     * has no effect.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
-    public static void resetThreadExternalAllocCount() {}
-
-    /**
-     * Resets the count of bytes externally allocated by the current
-     * thread.  The external allocation tracking feature was removed
-     * in Honeycomb.  This method exists for compatibility and has no
-     * effect.
-     *
-     * @deprecated This method is now obsolete.
-     */
-    @Deprecated
-    public static void resetThreadExternalAllocSize() {}
-
+    public static void resetThreadExternalAllocCount() {
+        VMDebug.resetAllocCount(VMDebug.KIND_THREAD_EXT_ALLOCATED_OBJECTS);
+    }
+    public static void resetThreadExternalAllocSize() {
+        VMDebug.resetAllocCount(VMDebug.KIND_THREAD_EXT_ALLOCATED_BYTES);
+    }
     public static void resetThreadGcInvocationCount() {
         VMDebug.resetAllocCount(VMDebug.KIND_THREAD_GC_INVOCATIONS);
     }
@@ -818,42 +666,50 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     public static native void getMemoryInfo(int pid, MemoryInfo memoryInfo);
 
     /**
-     * Retrieves the PSS memory used by the process as given by the
-     * smaps.
-     */
-    public static native long getPss();
-
-    /**
-     * Retrieves the PSS memory used by the process as given by the
-     * smaps. @hide
-     */
-    public static native long getPss(int pid);
-
-    /**
-     * Establish an object allocation limit in the current thread.
-     * This feature was never enabled in release builds.  The
-     * allocation limits feature was removed in Honeycomb.  This
-     * method exists for compatibility and always returns -1 and has
-     * no effect.
+     * Establish an object allocation limit in the current thread.  Useful
+     * for catching regressions in code that is expected to operate
+     * without causing any allocations.
      *
-     * @deprecated This method is now obsolete.
+     * Pass in the maximum number of allowed allocations.  Use -1 to disable
+     * the limit.  Returns the previous limit.
+     *
+     * The preferred way to use this is:
+     *
+     *  int prevLimit = -1;
+     *  try {
+     *      prevLimit = Debug.setAllocationLimit(0);
+     *      ... do stuff that's not expected to allocate memory ...
+     *  } finally {
+     *      Debug.setAllocationLimit(prevLimit);
+     *  }
+     *
+     * This allows limits to be nested.  The try/finally ensures that the
+     * limit is reset if something fails.
+     *
+     * Exceeding the limit causes a dalvik.system.AllocationLimitError to
+     * be thrown from a memory allocation call.  The limit is reset to -1
+     * when this happens.
+     *
+     * The feature may be disabled in the VM configuration.  If so, this
+     * call has no effect, and always returns -1.
      */
-    @Deprecated
     public static int setAllocationLimit(int limit) {
-        return -1;
+        return VMDebug.setAllocationLimit(limit);
     }
 
     /**
-     * Establish a global object allocation limit.  This feature was
-     * never enabled in release builds.  The allocation limits feature
-     * was removed in Honeycomb.  This method exists for compatibility
-     * and always returns -1 and has no effect.
+     * Establish a global object allocation limit.  This is similar to
+     * {@link #setAllocationLimit(int)} but applies to all threads in
+     * the VM.  It will coexist peacefully with per-thread limits.
      *
-     * @deprecated This method is now obsolete.
+     * [ The value of "limit" is currently restricted to 0 (no allocations
+     *   allowed) or -1 (no global limit).  This may be changed in a future
+     *   release. ]
      */
-    @Deprecated
     public static int setGlobalAllocationLimit(int limit) {
-        return -1;
+        if (limit != 0 && limit != -1)
+            throw new IllegalArgumentException("limit must be 0 or -1");
+        return VMDebug.setGlobalAllocationLimit(limit);
     }
 
     /**
@@ -874,7 +730,7 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     }
 
     /**
-     * Dump "hprof" data to the specified file.  This may cause a GC.
+     * Dump "hprof" data to the specified file.  This will cause a GC.
      *
      * @param fileName Full pathname of output file (e.g. "/sdcard/dump.hprof").
      * @throws UnsupportedOperationException if the VM was built without
@@ -886,44 +742,15 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
     }
 
     /**
-     * Like dumpHprofData(String), but takes an already-opened
-     * FileDescriptor to which the trace is written.  The file name is also
-     * supplied simply for logging.  Makes a dup of the file descriptor.
-     *
-     * Primarily for use by the "am" shell command.
-     *
-     * @hide
-     */
-    public static void dumpHprofData(String fileName, FileDescriptor fd)
-            throws IOException {
-        VMDebug.dumpHprofData(fileName, fd);
-    }
-
-    /**
-     * Collect "hprof" and send it to DDMS.  This may cause a GC.
+     * Collect "hprof" and send it to DDMS.  This will cause a GC.
      *
      * @throws UnsupportedOperationException if the VM was built without
      *         HPROF support.
+     *
      * @hide
      */
     public static void dumpHprofDataDdms() {
         VMDebug.dumpHprofDataDdms();
-    }
-
-    /**
-     * Writes native heap data to the specified file descriptor.
-     *
-     * @hide
-     */
-    public static native void dumpNativeHeap(FileDescriptor fd);
-
-    /**
-      * Returns a count of the extant instances of a class.
-     *
-     * @hide
-     */
-    public static long countInstancesOfClass(Class cls) {
-        return VMDebug.countInstancesOfClass(cls, true);
     }
 
     /**
@@ -989,7 +816,6 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
      * API for gathering and querying instruction counts.
      *
      * Example usage:
-     * <pre>
      *   Debug.InstructionCount icount = new Debug.InstructionCount();
      *   icount.resetAndStart();
      *    [... do lots of stuff ...]
@@ -999,11 +825,9 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
      *       System.out.println("Method invocations: "
      *           + icount.globalMethodInvocations());
      *   }
-     * </pre>
      */
     public static class InstructionCount {
-        private static final int NUM_INSTR =
-            OpcodeInfo.MAXIMUM_PACKED_VALUE + 1;
+        private static final int NUM_INSTR = 256;
 
         private int[] mCounts;
 
@@ -1047,11 +871,8 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
          */
         public int globalTotal() {
             int count = 0;
-
-            for (int i = 0; i < NUM_INSTR; i++) {
+            for (int i = 0; i < NUM_INSTR; i++)
                 count += mCounts[i];
-            }
-
             return count;
         }
 
@@ -1062,15 +883,26 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
         public int globalMethodInvocations() {
             int count = 0;
 
-            for (int i = 0; i < NUM_INSTR; i++) {
-                if (OpcodeInfo.isInvoke(i)) {
-                    count += mCounts[i];
-                }
-            }
-
+            //count += mCounts[Opcodes.OP_EXECUTE_INLINE];
+            count += mCounts[Opcodes.OP_INVOKE_VIRTUAL];
+            count += mCounts[Opcodes.OP_INVOKE_SUPER];
+            count += mCounts[Opcodes.OP_INVOKE_DIRECT];
+            count += mCounts[Opcodes.OP_INVOKE_STATIC];
+            count += mCounts[Opcodes.OP_INVOKE_INTERFACE];
+            count += mCounts[Opcodes.OP_INVOKE_VIRTUAL_RANGE];
+            count += mCounts[Opcodes.OP_INVOKE_SUPER_RANGE];
+            count += mCounts[Opcodes.OP_INVOKE_DIRECT_RANGE];
+            count += mCounts[Opcodes.OP_INVOKE_STATIC_RANGE];
+            count += mCounts[Opcodes.OP_INVOKE_INTERFACE_RANGE];
+            //count += mCounts[Opcodes.OP_INVOKE_DIRECT_EMPTY];
+            count += mCounts[Opcodes.OP_INVOKE_VIRTUAL_QUICK];
+            count += mCounts[Opcodes.OP_INVOKE_VIRTUAL_QUICK_RANGE];
+            count += mCounts[Opcodes.OP_INVOKE_SUPER_QUICK];
+            count += mCounts[Opcodes.OP_INVOKE_SUPER_QUICK_RANGE];
             return count;
         }
     }
+
 
     /**
      * A Map of typed debug properties.
@@ -1081,7 +913,7 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
      * Load the debug properties from the standard files into debugProperties.
      */
     static {
-        if (false) {
+        if (Config.DEBUG) {
             final String TAG = "DebugProperties";
             final String[] files = { "/system/debug.prop", "/debug.prop", "/data/debug.prop" };
             final TypedProperties tp = new TypedProperties();
@@ -1207,10 +1039,10 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
 
     /**
      * Reflectively sets static fields of a class based on internal debugging
-     * properties.  This method is a no-op if false is
+     * properties.  This method is a no-op if android.util.Config.DEBUG is
      * false.
      * <p>
-     * <strong>NOTE TO APPLICATION DEVELOPERS</strong>: false will
+     * <strong>NOTE TO APPLICATION DEVELOPERS</strong>: Config.DEBUG will
      * always be false in release builds.  This API is typically only useful
      * for platform developers.
      * </p>
@@ -1238,7 +1070,7 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
      *    static {
      *        // Sets all the fields
      *        Debug.setFieldsOn(MyDebugVars.class);
-     *
+     * 
      *        // Sets only the fields annotated with @Debug.DebugProperty
      *        // Debug.setFieldsOn(MyDebugVars.class, true);
      *    }
@@ -1261,7 +1093,7 @@ href="{@docRoot}guide/developing/tools/traceview.html">Traceview: A Graphical Lo
      *         the internal debugging property value.
      */
     public static void setFieldsOn(Class<?> cl, boolean partial) {
-        if (false) {
+        if (Config.DEBUG) {
             if (debugProperties != null) {
                 /* Only look for fields declared directly by the class,
                  * so we don't mysteriously change static fields in superclasses.

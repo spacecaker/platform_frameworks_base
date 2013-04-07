@@ -17,20 +17,31 @@
 package android.widget;
 
 import android.content.Context;
+import android.content.res.TypedArray;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.text.Editable;
-import android.text.SpannableString;
+import android.text.Selection;
 import android.text.Spanned;
+import android.text.Spannable;
+import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.method.QwertyKeyListener;
 import android.util.AttributeSet;
-import android.widget.MultiAutoCompleteTextView.Tokenizer;
+import android.util.Log;
+import android.view.KeyEvent;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+
+import com.android.internal.R;
 
 /**
  * An editable text view, extending {@link AutoCompleteTextView}, that
  * can show completion suggestions for the substring of the text where
  * the user is typing instead of necessarily for the entire thing.
  * <p>
- * You must provide a {@link Tokenizer} to distinguish the
+ * You must must provide a {@link Tokenizer} to distinguish the
  * various substrings.
  *
  * <p>The following code snippet shows how to create a text view which suggests
@@ -41,7 +52,7 @@ import android.widget.MultiAutoCompleteTextView.Tokenizer;
  *     protected void onCreate(Bundle savedInstanceState) {
  *         super.onCreate(savedInstanceState);
  *         setContentView(R.layout.autocomplete_7);
- *
+ * 
  *         ArrayAdapter&lt;String&gt; adapter = new ArrayAdapter&lt;String&gt;(this,
  *                 android.R.layout.simple_dropdown_item_1line, COUNTRIES);
  *         MultiAutoCompleteTextView textView = (MultiAutoCompleteTextView) findViewById(R.id.edit);
@@ -132,7 +143,7 @@ public class MultiAutoCompleteTextView extends AutoCompleteTextView {
      * Instead of validating the entire text, this subclass method validates
      * each token of the text individually.  Empty tokens are removed.
      */
-    @Override
+    @Override 
     public void performValidation() {
         Validator v = getValidator();
 

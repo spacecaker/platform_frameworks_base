@@ -148,12 +148,11 @@ public class RotateAnimation extends Animation {
     @Override
     protected void applyTransformation(float interpolatedTime, Transformation t) {
         float degrees = mFromDegrees + ((mToDegrees - mFromDegrees) * interpolatedTime);
-        float scale = getScaleFactor();
-        
+
         if (mPivotX == 0.0f && mPivotY == 0.0f) {
             t.getMatrix().setRotate(degrees);
         } else {
-            t.getMatrix().setRotate(degrees, mPivotX * scale, mPivotY * scale);
+            t.getMatrix().setRotate(degrees, mPivotX, mPivotY);
         }
     }
 

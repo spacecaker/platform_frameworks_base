@@ -19,6 +19,7 @@ package com.android.server.location;
 import android.content.Context;
 import android.net.Proxy;
 import android.net.http.AndroidHttpClient;
+import android.util.Config;
 import android.util.Log;
 
 import org.apache.http.HttpEntity;

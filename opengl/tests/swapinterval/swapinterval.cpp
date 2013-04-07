@@ -48,35 +48,31 @@ int main(int argc, char** argv)
     EGLNativeWindowType window = android_createDisplaySurface();
 
     dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    eglInitialize(dpy, &majorVersion, &minorVersion);
+    eglInitialize(dpy, 0 ,0) ;//&majorVersion, &minorVersion);
     eglGetConfigs(dpy, NULL, 0, &numConfigs);
     printf("# configs = %d\n", numConfigs);
 
     status_t err = EGLUtils::selectConfigForNativeWindow(
             dpy, configAttribs, window, &config);
     if (err) {
-        fprintf(stderr, "error: %s", EGLUtils::strerror(eglGetError()));
-        eglTerminate(dpy);
+        fprintf(stderr, "couldn't find an EGLConfig matching the screen format\n");
         return 0;
     }
 
-    EGLint r,g,b,a, vid;
+    EGLint r,g,b,a;
     eglGetConfigAttrib(dpy, config, EGL_RED_SIZE,   &r);
     eglGetConfigAttrib(dpy, config, EGL_GREEN_SIZE, &g);
     eglGetConfigAttrib(dpy, config, EGL_BLUE_SIZE,  &b);
     eglGetConfigAttrib(dpy, config, EGL_ALPHA_SIZE, &a);
-    eglGetConfigAttrib(dpy, config, EGL_NATIVE_VISUAL_ID, &vid);
 
     surface = eglCreateWindowSurface(dpy, config, window, NULL);
     if (surface == EGL_NO_SURFACE) {
         EGLint err = eglGetError();
-        fprintf(stderr, "error: %s, config=%p, format = %d-%d-%d-%d, visual-id = %d\n",
-                EGLUtils::strerror(err), config, r,g,b,a, vid);
-        eglTerminate(dpy);
+        fprintf(stderr, "%s, config=%p, format = %d-%d-%d-%d\n",
+                EGLUtils::strerror(err), config, r,g,b,a);
         return 0;
     } else {
-        printf("config=%p, format = %d-%d-%d-%d, visual-id = %d\n",
-                config, r,g,b,a, vid);
+        printf("config=%p, format = %d-%d-%d-%d\n", config, r,g,b,a);
     }
 
     context = eglCreateContext(dpy, config, NULL, NULL);

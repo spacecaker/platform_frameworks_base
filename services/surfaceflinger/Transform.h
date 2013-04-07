@@ -64,8 +64,8 @@ public:
             uint32_t    getOrientation() const;
 
             float const* operator [] (int i) const;  // returns column i
-            float   tx() const;
-            float   ty() const;
+            int     tx() const;
+            int     ty() const;
 
             // modify the transform
             void        reset();

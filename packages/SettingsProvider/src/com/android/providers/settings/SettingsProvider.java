@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
+ * This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +18,11 @@
 package com.android.providers.settings;
 
 import java.io.FileNotFoundException;
+import java.io.UnsupportedEncodingException;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -43,7 +48,6 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
-import android.util.LruCache;
 
 public class SettingsProvider extends ContentProvider {
     private static final String TAG = "SettingsProvider";
@@ -259,8 +263,11 @@ public class SettingsProvider extends ContentProvider {
 
         // Watch for external modifications to the database file,
         // keeping our cache in sync.
-        SQLiteDatabase db = mOpenHelper.getWritableDatabase();
-        db.enableWriteAheadLogging();
+        // It's kinda lame to call mOpenHelper.getReadableDatabase()
+        // during onCreate(), but since ensureAndroidIdIsSet has
+        // already done it above and initialized/upgraded the
+        // database, might as well just use it...
+        SQLiteDatabase db = mOpenHelper.getReadableDatabase();
         sObserverInstance = new SettingsFileObserver(db.getPath());
         sObserverInstance.startWatching();
         startAsyncCachePopulation();
@@ -290,7 +297,7 @@ public class SettingsProvider extends ContentProvider {
             "" + (MAX_CACHE_ENTRIES + 1) /* limit */);
         try {
             synchronized (cache) {
-                cache.evictAll();
+                cache.clear();
                 cache.setFullyMatchesDisk(true);  // optimistic
                 int rows = 0;
                 while (c.moveToNext()) {
@@ -356,8 +363,8 @@ public class SettingsProvider extends ContentProvider {
     // possibly with a null value, or null on failure.
     private Bundle lookupValue(String table, SettingsCache cache, String key) {
         synchronized (cache) {
-            Bundle value = cache.get(key);
-            if (value != null) {
+            if (cache.containsKey(key)) {
+                Bundle value = cache.get(key);
                 if (value != TOO_LARGE_TO_CACHE_MARKER) {
                     return value;
                 }
@@ -636,7 +643,8 @@ public class SettingsProvider extends ContentProvider {
                 // Only proxy the openFile call to drm or media providers
                 String authority = soundUri.getAuthority();
                 boolean isDrmAuthority = authority.equals(DrmStore.AUTHORITY);
-                if (isDrmAuthority || authority.equals(MediaStore.AUTHORITY)) {
+                if (isDrmAuthority || authority.equals(MediaStore.AUTHORITY) ||
+                        authority.equals(RingtoneManager.THEME_AUTHORITY)) {
 
                     if (isDrmAuthority) {
                         try {
@@ -677,7 +685,8 @@ public class SettingsProvider extends ContentProvider {
                 // Only proxy the openFile call to drm or media providers
                 String authority = soundUri.getAuthority();
                 boolean isDrmAuthority = authority.equals(DrmStore.AUTHORITY);
-                if (isDrmAuthority || authority.equals(MediaStore.AUTHORITY)) {
+                if (isDrmAuthority || authority.equals(MediaStore.AUTHORITY) ||
+                        authority.equals(RingtoneManager.THEME_AUTHORITY)) {
 
                     if (isDrmAuthority) {
                         try {
@@ -690,10 +699,8 @@ public class SettingsProvider extends ContentProvider {
                         }
                     }
 
-                    ParcelFileDescriptor pfd = null;
                     try {
-                        pfd = context.getContentResolver().openFileDescriptor(soundUri, mode);
-                        return new AssetFileDescriptor(pfd, 0, -1);
+                        return context.getContentResolver().openAssetFileDescriptor(soundUri, mode);
                     } catch (FileNotFoundException ex) {
                         // fall through and open the fallback ringtone below
                     }
@@ -722,13 +729,13 @@ public class SettingsProvider extends ContentProvider {
      * associated helper functions to keep cache coherent with the
      * database.
      */
-    private static final class SettingsCache extends LruCache<String, Bundle> {
+    private static final class SettingsCache extends LinkedHashMap<String, Bundle> {
 
         private final String mCacheName;
         private boolean mCacheFullyMatchesDisk = false;  // has the whole database slurped.
 
         public SettingsCache(String name) {
-            super(MAX_CACHE_ENTRIES);
+            super(MAX_CACHE_ENTRIES, 0.75f /* load factor */, true /* access ordered */);
             mCacheName = name;
         }
 
@@ -748,10 +755,14 @@ public class SettingsProvider extends ContentProvider {
         }
 
         @Override
-        protected void entryRemoved(boolean evicted, String key, Bundle oldValue, Bundle newValue) {
-            if (evicted) {
+        protected boolean removeEldestEntry(Map.Entry eldest) {
+            if (size() <= MAX_CACHE_ENTRIES) {
+                return false;
+            }
+            synchronized (this) {
                 mCacheFullyMatchesDisk = false;
             }
+            return true;
         }
 
         /**
@@ -765,7 +776,7 @@ public class SettingsProvider extends ContentProvider {
             Bundle bundle = (value == null) ? NULL_SETTING : Bundle.forPair("value", value);
             if (value == null || value.length() <= MAX_CACHE_ENTRY_SIZE) {
                 synchronized (this) {
-                    if (get(key) == null) {
+                    if (!containsKey(key)) {
                         put(key, bundle);
                     }
                 }
@@ -819,7 +830,7 @@ public class SettingsProvider extends ContentProvider {
                 return;
             }
             synchronized (cache) {
-                cache.evictAll();
+                cache.clear();
                 cache.mCacheFullyMatchesDisk = false;
             }
         }

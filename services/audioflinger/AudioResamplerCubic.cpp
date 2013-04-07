@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "AudioSRC"
-
 #include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
@@ -23,6 +21,8 @@
 
 #include "AudioResampler.h"
 #include "AudioResamplerCubic.h"
+
+#define LOG_TAG "AudioSRC"
 
 namespace android {
 // ----------------------------------------------------------------------------

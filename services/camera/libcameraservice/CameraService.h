@@ -1,6 +1,8 @@
 /*
 **
 ** Copyright (C) 2008, The Android Open Source Project
+** Copyright (C) 2008 HTC Inc.
+** Copyright (C) 2010, Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -19,17 +21,25 @@
 #define ANDROID_SERVERS_CAMERA_CAMERASERVICE_H
 
 #include <binder/BinderService.h>
+
 #include <camera/ICameraService.h>
-#include <hardware/camera.h>
+#include <camera/CameraHardwareInterface.h>
 
 /* This needs to be increased if we can have more cameras */
+#ifdef OMAP_ENHANCEMENT
+#define MAX_CAMERAS 3
+#else
 #define MAX_CAMERAS 2
+#endif
+
+#ifdef OMAP_ENHANCEMENT
+#define OVERLAY_FORMAT_BUFFER_SIZE  40
+#endif
 
 namespace android {
 
 class MemoryHeapBase;
 class MediaPlayer;
-class CameraHardwareInterface;
 
 class CameraService :
     public BinderService<CameraService>,
@@ -53,14 +63,13 @@ public:
     virtual status_t    dump(int fd, const Vector<String16>& args);
     virtual status_t    onTransact(uint32_t code, const Parcel& data,
                                    Parcel* reply, uint32_t flags);
-    virtual void onFirstRef();
 
     enum sound_kind {
         SOUND_SHUTTER = 0,
         SOUND_RECORDING = 1,
         NUM_SOUNDS
     };
-
+    void                loadSoundAsync();
     void                loadSound();
     void                playSound(sound_kind kind);
     void                releaseSound();
@@ -76,8 +85,6 @@ private:
     void                setCameraFree(int cameraId);
 
     // sounds
-    MediaPlayer*        newMediaPlayer(const char *file);
-
     Mutex               mSoundLock;
     sp<MediaPlayer>     mSoundPlayer[NUM_SOUNDS];
     int                 mSoundRef;  // reference count (release all MediaPlayer when 0)
@@ -90,22 +97,33 @@ private:
         virtual status_t        connect(const sp<ICameraClient>& client);
         virtual status_t        lock();
         virtual status_t        unlock();
-        virtual status_t        setPreviewDisplay(const sp<Surface>& surface);
-        virtual status_t        setPreviewTexture(const sp<ISurfaceTexture>& surfaceTexture);
+        virtual status_t        setPreviewDisplay(const sp<ISurface>& surface);
         virtual void            setPreviewCallbackFlag(int flag);
+#ifdef USE_GETBUFFERINFO
+        // get the recording buffers information from HAL Layer.
+        virtual status_t        getBufferInfo(sp<IMemory>& Frame, size_t *alignedSize);
+#endif
+#ifdef CAF_CAMERA_GB_REL
+        // encode the YUV data
+        virtual void            encodeData();
+#endif
+
         virtual status_t        startPreview();
         virtual void            stopPreview();
         virtual bool            previewEnabled();
-        virtual status_t        storeMetaDataInBuffers(bool enabled);
         virtual status_t        startRecording();
         virtual void            stopRecording();
         virtual bool            recordingEnabled();
         virtual void            releaseRecordingFrame(const sp<IMemory>& mem);
         virtual status_t        autoFocus();
         virtual status_t        cancelAutoFocus();
-        virtual status_t        takePicture(int msgType);
+        virtual status_t        takePicture();
         virtual status_t        setParameters(const String8& params);
         virtual String8         getParameters() const;
+        #ifdef MOTO_CUSTOM_PARAMETERS
+        virtual status_t        setCustomParameters(const String8& params);
+        virtual String8         getCustomParameters() const;
+        #endif
         virtual status_t        sendCommand(int32_t cmd, int32_t arg1, int32_t arg2);
     private:
         friend class CameraService;
@@ -126,6 +144,11 @@ private:
 
         // these are internal functions used to set up preview buffers
         status_t                registerPreviewBuffers();
+#ifdef CAF_CAMERA_GB_REL
+        status_t                setOverlay(int w = 0, int h = 0);
+#else
+        status_t                setOverlay();
+#endif
 
         // camera operation mode
         enum camera_mode {
@@ -137,40 +160,49 @@ private:
         status_t                startPreviewMode();
         status_t                startRecordingMode();
 
-        // internal function used by sendCommand to enable/disable shutter sound.
-        status_t                enableShutterSound(bool enable);
-
         // these are static callback functions
         static void             notifyCallback(int32_t msgType, int32_t ext1, int32_t ext2, void* user);
-        static void             dataCallback(int32_t msgType, const sp<IMemory>& dataPtr,
-                                             camera_frame_metadata_t *metadata, void* user);
+        static void             dataCallback(int32_t msgType, const sp<IMemory>& dataPtr, void* user);
+#ifdef OMAP_ENHANCEMENT
+        static      void        dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType,
+                                        const sp<IMemory>& dataPtr, void* user, uint32_t offset=0, uint32_t stride=0);
+#else
         static void             dataCallbackTimestamp(nsecs_t timestamp, int32_t msgType, const sp<IMemory>& dataPtr, void* user);
+#endif
         // convert client from cookie
         static sp<Client>       getClientFromCookie(void* user);
         // handlers for messages
-        void                    handleShutter(void);
-        void                    handlePreviewData(int32_t msgType, const sp<IMemory>& mem,
-                                                  camera_frame_metadata_t *metadata);
+#ifdef BOARD_USE_CAF_LIBCAMERA
+        void                    handleShutter(image_rect_type *size,  bool playShutterSoundOnly);
+#else
+        void                    handleShutter(image_rect_type *size);
+#endif
+        void                    handlePreviewData(const sp<IMemory>& mem);
         void                    handlePostview(const sp<IMemory>& mem);
         void                    handleRawPicture(const sp<IMemory>& mem);
+
+#ifdef OMAP_ENHANCEMENT
+
+        void                    handleBurstPicture(const sp<IMemory>& mem);
+
+#endif
+
         void                    handleCompressedPicture(const sp<IMemory>& mem);
         void                    handleGenericNotify(int32_t msgType, int32_t ext1, int32_t ext2);
-        void                    handleGenericData(int32_t msgType, const sp<IMemory>& dataPtr,
-                                                  camera_frame_metadata_t *metadata);
+        void                    handleGenericData(int32_t msgType, const sp<IMemory>& dataPtr);
+#ifdef OMAP_ENHANCEMENT
+        void                    handleGenericDataTimestamp(nsecs_t timestamp, int32_t msgType,
+                                        const sp<IMemory>& dataPtr, uint32_t offset=0, uint32_t stride=0);
+#else
         void                    handleGenericDataTimestamp(nsecs_t timestamp, int32_t msgType, const sp<IMemory>& dataPtr);
+#endif
 
         void                    copyFrameAndPostCopiedFrame(
-                                    int32_t msgType,
                                     const sp<ICameraClient>& client,
                                     const sp<IMemoryHeap>& heap,
-                                    size_t offset, size_t size,
-                                    camera_frame_metadata_t *metadata);
+                                    size_t offset, size_t size);
 
         int                     getOrientation(int orientation, bool mirror);
-
-        status_t                setPreviewWindow(
-                                    const sp<IBinder>& binder,
-                                    const sp<ANativeWindow>& window);
 
         // these are initialized in the constructor.
         sp<CameraService>               mCameraService;  // immutable after constructor
@@ -179,17 +211,22 @@ private:
         int                             mCameraFacing;   // immutable after constructor
         pid_t                           mClientPid;
         sp<CameraHardwareInterface>     mHardware;       // cleared after disconnect()
+        bool                            mUseOverlay;     // immutable after constructor
+        sp<OverlayRef>                  mOverlayRef;
+#if defined(USE_OVERLAY_FORMAT_YCbCr_420_SP) || defined(USE_OVERLAY_FORMAT_YCrCb_420_SP) || defined(CAF_CAMERA_GB_REL)
+        sp<Overlay>                     mOverlay;
+#endif
+        int                             mOverlayW;
+        int                             mOverlayH;
+        int                             mPixelFormat;
         int                             mPreviewCallbackFlag;
         int                             mOrientation;     // Current display orientation
-        bool                            mPlayShutterSound;
-#ifdef QCOM_HARDWARE
-        bool                            mFaceDetection;
-#endif
+        // True if display orientation has been changed. This is only used in overlay.
+        int                             mOrientationChanged;
+
         // Ensures atomicity among the public methods
         mutable Mutex                   mLock;
-        // This is a binder of Surface or SurfaceTexture.
-        sp<IBinder>                     mSurface;
-        sp<ANativeWindow>               mPreviewWindow;
+        sp<ISurface>                    mSurface;
 
         // If the user want us to return a copy of the preview frame (instead
         // of the original one), we allocate mPreviewBuffer and reuse it if possible.
@@ -212,10 +249,13 @@ private:
         // This function keeps trying to grab mLock, or give up if the message
         // is found to be disabled. It returns true if mLock is grabbed.
         bool                    lockIfMessageWanted(int32_t msgType);
-        int                     mburstCnt;
-    };
 
-    camera_module_t *mModule;
+#ifdef OMAP_ENHANCEMENT
+        char                     mOverlayFormat[OVERLAY_FORMAT_BUFFER_SIZE];
+        bool                     mS3DOverlay;
+#endif
+
+    };
 };
 
 } // namespace android

@@ -25,7 +25,7 @@ import junit.framework.TestSuite;
 
 /**
  * Instrumentation Test Runner for all DumpRenderTree tests.
- *
+ * 
  * Running all tests:
  *
  * adb shell am instrument \
@@ -57,7 +57,7 @@ public class LayoutTestsAutoRunner extends InstrumentationTestRunner {
                 e.printStackTrace();
             }
         }
-
+        
         String delay_str = (String) icicle.get("delay");
         if(delay_str != null) {
             try {
@@ -66,37 +66,30 @@ public class LayoutTestsAutoRunner extends InstrumentationTestRunner {
             }
         }
 
-        String r = icicle.getString("rebaseline");
+        String r = (String)icicle.get("rebaseline");
         this.mRebaseline = (r != null && r.toLowerCase().equals("true"));
 
-        String logtime = icicle.getString("logtime");
+        String logtime = (String) icicle.get("logtime");
         this.mLogtime = (logtime != null
                 && logtime.toLowerCase().equals("true"));
 
-        String drawTime = icicle.getString("drawtime");
+        String drawTime = (String) icicle.get("drawtime");
         this.mGetDrawTime = (drawTime != null
                 && drawTime.toLowerCase().equals("true"));
 
-        mSaveImagePath = icicle.getString("saveimage");
+        mSaveImagePath = (String) icicle.get("saveimage");
 
-        mJsEngine = icicle.getString("jsengine");
-
-        mPageCyclerSuite = icicle.getString("suite");
-        mPageCyclerForwardHost = icicle.getString("forward");
-        mPageCyclerIteration = icicle.getString("iteration", "5");
+        mJsEngine = (String) icicle.get("jsengine");
 
         super.onCreate(icicle);
     }
-
-    String mPageCyclerSuite;
-    String mPageCyclerForwardHost;
-    String mPageCyclerIteration;
-    String mTestPath;
-    String mSaveImagePath;
-    int mTimeoutInMillis;
-    int mDelay;
-    boolean mRebaseline;
-    boolean mLogtime;
-    boolean mGetDrawTime;
-    String mJsEngine;
+    
+    public String mTestPath;
+    public String mSaveImagePath;
+    public int mTimeoutInMillis;
+    public int mDelay;
+    public boolean mRebaseline;
+    public boolean mLogtime;
+    public boolean mGetDrawTime;
+    public String mJsEngine;
 }

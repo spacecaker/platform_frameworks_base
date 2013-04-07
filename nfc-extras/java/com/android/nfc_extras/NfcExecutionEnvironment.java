@@ -16,17 +16,20 @@
 
 package com.android.nfc_extras;
 
+import java.io.IOException;
+
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
+import android.content.Context;
+import android.nfc.INfcAdapterExtras;
+import android.nfc.NfcAdapter;
 import android.os.Binder;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.RemoteException;
-
-import java.io.IOException;
 
 public class NfcExecutionEnvironment {
     private final NfcAdapterExtras mExtras;
-    private final Binder mToken;
 
     /**
      * Broadcast Action: An ISO-DEP AID was selected.
@@ -112,7 +115,6 @@ public class NfcExecutionEnvironment {
 
     NfcExecutionEnvironment(NfcAdapterExtras extras) {
         mExtras = extras;
-        mToken = new Binder();
     }
 
     /**
@@ -131,7 +133,7 @@ public class NfcExecutionEnvironment {
      */
     public void open() throws IOException {
         try {
-            Bundle b = mExtras.getService().open(mExtras.mPackageName, mToken);
+            Bundle b = mExtras.getService().open(new Binder());
             throwBundle(b);
         } catch (RemoteException e) {
             mExtras.attemptDeadServiceRecovery(e);
@@ -149,7 +151,7 @@ public class NfcExecutionEnvironment {
      */
     public void close() throws IOException {
         try {
-            throwBundle(mExtras.getService().close(mExtras.mPackageName, mToken));
+            throwBundle(mExtras.getService().close());
         } catch (RemoteException e) {
             mExtras.attemptDeadServiceRecovery(e);
             throw new IOException("NFC Service was dead");
@@ -167,7 +169,7 @@ public class NfcExecutionEnvironment {
     public byte[] transceive(byte[] in) throws IOException {
         Bundle b;
         try {
-            b = mExtras.getService().transceive(mExtras.mPackageName, in);
+            b = mExtras.getService().transceive(in);
         } catch (RemoteException e) {
             mExtras.attemptDeadServiceRecovery(e);
             throw new IOException("NFC Service was dead, need to re-open");

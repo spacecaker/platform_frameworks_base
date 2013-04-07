@@ -17,16 +17,18 @@
 package android.database;
 
 import android.os.Binder;
-import android.os.Bundle;
+import android.os.RemoteException;
 import android.os.IBinder;
 import android.os.Parcel;
-import android.os.Parcelable;
-import android.os.RemoteException;
+import android.os.Bundle;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Native implementation of the bulk cursor. This is only for use in implementing
  * IPC, application code should use the Cursor interface.
- *
+ * 
  * {@hide}
  */
 public abstract class BulkCursorNative extends Binder implements IBulkCursor
@@ -62,13 +64,13 @@ public abstract class BulkCursorNative extends Binder implements IBulkCursor
                     data.enforceInterface(IBulkCursor.descriptor);
                     int startPos = data.readInt();
                     CursorWindow window = getWindow(startPos);
-                    reply.writeNoException();
                     if (window == null) {
                         reply.writeInt(0);
-                    } else {
-                        reply.writeInt(1);
-                        window.writeToParcel(reply, Parcelable.PARCELABLE_WRITE_RETURN_VALUE);
+                        return true;
                     }
+                    reply.writeNoException();
+                    reply.writeInt(1);
+                    window.writeToParcel(reply, 0);
                     return true;
                 }
 
@@ -109,11 +111,32 @@ public abstract class BulkCursorNative extends Binder implements IBulkCursor
                 case REQUERY_TRANSACTION: {
                     data.enforceInterface(IBulkCursor.descriptor);
                     IContentObserver observer =
-                            IContentObserver.Stub.asInterface(data.readStrongBinder());
-                    int count = requery(observer);
+                        IContentObserver.Stub.asInterface(data.readStrongBinder());
+                    CursorWindow window = CursorWindow.CREATOR.createFromParcel(data);
+                    int count = requery(observer, window);
                     reply.writeNoException();
                     reply.writeInt(count);
                     reply.writeBundle(getExtras());
+                    return true;
+                }
+
+                case UPDATE_ROWS_TRANSACTION: {
+                    data.enforceInterface(IBulkCursor.descriptor);
+                    // TODO - what ClassLoader should be passed to readHashMap?
+                    // TODO - switch to Bundle
+                    HashMap<Long, Map<String, Object>> values = data.readHashMap(null);
+                    boolean result = updateRows(values);
+                    reply.writeNoException();
+                    reply.writeInt((result == true ? 1 : 0));
+                    return true;
+                }
+
+                case DELETE_ROW_TRANSACTION: {
+                    data.enforceInterface(IBulkCursor.descriptor);
+                    int position = data.readInt();
+                    boolean result = deleteRow(position);
+                    reply.writeNoException();
+                    reply.writeInt((result == true ? 1 : 0));
                     return true;
                 }
 
@@ -184,171 +207,214 @@ final class BulkCursorProxy implements IBulkCursor {
     {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
-            data.writeInt(startPos);
 
-            mRemote.transact(GET_CURSOR_WINDOW_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
+        data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            CursorWindow window = null;
-            if (reply.readInt() == 1) {
-                window = CursorWindow.newFromParcel(reply);
-            }
-            return window;
-        } finally {
-            data.recycle();
-            reply.recycle();
+        data.writeInt(startPos);
+
+        mRemote.transact(GET_CURSOR_WINDOW_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+        
+        CursorWindow window = null;
+        if (reply.readInt() == 1) {
+            window = CursorWindow.newFromParcel(reply);
         }
+
+        data.recycle();
+        reply.recycle();
+
+        return window;
     }
 
     public void onMove(int position) throws RemoteException {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
-            data.writeInt(position);
 
-            mRemote.transact(ON_MOVE_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
-        } finally {
-            data.recycle();
-            reply.recycle();
-        }
+        data.writeInterfaceToken(IBulkCursor.descriptor);
+
+        data.writeInt(position);
+
+        mRemote.transact(ON_MOVE_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+
+        data.recycle();
+        reply.recycle();
     }
 
     public int count() throws RemoteException
     {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            boolean result = mRemote.transact(COUNT_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
+        data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            int count;
-            if (result == false) {
-                count = -1;
-            } else {
-                count = reply.readInt();
-            }
-            return count;
-        } finally {
-            data.recycle();
-            reply.recycle();
+        boolean result = mRemote.transact(COUNT_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+        
+        int count;
+        if (result == false) {
+            count = -1;
+        } else {
+            count = reply.readInt();
         }
+        data.recycle();
+        reply.recycle();
+        return count;
     }
 
     public String[] getColumnNames() throws RemoteException
     {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            mRemote.transact(GET_COLUMN_NAMES_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
+        data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            String[] columnNames = null;
-            int numColumns = reply.readInt();
-            columnNames = new String[numColumns];
-            for (int i = 0; i < numColumns; i++) {
-                columnNames[i] = reply.readString();
-            }
-            return columnNames;
-        } finally {
-            data.recycle();
-            reply.recycle();
+        mRemote.transact(GET_COLUMN_NAMES_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+        
+        String[] columnNames = null;
+        int numColumns = reply.readInt();
+        columnNames = new String[numColumns];
+        for (int i = 0; i < numColumns; i++) {
+            columnNames[i] = reply.readString();
         }
+        
+        data.recycle();
+        reply.recycle();
+        return columnNames;
     }
 
     public void deactivate() throws RemoteException
     {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            mRemote.transact(DEACTIVATE_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
-        } finally {
-            data.recycle();
-            reply.recycle();
-        }
+        data.writeInterfaceToken(IBulkCursor.descriptor);
+
+        mRemote.transact(DEACTIVATE_TRANSACTION, data, reply, 0);
+        DatabaseUtils.readExceptionFromParcel(reply);
+
+        data.recycle();
+        reply.recycle();
     }
 
     public void close() throws RemoteException
     {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            mRemote.transact(CLOSE_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
-        } finally {
-            data.recycle();
-            reply.recycle();
-        }
+        data.writeInterfaceToken(IBulkCursor.descriptor);
+
+        mRemote.transact(CLOSE_TRANSACTION, data, reply, 0);
+        DatabaseUtils.readExceptionFromParcel(reply);
+
+        data.recycle();
+        reply.recycle();
     }
     
-    public int requery(IContentObserver observer) throws RemoteException {
+    public int requery(IContentObserver observer, CursorWindow window) throws RemoteException {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
-            data.writeStrongInterface(observer);
 
-            boolean result = mRemote.transact(REQUERY_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
+        data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            int count;
-            if (!result) {
-                count = -1;
-            } else {
-                count = reply.readInt();
-                mExtras = reply.readBundle();
-            }
-            return count;
-        } finally {
-            data.recycle();
-            reply.recycle();
+        data.writeStrongInterface(observer);
+        window.writeToParcel(data, 0);
+
+        boolean result = mRemote.transact(REQUERY_TRANSACTION, data, reply, 0);
+        
+        DatabaseUtils.readExceptionFromParcel(reply);
+
+        int count;
+        if (!result) {
+            count = -1;
+        } else {
+            count = reply.readInt();
+            mExtras = reply.readBundle();
         }
+
+        data.recycle();
+        reply.recycle();
+
+        return count;
+    }
+
+    public boolean updateRows(Map values) throws RemoteException
+    {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+
+        data.writeInterfaceToken(IBulkCursor.descriptor);
+
+        data.writeMap(values);
+
+        mRemote.transact(UPDATE_ROWS_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+        
+        boolean result = (reply.readInt() == 1 ? true : false);
+
+        data.recycle();
+        reply.recycle();
+
+        return result;
+    }
+
+    public boolean deleteRow(int position) throws RemoteException
+    {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+
+        data.writeInterfaceToken(IBulkCursor.descriptor);
+
+        data.writeInt(position);
+
+        mRemote.transact(DELETE_ROW_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+        
+        boolean result = (reply.readInt() == 1 ? true : false);
+
+        data.recycle();
+        reply.recycle();
+
+        return result;
     }
 
     public boolean getWantsAllOnMoveCalls() throws RemoteException {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            mRemote.transact(WANTS_ON_MOVE_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
+        data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            int result = reply.readInt();
-            return result != 0;
-        } finally {
-            data.recycle();
-            reply.recycle();
-        }
+        mRemote.transact(WANTS_ON_MOVE_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+
+        int result = reply.readInt();
+        data.recycle();
+        reply.recycle();
+        return result != 0;
     }
 
     public Bundle getExtras() throws RemoteException {
         if (mExtras == null) {
             Parcel data = Parcel.obtain();
             Parcel reply = Parcel.obtain();
-            try {
-                data.writeInterfaceToken(IBulkCursor.descriptor);
 
-                mRemote.transact(GET_EXTRAS_TRANSACTION, data, reply, 0);
-                DatabaseUtils.readExceptionFromParcel(reply);
+            data.writeInterfaceToken(IBulkCursor.descriptor);
 
-                mExtras = reply.readBundle();
-            } finally {
-                data.recycle();
-                reply.recycle();
-            }
+            mRemote.transact(GET_EXTRAS_TRANSACTION, data, reply, 0);
+
+            DatabaseUtils.readExceptionFromParcel(reply);
+
+            mExtras = reply.readBundle();
+            data.recycle();
+            reply.recycle();
         }
         return mExtras;
     }
@@ -356,19 +422,19 @@ final class BulkCursorProxy implements IBulkCursor {
     public Bundle respond(Bundle extras) throws RemoteException {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
-        try {
-            data.writeInterfaceToken(IBulkCursor.descriptor);
-            data.writeBundle(extras);
 
-            mRemote.transact(RESPOND_TRANSACTION, data, reply, 0);
-            DatabaseUtils.readExceptionFromParcel(reply);
+        data.writeInterfaceToken(IBulkCursor.descriptor);
 
-            Bundle returnExtras = reply.readBundle();
-            return returnExtras;
-        } finally {
-            data.recycle();
-            reply.recycle();
-        }
+        data.writeBundle(extras);
+
+        mRemote.transact(RESPOND_TRANSACTION, data, reply, 0);
+
+        DatabaseUtils.readExceptionFromParcel(reply);
+
+        Bundle returnExtras = reply.readBundle();
+        data.recycle();
+        reply.recycle();
+        return returnExtras;
     }
 }
 

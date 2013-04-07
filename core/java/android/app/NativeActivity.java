@@ -84,7 +84,7 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback2,
     private boolean mDestroyed;
     
     private native int loadNativeCode(String path, String funcname, MessageQueue queue,
-            String internalDataPath, String obbPath, String externalDataPath, int sdkVersion,
+            String internalDataPath, String externalDataPath, int sdkVersion,
             AssetManager assetMgr, byte[] savedState);
     private native void unloadNativeCode(int handle);
     
@@ -191,7 +191,7 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback2,
                 ? savedInstanceState.getByteArray(KEY_NATIVE_SAVED_STATE) : null;
 
         mNativeHandle = loadNativeCode(path, funcname, Looper.myQueue(),
-                 getFilesDir().toString(), getObbDir().toString(),
+                 getFilesDir().toString(),
                  Environment.getExternalStorageAppFilesDirectory(ai.packageName).toString(),
                  Build.VERSION.SDK_INT, getAssets(), nativeSavedState);
         
@@ -344,14 +344,12 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback2,
         }
     }
 
-    boolean dispatchUnhandledKeyEvent(KeyEvent event) {
+    void dispatchUnhandledKeyEvent(KeyEvent event) {
         try {
             mDispatchingUnhandledKey = true;
             View decor = getWindow().getDecorView();
             if (decor != null) {
-                return decor.dispatchKeyEvent(event);
-            } else {
-                return false;
+                decor.dispatchKeyEvent(event);
             }
         } finally {
             mDispatchingUnhandledKey = false;

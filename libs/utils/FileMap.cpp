@@ -63,18 +63,16 @@ FileMap::~FileMap(void)
         free(mFileName);
     }
 #ifdef HAVE_POSIX_FILEMAP    
-    if (mBasePtr && munmap(mBasePtr, mBaseLength) != 0) {
+    if (munmap(mBasePtr, mBaseLength) != 0) {
         LOGD("munmap(%p, %d) failed\n", mBasePtr, (int) mBaseLength);
     }
 #endif
 #ifdef HAVE_WIN32_FILEMAP
-    if (mBasePtr && UnmapViewOfFile(mBasePtr) == 0) {
+    if ( UnmapViewOfFile(mBasePtr) == 0) {
         LOGD("UnmapViewOfFile(%p) failed, error = %ld\n", mBasePtr, 
               GetLastError() );
     }
-    if (mFileMapping != INVALID_HANDLE_VALUE) {
-        CloseHandle(mFileMapping);
-    }
+    CloseHandle(mFileMapping);
     CloseHandle(mFileHandle);
 #endif
 }
@@ -88,12 +86,11 @@ FileMap::~FileMap(void)
  *
  * Returns "false" on failure.
  */
-bool FileMap::create(const char* origFileName, int fd, off64_t offset, size_t length,
-        bool readOnly)
+bool FileMap::create(const char* origFileName, int fd, off_t offset, size_t length, bool readOnly)
 {
 #ifdef HAVE_WIN32_FILEMAP
     int     adjust;
-    off64_t adjOffset;
+    off_t   adjOffset;
     size_t  adjLength;
 
     if (mPageSize == -1) {
@@ -132,7 +129,7 @@ bool FileMap::create(const char* origFileName, int fd, off64_t offset, size_t le
 #endif
 #ifdef HAVE_POSIX_FILEMAP
     int     prot, flags, adjust;
-    off64_t adjOffset;
+    off_t   adjOffset;
     size_t  adjLength;
 
     void* ptr;

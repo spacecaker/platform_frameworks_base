@@ -18,11 +18,9 @@ package android.view.animation;
 
 import android.content.Context;
 import android.content.res.TypedArray;
-import android.graphics.RectF;
-import android.os.SystemProperties;
 import android.util.AttributeSet;
 import android.util.TypedValue;
-import dalvik.system.CloseGuard;
+import android.graphics.RectF;
 
 /**
  * Abstraction for an Animation that can be applied to Views, Surfaces, or
@@ -88,10 +86,7 @@ public abstract class Animation implements Cloneable {
      * content for the duration of the animation.
      */
     public static final int ZORDER_BOTTOM = -1;
-
-    private static final boolean USE_CLOSEGUARD
-            = SystemProperties.getBoolean("log.closeguard.Animation", false);
-
+    
     /**
      * Set by {@link #getTransformation(long, Transformation)} when the animation ends.
      */
@@ -116,8 +111,7 @@ public abstract class Animation implements Cloneable {
 
     /**
      * Indicates whether the animation transformation should be applied before the
-     * animation starts. The value of this variable is only relevant if mFillEnabled is true;
-     * otherwise it is assumed to be true.
+     * animation starts.
      */
     boolean mFillBefore = true;
 
@@ -128,7 +122,7 @@ public abstract class Animation implements Cloneable {
     boolean mFillAfter = false;
 
     /**
-     * Indicates whether fillBefore should be taken into account.
+     * Indicates whether fillAfter should be taken into account.
      */
     boolean mFillEnabled = false;    
 
@@ -180,18 +174,7 @@ public abstract class Animation implements Cloneable {
      * Desired Z order mode during animation.
      */
     private int mZAdjustment;
-
-    /**
-     * Desired background color behind animation.
-     */
-    private int mBackgroundColor;
-
-    /**
-     * scalefactor to apply to pivot points, etc. during animation. Subclasses retrieve the
-     * value via getScaleFactor().
-     */
-    private float mScaleFactor = 1f;
-
+    
     /**
      * Don't animate the wallpaper.
      */
@@ -204,8 +187,6 @@ public abstract class Animation implements Cloneable {
     RectF mRegion = new RectF();
     Transformation mTransformation = new Transformation();
     Transformation mPreviousTransformation = new Transformation();
-
-    private final CloseGuard guard = CloseGuard.get();
 
     /**
      * Creates a new animation with a duration of 0ms, the default interpolator, with
@@ -232,24 +213,21 @@ public abstract class Animation implements Cloneable {
         setFillBefore(a.getBoolean(com.android.internal.R.styleable.Animation_fillBefore, mFillBefore));
         setFillAfter(a.getBoolean(com.android.internal.R.styleable.Animation_fillAfter, mFillAfter));
 
+        final int resID = a.getResourceId(com.android.internal.R.styleable.Animation_interpolator, 0);
+        if (resID > 0) {
+            setInterpolator(context, resID);
+        }
+
         setRepeatCount(a.getInt(com.android.internal.R.styleable.Animation_repeatCount, mRepeatCount));
         setRepeatMode(a.getInt(com.android.internal.R.styleable.Animation_repeatMode, RESTART));
 
         setZAdjustment(a.getInt(com.android.internal.R.styleable.Animation_zAdjustment, ZORDER_NORMAL));
         
-        setBackgroundColor(a.getInt(com.android.internal.R.styleable.Animation_background, 0));
-
         setDetachWallpaper(a.getBoolean(com.android.internal.R.styleable.Animation_detachWallpaper, false));
-
-        final int resID = a.getResourceId(com.android.internal.R.styleable.Animation_interpolator, 0);
+        
+        ensureInterpolator();
 
         a.recycle();
-
-        if (resID > 0) {
-            setInterpolator(context, resID);
-        }
-
-        ensureInterpolator();
     }
 
     @Override
@@ -292,7 +270,6 @@ public abstract class Animation implements Cloneable {
         if (mStarted && !mEnded) {
             if (mListener != null) mListener.onAnimationEnd(this);
             mEnded = true;
-            guard.close();
         }
         // Make sure we move the animation to the end
         mStartTime = Long.MIN_VALUE;
@@ -305,7 +282,6 @@ public abstract class Animation implements Cloneable {
     public void detach() {
         if (mStarted && !mEnded) {
             mEnded = true;
-            guard.close();
             if (mListener != null) mListener.onAnimationEnd(this);
         }
     }
@@ -325,7 +301,7 @@ public abstract class Animation implements Cloneable {
      * animated as well as the objects parents. (This is to support animation
      * sizes being specifed relative to these dimensions.)
      *
-     * <p>Objects that interpret Animations should call this method when
+     * <p>Objects that interpret a Animations should call this method when
      * the sizes of the object being animated and its parent are known, and
      * before calling {@link #getTransformation}.
      *
@@ -442,7 +418,6 @@ public abstract class Animation implements Cloneable {
      */
     public void scaleCurrentDuration(float scale) {
         mDuration = (long) (mDuration * scale);
-        mStartOffset = (long) (mStartOffset * scale);
     }
 
     /**
@@ -508,9 +483,9 @@ public abstract class Animation implements Cloneable {
     }
 
     /**
-     * If fillEnabled is true, this animation will apply the value of fillBefore.
+     * If fillEnabled is true, this animation will apply fillBefore and fillAfter.
      *
-     * @return true if the animation will take fillBefore into account
+     * @return true if the animation will take fillBefore and fillAfter into account
      * @attr ref android.R.styleable#Animation_fillEnabled
      */
     public boolean isFillEnabled() {
@@ -518,11 +493,11 @@ public abstract class Animation implements Cloneable {
     }
 
     /**
-     * If fillEnabled is true, the animation will apply the value of fillBefore.
-     * Otherwise, fillBefore is ignored and the animation
-     * transformation is always applied until the animation ends.
+     * If fillEnabled is true, the animation will apply the value of fillBefore and
+     * fillAfter. Otherwise, fillBefore and fillAfter are ignored and the animation
+     * transformation is always applied.
      *
-     * @param fillEnabled true if the animation should take the value of fillBefore into account
+     * @param fillEnabled true if the animation should take fillBefore and fillAfter into account
      * @attr ref android.R.styleable#Animation_fillEnabled
      *
      * @see #setFillBefore(boolean)
@@ -534,8 +509,7 @@ public abstract class Animation implements Cloneable {
 
     /**
      * If fillBefore is true, this animation will apply its transformation
-     * before the start time of the animation. Defaults to true if
-     * {@link #setFillEnabled(boolean)} is not set to true.
+     * before the start time of the animation. Defaults to true if not set.
      * Note that this applies when using an {@link
      * android.view.animation.AnimationSet AnimationSet} to chain
      * animations. The transformation is not applied before the AnimationSet
@@ -553,9 +527,10 @@ public abstract class Animation implements Cloneable {
     /**
      * If fillAfter is true, the transformation that this animation performed
      * will persist when it is finished. Defaults to false if not set.
-     * Note that this applies to individual animations and when using an {@link
+     * Note that this applies when using an {@link
      * android.view.animation.AnimationSet AnimationSet} to chain
-     * animations.
+     * animations. The transformation is not applied before the AnimationSet
+     * itself starts.
      *
      * @param fillAfter true if the animation should apply its transformation after it ends
      * @attr ref android.R.styleable#Animation_fillAfter
@@ -577,29 +552,6 @@ public abstract class Animation implements Cloneable {
         mZAdjustment = zAdjustment;
     }
     
-    /**
-     * Set background behind animation.
-     *
-     * @param bg The background color.  If 0, no background.  Currently must
-     * be black, with any desired alpha level.
-     */
-    public void setBackgroundColor(int bg) {
-        mBackgroundColor = bg;
-    }
-
-    /**
-     * The scale factor is set by the call to <code>getTransformation</code>. Overrides of 
-     * {@link #getTransformation(long, Transformation, float)} will get this value
-     * directly. Overrides of {@link #applyTransformation(float, Transformation)} can
-     * call this method to get the value.
-     * 
-     * @return float The scale factor that should be applied to pre-scaled values in
-     * an Animation such as the pivot points in {@link ScaleAnimation} and {@link RotateAnimation}.
-     */
-    protected float getScaleFactor() {
-        return mScaleFactor;
-    }
-
     /**
      * If detachWallpaper is true, and this is a window animation of a window
      * that has a wallpaper background, then the window will be detached from
@@ -677,9 +629,7 @@ public abstract class Animation implements Cloneable {
 
     /**
      * If fillBefore is true, this animation will apply its transformation
-     * before the start time of the animation. If fillBefore is false and
-     * {@link #isFillEnabled() fillEnabled} is true, the transformation will not be applied until
-     * the start time of the animation.
+     * before the start time of the animation.
      *
      * @return true if the animation applies its transformation before it starts
      * @attr ref android.R.styleable#Animation_fillBefore
@@ -709,13 +659,6 @@ public abstract class Animation implements Cloneable {
      */
     public int getZAdjustment() {
         return mZAdjustment;
-    }
-
-    /**
-     * Returns the background color behind the animation.
-     */
-    public int getBackgroundColor() {
-        return mBackgroundColor;
     }
 
     /**
@@ -787,12 +730,11 @@ public abstract class Animation implements Cloneable {
      * otherwise.
      *
      * @param currentTime Where we are in the animation. This is wall clock time.
-     * @param outTransformation A transformation object that is provided by the
+     * @param outTransformation A tranformation object that is provided by the
      *        caller and will be filled in by the animation.
      * @return True if the animation is still running
      */
     public boolean getTransformation(long currentTime, Transformation outTransformation) {
-
         if (mStartTime == -1) {
             mStartTime = currentTime;
         }
@@ -819,9 +761,6 @@ public abstract class Animation implements Cloneable {
                     mListener.onAnimationStart(this);
                 }
                 mStarted = true;
-                if (USE_CLOSEGUARD) {
-                    guard.open("cancel or detach or getTransformation");
-                }
             }
 
             if (mFillEnabled) normalizedTime = Math.max(Math.min(normalizedTime, 1.0f), 0.0f);
@@ -838,7 +777,6 @@ public abstract class Animation implements Cloneable {
             if (mRepeatCount == mRepeated) {
                 if (!mEnded) {
                     mEnded = true;
-                    guard.close();
                     if (mListener != null) {
                         mListener.onAnimationEnd(this);
                     }
@@ -868,24 +806,6 @@ public abstract class Animation implements Cloneable {
 
         return mMore;
     }
-    
-    /**
-     * Gets the transformation to apply at a specified point in time. Implementations of this
-     * method should always replace the specified Transformation or document they are doing
-     * otherwise.
-     *
-     * @param currentTime Where we are in the animation. This is wall clock time.
-     * @param outTransformation A tranformation object that is provided by the
-     *        caller and will be filled in by the animation.
-     * @param scale Scaling factor to apply to any inputs to the transform operation, such
-     *        pivot points being rotated or scaled around.
-     * @return True if the animation is still running
-     */
-    public boolean getTransformation(long currentTime, Transformation outTransformation,
-            float scale) {
-        mScaleFactor = scale;
-        return getTransformation(currentTime, outTransformation);
-    }
 
     /**
      * <p>Indicates whether this animation has started or not.</p>
@@ -913,7 +833,7 @@ public abstract class Animation implements Cloneable {
      * 
      * @param interpolatedTime The value of the normalized time (0.0 to 1.0)
      *        after it has been run through the interpolation function.
-     * @param t The Transformation object to fill in with the current
+     * @param t The Transofrmation object to fill in with the current
      *        transforms.
      */
     protected void applyTransformation(float interpolatedTime, Transformation t) {
@@ -993,25 +913,6 @@ public abstract class Animation implements Cloneable {
             final Transformation previousTransformation = mPreviousTransformation;
             applyTransformation(mInterpolator.getInterpolation(0.0f), previousTransformation);
         }
-    }
-
-    protected void finalize() throws Throwable {
-        try {
-            if (guard != null) {
-                guard.warnIfOpen();
-            }
-        } finally {
-            super.finalize();
-        }
-    }
-
-    /**
-     * Return true if this animation changes the view's alpha property.
-     * 
-     * @hide
-     */
-    public boolean hasAlpha() {
-        return false;
     }
 
     /**

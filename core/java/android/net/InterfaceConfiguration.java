@@ -19,16 +19,14 @@ package android.net;
 import android.os.Parcelable;
 import android.os.Parcel;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-
 /**
  * A simple object for retrieving / setting an interfaces configuration
  * @hide
  */
 public class InterfaceConfiguration implements Parcelable {
     public String hwAddr;
-    public LinkAddress addr;
+    public int ipAddr;
+    public int netmask;
     public String interfaceFlags;
 
     public InterfaceConfiguration() {
@@ -38,12 +36,19 @@ public class InterfaceConfiguration implements Parcelable {
     public String toString() {
         StringBuffer str = new StringBuffer();
 
-        str.append("ipddress ");
-        str.append((addr != null) ? addr.toString() : "NULL");
+        str.append("ipddress "); putAddress(str, ipAddr);
+        str.append(" netmask "); putAddress(str, netmask);
         str.append(" flags ").append(interfaceFlags);
         str.append(" hwaddr ").append(hwAddr);
 
         return str.toString();
+    }
+
+    private static void putAddress(StringBuffer buf, int addr) {
+        buf.append((addr >> 24) & 0xff).append('.').
+            append((addr >> 16) & 0xff).append('.').
+            append((addr >> 8) & 0xff).append('.').
+            append(addr & 0xff);
     }
 
     /**
@@ -56,9 +61,7 @@ public class InterfaceConfiguration implements Parcelable {
     public boolean isActive() {
         try {
             if(interfaceFlags.contains("up")) {
-                for (byte b : addr.getAddress().getAddress()) {
-                    if (b != 0) return true;
-                }
+                if (ipAddr != 0) return true;
             }
         } catch (NullPointerException e) {
             return false;
@@ -74,12 +77,8 @@ public class InterfaceConfiguration implements Parcelable {
     /** Implement the Parcelable interface {@hide} */
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeString(hwAddr);
-        if (addr != null) {
-            dest.writeByte((byte)1);
-            dest.writeParcelable(addr, flags);
-        } else {
-            dest.writeByte((byte)0);
-        }
+        dest.writeInt(ipAddr);
+        dest.writeInt(netmask);
         dest.writeString(interfaceFlags);
     }
 
@@ -89,9 +88,8 @@ public class InterfaceConfiguration implements Parcelable {
             public InterfaceConfiguration createFromParcel(Parcel in) {
                 InterfaceConfiguration info = new InterfaceConfiguration();
                 info.hwAddr = in.readString();
-                if (in.readByte() == 1) {
-                    info.addr = in.readParcelable(null);
-                }
+                info.ipAddr = in.readInt();
+                info.netmask = in.readInt();
                 info.interfaceFlags = in.readString();
                 return info;
             }

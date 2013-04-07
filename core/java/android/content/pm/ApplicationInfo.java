@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
+ * This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,14 +90,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
      * <p>If android:allowBackup is set to false, this attribute is ignored.
      */
     public String backupAgentName;
-
-    /**
-     * The default extra UI options for activities in this application.
-     * Set from the {@link android.R.attr#uiOptions} attribute in the
-     * activity's manifest.
-     */
-    public int uiOptions = 0;
-
+    
     /**
      * Value for {@link #flags}: if set, this application is installed in the
      * device's system image.
@@ -273,29 +267,24 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
      * increased in size for extra large screens.  Corresponds to
      * {@link android.R.styleable#AndroidManifestSupportsScreens_xlargeScreens
      * android:xlargeScreens}.
+     * @hide
      */
     public static final int FLAG_SUPPORTS_XLARGE_SCREENS = 1<<19;
     
     /**
-     * Value for {@link #flags}: true when the application has requested a
-     * large heap for its processes.  Corresponds to
-     * {@link android.R.styleable#AndroidManifestApplication_largeHeap
-     * android:largeHeap}.
+     * Value for {@link #flags}: this is true if the application has set
+     * its android:neverEncrypt to true, false otherwise. It is used to specify
+     * that this package specifically "opts-out" of a secured file system solution,
+     * and will always store its data in-the-clear.
+     *
+     * {@hide}
      */
-    public static final int FLAG_LARGE_HEAP = 1<<20;
-
-    /**
-     * Value for {@link #flags}: true if this application's package is in
-     * the stopped state.
-     */
-    public static final int FLAG_STOPPED = 1<<21;
+    public static final int FLAG_NEVER_ENCRYPT = 1<<30;
 
     /**
      * Value for {@link #flags}: Set to true if the application has been
      * installed using the forward lock option.
      *
-     * NOTE: DO NOT CHANGE THIS VALUE!  It is saved in packages.xml.
-     * 
      * {@hide}
      */
     public static final int FLAG_FORWARD_LOCK = 1<<29;
@@ -311,7 +300,7 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
      *
      * {@hide}
      */
-    public static final int FLAG_CANT_SAVE_STATE = 1<<28;
+    public static final int FLAG_CANT_SAVE_STATE = 1<<27;
 
     /**
      * Flags associated with the application.  Any combination of
@@ -321,36 +310,12 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
      * {@link #FLAG_ALLOW_CLEAR_USER_DATA}, {@link #FLAG_UPDATED_SYSTEM_APP},
      * {@link #FLAG_TEST_ONLY}, {@link #FLAG_SUPPORTS_SMALL_SCREENS},
      * {@link #FLAG_SUPPORTS_NORMAL_SCREENS},
-     * {@link #FLAG_SUPPORTS_LARGE_SCREENS}, {@link #FLAG_SUPPORTS_XLARGE_SCREENS},
+     * {@link #FLAG_SUPPORTS_LARGE_SCREENS},
      * {@link #FLAG_RESIZEABLE_FOR_SCREENS},
      * {@link #FLAG_SUPPORTS_SCREEN_DENSITIES}, {@link #FLAG_VM_SAFE_MODE}
      */
     public int flags = 0;
     
-    /**
-     * The required smallest screen width the application can run on.  If 0,
-     * nothing has been specified.  Comes from
-     * {@link android.R.styleable#AndroidManifestSupportsScreens_requiresSmallestWidthDp
-     * android:requiresSmallestWidthDp} attribute of the &lt;supports-screens&gt; tag.
-     */
-    public int requiresSmallestWidthDp = 0;
-
-    /**
-     * The maximum smallest screen width the application is designed for.  If 0,
-     * nothing has been specified.  Comes from
-     * {@link android.R.styleable#AndroidManifestSupportsScreens_compatibleWidthLimitDp
-     * android:compatibleWidthLimitDp} attribute of the &lt;supports-screens&gt; tag.
-     */
-    public int compatibleWidthLimitDp = 0;
-
-    /**
-     * The maximum smallest screen width the application will work on.  If 0,
-     * nothing has been specified.  Comes from
-     * {@link android.R.styleable#AndroidManifestSupportsScreens_largestWidthLimitDp
-     * android:largestWidthLimitDp} attribute of the &lt;supports-screens&gt; tag.
-     */
-    public int largestWidthLimitDp = 0;
-
     /**
      * Full path to the location of this package.
      */
@@ -415,10 +380,29 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
     public boolean enabled = true;
 
     /**
-     * For convenient access to the current enabled setting of this app.
+     * Is given application theme agnostic, i.e. behaves properly when default theme is changed.
+     * {@hide}
+     */
+    public boolean isThemeable = false;
+
+    private static final String PLUTO_SCHEMA = "http://www.w3.org/2001/pluto.html";
+
+    /**
      * @hide
      */
-    public int enabledSetting = PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
+    public static final String PLUTO_ISTHEMEABLE_ATTRIBUTE_NAME = "isThemeable";
+
+    /**
+     * @hide
+     */
+    public static final String PLUTO_HANDLE_THEME_CONFIG_CHANGES_ATTRIBUTE_NAME = "handleThemeConfigChanges";
+
+    /**
+     * @hide
+     */
+    public static boolean isPlutoNamespace(String namespace) {
+        return namespace != null && namespace.equalsIgnoreCase(PLUTO_SCHEMA);
+    }
 
     /**
      * For convenient access to package's install location.
@@ -438,9 +422,6 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         pw.println(prefix + "taskAffinity=" + taskAffinity);
         pw.println(prefix + "uid=" + uid + " flags=0x" + Integer.toHexString(flags)
                 + " theme=0x" + Integer.toHexString(theme));
-        pw.println(prefix + "requiresSmallestWidthDp=" + requiresSmallestWidthDp
-                + " compatibleWidthLimitDp=" + compatibleWidthLimitDp
-                + " largestWidthLimitDp=" + largestWidthLimitDp);
         pw.println(prefix + "sourceDir=" + sourceDir);
         if (sourceDir == null) {
             if (publicSourceDir != null) {
@@ -462,9 +443,6 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         }
         if (descriptionRes != 0) {
             pw.println(prefix + "description=0x"+Integer.toHexString(descriptionRes));
-        }
-        if (uiOptions != 0) {
-            pw.println(prefix + "uiOptions=0x" + Integer.toHexString(uiOptions));
         }
         super.dumpBack(pw, prefix);
     }
@@ -503,9 +481,6 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         className = orig.className;
         theme = orig.theme;
         flags = orig.flags;
-        requiresSmallestWidthDp = orig.requiresSmallestWidthDp;
-        compatibleWidthLimitDp = orig.compatibleWidthLimitDp;
-        largestWidthLimitDp = orig.largestWidthLimitDp;
         sourceDir = orig.sourceDir;
         publicSourceDir = orig.publicSourceDir;
         nativeLibraryDir = orig.nativeLibraryDir;
@@ -515,11 +490,10 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         uid = orig.uid;
         targetSdkVersion = orig.targetSdkVersion;
         enabled = orig.enabled;
-        enabledSetting = orig.enabledSetting;
         installLocation = orig.installLocation;
         manageSpaceActivityName = orig.manageSpaceActivityName;
         descriptionRes = orig.descriptionRes;
-        uiOptions = orig.uiOptions;
+        isThemeable = orig.isThemeable;
     }
 
 
@@ -541,9 +515,6 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         dest.writeString(className);
         dest.writeInt(theme);
         dest.writeInt(flags);
-        dest.writeInt(requiresSmallestWidthDp);
-        dest.writeInt(compatibleWidthLimitDp);
-        dest.writeInt(largestWidthLimitDp);
         dest.writeString(sourceDir);
         dest.writeString(publicSourceDir);
         dest.writeString(nativeLibraryDir);
@@ -553,12 +524,11 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         dest.writeInt(uid);
         dest.writeInt(targetSdkVersion);
         dest.writeInt(enabled ? 1 : 0);
-        dest.writeInt(enabledSetting);
         dest.writeInt(installLocation);
         dest.writeString(manageSpaceActivityName);
         dest.writeString(backupAgentName);
         dest.writeInt(descriptionRes);
-        dest.writeInt(uiOptions);
+        dest.writeInt(isThemeable? 1 : 0);
     }
 
     public static final Parcelable.Creator<ApplicationInfo> CREATOR
@@ -579,9 +549,6 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         className = source.readString();
         theme = source.readInt();
         flags = source.readInt();
-        requiresSmallestWidthDp = source.readInt();
-        compatibleWidthLimitDp = source.readInt();
-        largestWidthLimitDp = source.readInt();
         sourceDir = source.readString();
         publicSourceDir = source.readString();
         nativeLibraryDir = source.readString();
@@ -591,12 +558,11 @@ public class ApplicationInfo extends PackageItemInfo implements Parcelable {
         uid = source.readInt();
         targetSdkVersion = source.readInt();
         enabled = source.readInt() != 0;
-        enabledSetting = source.readInt();
         installLocation = source.readInt();
         manageSpaceActivityName = source.readString();
         backupAgentName = source.readString();
         descriptionRes = source.readInt();
-        uiOptions = source.readInt();
+        isThemeable = source.readInt() != 0;
     }
 
     /**

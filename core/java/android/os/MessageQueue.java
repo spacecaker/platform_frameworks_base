@@ -17,6 +17,7 @@
 package android.os;
 
 import android.util.AndroidRuntimeException;
+import android.util.Config;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -127,8 +128,7 @@ public class MessageQueue {
                         mBlocked = false;
                         mMessages = msg.next;
                         msg.next = null;
-                        if (false) Log.v("MessageQueue", "Returning message: " + msg);
-                        msg.markInUse();
+                        if (Config.LOGV) Log.v("MessageQueue", "Returning message: " + msg);
                         return msg;
                     } else {
                         nextPollTimeoutMillis = (int) Math.min(when - now, Integer.MAX_VALUE);
@@ -183,7 +183,7 @@ public class MessageQueue {
     }
 
     final boolean enqueueMessage(Message msg, long when) {
-        if (msg.isInUse()) {
+        if (msg.when != 0) {
             throw new AndroidRuntimeException(msg
                     + " This message is already in use.");
         }

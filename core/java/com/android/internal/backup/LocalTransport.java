@@ -20,7 +20,6 @@ import android.app.backup.BackupDataInput;
 import android.app.backup.BackupDataOutput;
 import android.app.backup.RestoreSet;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -29,7 +28,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 import android.util.Log;
 
-import com.android.org.bouncycastle.util.encoders.Base64;
+import org.bouncycastle.util.encoders.Base64;
 
 import java.io.File;
 import java.io.FileFilter;
@@ -50,13 +49,11 @@ public class LocalTransport extends IBackupTransport.Stub {
     private static final String TRANSPORT_DIR_NAME
             = "com.android.internal.backup.LocalTransport";
 
-    private static final String TRANSPORT_DESTINATION_STRING
-            = "Backing up to debug-only private cache";
-
     // The single hardcoded restore set always has the same (nonzero!) token
     private static final long RESTORE_TOKEN = 1;
 
     private Context mContext;
+    private PackageManager mPackageManager;
     private File mDataDir = new File(Environment.getDownloadCacheDirectory(), "backup");
     private PackageInfo[] mRestorePackages = null;
     private int mRestorePackage = -1;  // Index into mRestorePackages
@@ -64,16 +61,9 @@ public class LocalTransport extends IBackupTransport.Stub {
 
     public LocalTransport(Context context) {
         mContext = context;
+        mPackageManager = context.getPackageManager();
     }
 
-    public Intent configurationIntent() {
-        // The local transport is not user-configurable
-        return null;
-    }
-
-    public String currentDestinationString() {
-        return TRANSPORT_DESTINATION_STRING;
-    }
 
     public String transportDirName() {
         return TRANSPORT_DIR_NAME;

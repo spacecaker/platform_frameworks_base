@@ -66,14 +66,7 @@ public class Sensor {
     /** A constant describing a pressure sensor type */
     public static final int TYPE_PRESSURE = 6;
 
-    /**
-     * A constant describing a temperature sensor type
-     *
-     * @deprecated use
-     *             {@link android.hardware.Sensor#TYPE_AMBIENT_TEMPERATURE
-     *             Sensor.TYPE_AMBIENT_TEMPERATURE} instead.
-     */
-    @Deprecated
+    /** A constant describing a temperature sensor type */
     public static final int TYPE_TEMPERATURE = 7;
 
     /**
@@ -103,16 +96,6 @@ public class Sensor {
      * for more details.
      */
     public static final int TYPE_ROTATION_VECTOR = 11;
-
-    /**
-     * A constant describing a relative humidity sensor type.
-     * See {@link android.hardware.SensorEvent SensorEvent}
-     * for more details.
-     */
-    public static final int TYPE_RELATIVE_HUMIDITY = 12;
-
-    /** A constant describing an ambient temperature sensor type */
-    public static final int TYPE_AMBIENT_TEMPERATURE = 13;
 
     /** 
      * A constant describing all sensor types.

@@ -46,6 +46,10 @@ struct ARTPSource : public RefBase {
     void addReceiverReport(const sp<ABuffer> &buffer);
     void addFIR(const sp<ABuffer> &buffer);
 
+    bool timeEstablished() const {
+        return mNumTimes == 2;
+    }
+
 private:
     uint32_t mID;
     uint32_t mHighestSeqNumber;
@@ -54,6 +58,10 @@ private:
     List<sp<ABuffer> > mQueue;
     sp<ARTPAssembler> mAssembler;
 
+    size_t mNumTimes;
+    uint64_t mNTPTime[2];
+    uint32_t mRTPTime[2];
+
     uint64_t mLastNTPTime;
     int64_t mLastNTPTimeUpdateUs;
 
@@ -61,7 +69,7 @@ private:
     int64_t mLastFIRRequestUs;
     uint8_t mNextFIRSeqNo;
 
-    sp<AMessage> mNotify;
+    uint64_t RTP2NTP(uint32_t rtpTime) const;
 
     bool queuePacket(const sp<ABuffer> &buffer);
 

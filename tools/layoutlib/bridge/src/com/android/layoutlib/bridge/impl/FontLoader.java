@@ -23,13 +23,17 @@ import org.xml.sax.helpers.DefaultHandler;
 import android.graphics.Typeface;
 
 import java.awt.Font;
+import java.awt.FontFormatException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.xml.parsers.ParserConfigurationException;
@@ -43,55 +47,49 @@ import javax.xml.parsers.SAXParserFactory;
  * fonts.xml file located alongside the ttf files.
  */
 public final class FontLoader {
-    private static final String FONTS_SYSTEM = "system_fonts.xml";
-    private static final String FONTS_VENDOR = "vendor_fonts.xml";
-    private static final String FONTS_FALLBACK = "fallback_fonts.xml";
+    private static final String FONTS_DEFINITIONS = "fonts.xml";
 
-    private static final String NODE_FAMILYSET = "familyset";
-    private static final String NODE_FAMILY = "family";
+    private static final String NODE_FONTS = "fonts";
+    private static final String NODE_FONT = "font";
     private static final String NODE_NAME = "name";
-    private static final String NODE_FILE = "file";
+    private static final String NODE_FALLBACK = "fallback";
 
-    private static final String FONT_SUFFIX_NONE = ".ttf";
-    private static final String FONT_SUFFIX_REGULAR = "-Regular.ttf";
-    private static final String FONT_SUFFIX_BOLD = "-Bold.ttf";
-    private static final String FONT_SUFFIX_ITALIC = "-Italic.ttf";
-    private static final String FONT_SUFFIX_BOLDITALIC = "-BoldItalic.ttf";
+    private static final String ATTR_TTF = "ttf";
 
-    // This must match the values of Typeface styles so that we can use them for indices in this
-    // array.
-    private static final int[] AWT_STYLES = new int[] {
-        Font.PLAIN,
-        Font.BOLD,
-        Font.ITALIC,
-        Font.BOLD | Font.ITALIC
+    private static final String FONT_EXT = ".ttf";
+
+    private static final String[] FONT_STYLE_DEFAULT = { "", "-Regular" };
+    private static final String[] FONT_STYLE_BOLD = { "-Bold" };
+    private static final String[] FONT_STYLE_ITALIC = { "-Italic" };
+    private static final String[] FONT_STYLE_BOLDITALIC = { "-BoldItalic" };
+
+    // list of font style, in the order matching the Typeface Font style
+    private static final String[][] FONT_STYLES = {
+        FONT_STYLE_DEFAULT,
+        FONT_STYLE_BOLD,
+        FONT_STYLE_ITALIC,
+        FONT_STYLE_BOLDITALIC
     };
-    private static int[] DERIVE_BOLD_ITALIC = new int[] {
-        Typeface.ITALIC, Typeface.BOLD, Typeface.NORMAL
-    };
-    private static int[] DERIVE_ITALIC = new int[] { Typeface.NORMAL };
-    private static int[] DERIVE_BOLD = new int[] { Typeface.NORMAL };
 
-    private static final List<FontInfo> mMainFonts = new ArrayList<FontInfo>();
-    private static final List<FontInfo> mFallbackFonts = new ArrayList<FontInfo>();
+    private final Map<String, String> mFamilyToTtf = new HashMap<String, String>();
+    private final Map<String, Map<Integer, Font>> mTtfToFontMap =
+        new HashMap<String, Map<Integer, Font>>();
 
-    private final String mOsFontsLocation;
+    private List<Font> mFallBackFonts = null;
 
     public static FontLoader create(String fontOsLocation) {
         try {
             SAXParserFactory parserFactory = SAXParserFactory.newInstance();
                 parserFactory.setNamespaceAware(true);
 
-            // parse the system fonts
-            FontHandler handler = parseFontFile(parserFactory, fontOsLocation, FONTS_SYSTEM);
-            List<FontInfo> systemFonts = handler.getFontList();
+            SAXParser parser = parserFactory.newSAXParser();
+            File f = new File(fontOsLocation + File.separator + FONTS_DEFINITIONS);
 
+            FontDefinitionParser definitionParser = new FontDefinitionParser(
+                    fontOsLocation + File.separator);
+            parser.parse(new FileInputStream(f), definitionParser);
 
-            // parse the fallback fonts
-            handler = parseFontFile(parserFactory, fontOsLocation, FONTS_FALLBACK);
-            List<FontInfo> fallbackFonts = handler.getFontList();
-
-            return new FontLoader(fontOsLocation, systemFonts, fallbackFonts);
+            return definitionParser.getFontLoader();
         } catch (ParserConfigurationException e) {
             // return null below
         } catch (SAXException e) {
@@ -105,29 +103,35 @@ public final class FontLoader {
         return null;
     }
 
-    private static FontHandler parseFontFile(SAXParserFactory parserFactory,
-            String fontOsLocation, String fontFileName)
-            throws ParserConfigurationException, SAXException, IOException, FileNotFoundException {
+    private FontLoader(List<FontInfo> fontList, List<String> fallBackList) {
+        for (FontInfo info : fontList) {
+            for (String family : info.families) {
+                mFamilyToTtf.put(family, info.ttf);
+            }
+        }
 
-        SAXParser parser = parserFactory.newSAXParser();
-        File f = new File(fontOsLocation, fontFileName);
+        ArrayList<Font> list = new ArrayList<Font>();
+        for (String path : fallBackList) {
+            File f = new File(path + FONT_EXT);
+            if (f.isFile()) {
+                try {
+                    Font font = Font.createFont(Font.TRUETYPE_FONT, f);
+                    if (font != null) {
+                        list.add(font);
+                    }
+                } catch (FontFormatException e) {
+                    // skip this font name
+                } catch (IOException e) {
+                    // skip this font name
+                }
+            }
+        }
 
-        FontHandler definitionParser = new FontHandler(
-                fontOsLocation + File.separator);
-        parser.parse(new FileInputStream(f), definitionParser);
-        return definitionParser;
+        mFallBackFonts = Collections.unmodifiableList(list);
     }
 
-    private FontLoader(String fontOsLocation,
-            List<FontInfo> fontList, List<FontInfo> fallBackList) {
-        mOsFontsLocation = fontOsLocation;
-        mMainFonts.addAll(fontList);
-        mFallbackFonts.addAll(fallBackList);
-    }
-
-
-    public String getOsFontsLocation() {
-        return mOsFontsLocation;
+    public List<Font> getFallBackFonts() {
+        return mFallBackFonts;
     }
 
     /**
@@ -139,43 +143,96 @@ public final class FontLoader {
      *              the method returns.
      * @return the font object or null if no match could be found.
      */
-    public synchronized List<Font> getFont(String family, int style) {
-        List<Font> result = new ArrayList<Font>();
-
+    public synchronized Font getFont(String family, int[] style) {
         if (family == null) {
-            return result;
+            return null;
         }
 
+        // get the ttf name from the family
+        String ttf = mFamilyToTtf.get(family);
 
-        // get the font objects from the main list based on family.
-        for (FontInfo info : mMainFonts) {
-            if (info.families.contains(family)) {
-                result.add(info.font[style]);
+        if (ttf == null) {
+            return null;
+        }
+
+        // get the font from the ttf
+        Map<Integer, Font> styleMap = mTtfToFontMap.get(ttf);
+
+        if (styleMap == null) {
+            styleMap = new HashMap<Integer, Font>();
+            mTtfToFontMap.put(ttf, styleMap);
+        }
+
+        Font f = styleMap.get(style[0]);
+
+        if (f != null) {
+            return f;
+        }
+
+        // if it doesn't exist, we create it, and we can't, we try with a simpler style
+        switch (style[0]) {
+            case Typeface.NORMAL:
+                f = getFont(ttf, FONT_STYLES[Typeface.NORMAL]);
                 break;
+            case Typeface.BOLD:
+            case Typeface.ITALIC:
+                f = getFont(ttf, FONT_STYLES[style[0]]);
+                if (f == null) {
+                    f = getFont(ttf, FONT_STYLES[Typeface.NORMAL]);
+                    style[0] = Typeface.NORMAL;
+                }
+                break;
+            case Typeface.BOLD_ITALIC:
+                f = getFont(ttf, FONT_STYLES[style[0]]);
+                if (f == null) {
+                    f = getFont(ttf, FONT_STYLES[Typeface.BOLD]);
+                    if (f != null) {
+                        style[0] = Typeface.BOLD;
+                    } else {
+                        f = getFont(ttf, FONT_STYLES[Typeface.ITALIC]);
+                        if (f != null) {
+                            style[0] = Typeface.ITALIC;
+                        } else {
+                            f = getFont(ttf, FONT_STYLES[Typeface.NORMAL]);
+                            style[0] = Typeface.NORMAL;
+                        }
+                    }
+                }
+                break;
+        }
+
+        if (f != null) {
+            styleMap.put(style[0], f);
+            return f;
+        }
+
+        return null;
+    }
+
+    private Font getFont(String ttf, String[] fontFileSuffix) {
+        for (String suffix : fontFileSuffix) {
+            String name = ttf + suffix + FONT_EXT;
+
+            File f = new File(name);
+            if (f.isFile()) {
+                try {
+                    Font font = Font.createFont(Font.TRUETYPE_FONT, f);
+                    if (font != null) {
+                        return font;
+                    }
+                } catch (FontFormatException e) {
+                    // skip this font name
+                } catch (IOException e) {
+                    // skip this font name
+                }
             }
         }
 
-        // add all the fallback fonts for the given style
-        for (FontInfo info : mFallbackFonts) {
-            result.add(info.font[style]);
-        }
-
-        return result;
+        return null;
     }
-
-
-    public synchronized List<Font> getFallbackFonts(int style) {
-        List<Font> result = new ArrayList<Font>();
-        // add all the fallback fonts
-        for (FontInfo info : mFallbackFonts) {
-            result.add(info.font[style]);
-        }
-        return result;
-    }
-
 
     private final static class FontInfo {
-        final Font[] font = new Font[4]; // Matches the 4 type-face styles.
+        String ttf;
         final Set<String> families;
 
         FontInfo() {
@@ -183,20 +240,21 @@ public final class FontLoader {
         }
     }
 
-    private final static class FontHandler extends DefaultHandler {
+    private final static class FontDefinitionParser extends DefaultHandler {
         private final String mOsFontsLocation;
 
         private FontInfo mFontInfo = null;
         private final StringBuilder mBuilder = new StringBuilder();
-        private List<FontInfo> mFontList = new ArrayList<FontInfo>();
+        private List<FontInfo> mFontList;
+        private List<String> mFallBackList;
 
-        private FontHandler(String osFontsLocation) {
+        private FontDefinitionParser(String osFontsLocation) {
             super();
             mOsFontsLocation = osFontsLocation;
         }
 
-        public List<FontInfo> getFontList() {
-            return mFontList;
+        FontLoader getFontLoader() {
+            return new FontLoader(mFontList, mFallBackList);
         }
 
         /* (non-Javadoc)
@@ -205,11 +263,26 @@ public final class FontLoader {
         @Override
         public void startElement(String uri, String localName, String name, Attributes attributes)
                 throws SAXException {
-            if (NODE_FAMILYSET.equals(localName)) {
+            if (NODE_FONTS.equals(localName)) {
                 mFontList = new ArrayList<FontInfo>();
-            } else if (NODE_FAMILY.equals(localName)) {
+                mFallBackList = new ArrayList<String>();
+            } else if (NODE_FONT.equals(localName)) {
                 if (mFontList != null) {
-                    mFontInfo = new FontInfo();
+                    String ttf = attributes.getValue(ATTR_TTF);
+                    if (ttf != null) {
+                        mFontInfo = new FontInfo();
+                        mFontInfo.ttf = mOsFontsLocation + ttf;
+                        mFontList.add(mFontInfo);
+                    }
+                }
+            } else if (NODE_NAME.equals(localName)) {
+                // do nothing, we'll handle the name in the endElement
+            } else if (NODE_FALLBACK.equals(localName)) {
+                if (mFallBackList != null) {
+                    String ttf = attributes.getValue(ATTR_TTF);
+                    if (ttf != null) {
+                        mFallBackList.add(mOsFontsLocation + ttf);
+                    }
                 }
             }
 
@@ -231,78 +304,19 @@ public final class FontLoader {
          */
         @Override
         public void endElement(String uri, String localName, String name) throws SAXException {
-            if (NODE_FAMILY.equals(localName)) {
-                if (mFontInfo != null) {
-                    // if has a normal font file, add to the list
-                    if (mFontInfo.font[Typeface.NORMAL] != null) {
-                        mFontList.add(mFontInfo);
-
-                        // create missing font styles, order is important.
-                        if (mFontInfo.font[Typeface.BOLD_ITALIC] == null) {
-                            computeDerivedFont(Typeface.BOLD_ITALIC, DERIVE_BOLD_ITALIC);
-                        }
-                        if (mFontInfo.font[Typeface.ITALIC] == null) {
-                            computeDerivedFont(Typeface.ITALIC, DERIVE_ITALIC);
-                        }
-                        if (mFontInfo.font[Typeface.BOLD] == null) {
-                            computeDerivedFont(Typeface.BOLD, DERIVE_BOLD);
-                        }
-                    }
-
-                    mFontInfo = null;
-                }
+            if (NODE_FONTS.equals(localName)) {
+                // top level, do nothing
+            } else if (NODE_FONT.equals(localName)) {
+                mFontInfo = null;
             } else if (NODE_NAME.equals(localName)) {
                 // handle a new name for an existing Font Info
                 if (mFontInfo != null) {
                     String family = trimXmlWhitespaces(mBuilder.toString());
                     mFontInfo.families.add(family);
                 }
-            } else if (NODE_FILE.equals(localName)) {
-                // handle a new file for an existing Font Info
-                if (mFontInfo != null) {
-                    String fileName = trimXmlWhitespaces(mBuilder.toString());
-                    Font font = getFont(fileName);
-                    if (font != null) {
-                        if (fileName.endsWith(FONT_SUFFIX_REGULAR)) {
-                            mFontInfo.font[Typeface.NORMAL] = font;
-                        } else if (fileName.endsWith(FONT_SUFFIX_BOLD)) {
-                            mFontInfo.font[Typeface.BOLD] = font;
-                        } else if (fileName.endsWith(FONT_SUFFIX_ITALIC)) {
-                            mFontInfo.font[Typeface.ITALIC] = font;
-                        } else if (fileName.endsWith(FONT_SUFFIX_BOLDITALIC)) {
-                            mFontInfo.font[Typeface.BOLD_ITALIC] = font;
-                        } else if (fileName.endsWith(FONT_SUFFIX_NONE)) {
-                            mFontInfo.font[Typeface.NORMAL] = font;
-                        }
-                    }
-                }
+            } else if (NODE_FALLBACK.equals(localName)) {
+                // nothing to do here.
             }
-        }
-
-        private Font getFont(String fileName) {
-            try {
-                File file = new File(mOsFontsLocation, fileName);
-                if (file.exists()) {
-                    return Font.createFont(Font.TRUETYPE_FONT, file);
-                }
-            } catch (Exception e) {
-
-            }
-
-            return null;
-        }
-
-        private void computeDerivedFont( int toCompute, int[] basedOnList) {
-            for (int basedOn : basedOnList) {
-                if (mFontInfo.font[basedOn] != null) {
-                    mFontInfo.font[toCompute] =
-                        mFontInfo.font[basedOn].deriveFont(AWT_STYLES[toCompute]);
-                    return;
-                }
-            }
-
-            // we really shouldn't stop there. This means we don't have a NORMAL font...
-            assert false;
         }
 
         private String trimXmlWhitespaces(String value) {

@@ -17,9 +17,7 @@
 package android.view;
 
 import android.graphics.Rect;
-import android.graphics.Region;
 
-import java.util.ArrayList;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -34,10 +32,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class ViewTreeObserver {
     private CopyOnWriteArrayList<OnGlobalFocusChangeListener> mOnGlobalFocusListeners;
     private CopyOnWriteArrayList<OnGlobalLayoutListener> mOnGlobalLayoutListeners;
+    private CopyOnWriteArrayList<OnPreDrawListener> mOnPreDrawListeners;
     private CopyOnWriteArrayList<OnTouchModeChangeListener> mOnTouchModeChangeListeners;
     private CopyOnWriteArrayList<OnComputeInternalInsetsListener> mOnComputeInternalInsetsListeners;
     private CopyOnWriteArrayList<OnScrollChangedListener> mOnScrollChangedListeners;
-    private ArrayList<OnPreDrawListener> mOnPreDrawListeners;
 
     private boolean mAlive = true;
 
@@ -127,18 +125,11 @@ public final class ViewTreeObserver {
         public final Rect contentInsets = new Rect();
         
         /**
-         * Offsets from the frame of the window at which windows behind it
+         * Offsets from the fram of the window at which windows behind it
          * are visible.
          */
         public final Rect visibleInsets = new Rect();
-
-        /**
-         * Touchable region defined relative to the origin of the frame of the window.
-         * Only used when {@link #setTouchableInsets(int)} is called with
-         * the option {@link #TOUCHABLE_INSETS_REGION}.
-         */
-        public final Region touchableRegion = new Region();
-
+        
         /**
          * Option for {@link #setTouchableInsets(int)}: the entire window frame
          * can be touched.
@@ -156,17 +147,11 @@ public final class ViewTreeObserver {
          * the visible insets can be touched.
          */
         public static final int TOUCHABLE_INSETS_VISIBLE = 2;
-
-        /**
-         * Option for {@link #setTouchableInsets(int)}: the area inside of
-         * the provided touchable region in {@link #touchableRegion} can be touched.
-         */
-        public static final int TOUCHABLE_INSETS_REGION = 3;
-
+        
         /**
          * Set which parts of the window can be touched: either
          * {@link #TOUCHABLE_INSETS_FRAME}, {@link #TOUCHABLE_INSETS_CONTENT},
-         * {@link #TOUCHABLE_INSETS_VISIBLE}, or {@link #TOUCHABLE_INSETS_REGION}.
+         * or {@link #TOUCHABLE_INSETS_VISIBLE}. 
          */
         public void setTouchableInsets(int val) {
             mTouchableInsets = val;
@@ -179,9 +164,11 @@ public final class ViewTreeObserver {
         int mTouchableInsets;
         
         void reset() {
-            contentInsets.setEmpty();
-            visibleInsets.setEmpty();
-            touchableRegion.setEmpty();
+            final Rect givenContent = contentInsets;
+            final Rect givenVisible = visibleInsets;
+            givenContent.left = givenContent.top = givenContent.right
+                    = givenContent.bottom = givenVisible.left = givenVisible.top
+                    = givenVisible.right = givenVisible.bottom = 0;
             mTouchableInsets = TOUCHABLE_INSETS_FRAME;
         }
         
@@ -191,16 +178,13 @@ public final class ViewTreeObserver {
                     return false;
                 }
                 InternalInsetsInfo other = (InternalInsetsInfo)o;
-                if (mTouchableInsets != other.mTouchableInsets) {
-                    return false;
-                }
                 if (!contentInsets.equals(other.contentInsets)) {
                     return false;
                 }
                 if (!visibleInsets.equals(other.visibleInsets)) {
                     return false;
                 }
-                return touchableRegion.equals(other.touchableRegion);
+                return mTouchableInsets == other.mTouchableInsets;
             } catch (ClassCastException e) {
                 return false;
             }
@@ -209,7 +193,6 @@ public final class ViewTreeObserver {
         void set(InternalInsetsInfo other) {
             contentInsets.set(other.contentInsets);
             visibleInsets.set(other.visibleInsets);
-            touchableRegion.set(other.touchableRegion);
             mTouchableInsets = other.mTouchableInsets;
         }
     }
@@ -371,7 +354,7 @@ public final class ViewTreeObserver {
         checkIsAlive();
 
         if (mOnPreDrawListeners == null) {
-            mOnPreDrawListeners = new ArrayList<OnPreDrawListener>();
+            mOnPreDrawListeners = new CopyOnWriteArrayList<OnPreDrawListener>();
         }
 
         mOnPreDrawListeners.add(listener);
@@ -543,7 +526,7 @@ public final class ViewTreeObserver {
         // could mutate the list by calling the various add/remove methods. This prevents
         // the array from being modified while we iterate it.
         final CopyOnWriteArrayList<OnGlobalFocusChangeListener> listeners = mOnGlobalFocusListeners;
-        if (listeners != null && listeners.size() > 0) {
+        if (listeners != null) {
             for (OnGlobalFocusChangeListener listener : listeners) {
                 listener.onGlobalFocusChanged(oldFocus, newFocus);
             }
@@ -561,7 +544,7 @@ public final class ViewTreeObserver {
         // could mutate the list by calling the various add/remove methods. This prevents
         // the array from being modified while we iterate it.
         final CopyOnWriteArrayList<OnGlobalLayoutListener> listeners = mOnGlobalLayoutListeners;
-        if (listeners != null && listeners.size() > 0) {
+        if (listeners != null) {
             for (OnGlobalLayoutListener listener : listeners) {
                 listener.onGlobalLayout();
             }
@@ -577,17 +560,15 @@ public final class ViewTreeObserver {
      * @return True if the current draw should be canceled and resceduled, false otherwise.
      */
     public final boolean dispatchOnPreDraw() {
-        // NOTE: we *must* clone the listener list to perform the dispatching.
-        // The clone is a safe guard against listeners that
+        // NOTE: because of the use of CopyOnWriteArrayList, we *must* use an iterator to
+        // perform the dispatching. The iterator is a safe guard against listeners that
         // could mutate the list by calling the various add/remove methods. This prevents
-        // the array from being modified while we process it.
+        // the array from being modified while we iterate it.
         boolean cancelDraw = false;
-        if (mOnPreDrawListeners != null && mOnPreDrawListeners.size() > 0) {
-            final ArrayList<OnPreDrawListener> listeners =
-                    (ArrayList<OnPreDrawListener>) mOnPreDrawListeners.clone();
-            int numListeners = listeners.size();
-            for (int i = 0; i < numListeners; ++i) {
-                cancelDraw |= !(listeners.get(i).onPreDraw());
+        final CopyOnWriteArrayList<OnPreDrawListener> listeners = mOnPreDrawListeners;
+        if (listeners != null) {
+            for (OnPreDrawListener listener : listeners) {
+                cancelDraw |= !listener.onPreDraw();
             }
         }
         return cancelDraw;
@@ -599,9 +580,13 @@ public final class ViewTreeObserver {
      * @param inTouchMode True if the touch mode is now enabled, false otherwise.
      */
     final void dispatchOnTouchModeChanged(boolean inTouchMode) {
+        // NOTE: because of the use of CopyOnWriteArrayList, we *must* use an iterator to
+        // perform the dispatching. The iterator is a safe guard against listeners that
+        // could mutate the list by calling the various add/remove methods. This prevents
+        // the array from being modified while we iterate it.
         final CopyOnWriteArrayList<OnTouchModeChangeListener> listeners =
                 mOnTouchModeChangeListeners;
-        if (listeners != null && listeners.size() > 0) {
+        if (listeners != null) {
             for (OnTouchModeChangeListener listener : listeners) {
                 listener.onTouchModeChanged(inTouchMode);
             }
@@ -617,7 +602,7 @@ public final class ViewTreeObserver {
         // could mutate the list by calling the various add/remove methods. This prevents
         // the array from being modified while we iterate it.
         final CopyOnWriteArrayList<OnScrollChangedListener> listeners = mOnScrollChangedListeners;
-        if (listeners != null && listeners.size() > 0) {
+        if (listeners != null) {
             for (OnScrollChangedListener listener : listeners) {
                 listener.onScrollChanged();
             }
@@ -643,7 +628,7 @@ public final class ViewTreeObserver {
         // the array from being modified while we iterate it.
         final CopyOnWriteArrayList<OnComputeInternalInsetsListener> listeners =
                 mOnComputeInternalInsetsListeners;
-        if (listeners != null && listeners.size() > 0) {
+        if (listeners != null) {
             for (OnComputeInternalInsetsListener listener : listeners) {
                 listener.onComputeInternalInsets(inoutInfo);
             }

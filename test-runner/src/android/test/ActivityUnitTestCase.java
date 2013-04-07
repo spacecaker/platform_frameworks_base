@@ -50,6 +50,7 @@ import android.view.Window;
  * <li>{@link android.app.Activity#getTaskId()}</li>
  * <li>{@link android.app.Activity#isTaskRoot()}</li>
  * <li>{@link android.app.Activity#moveTaskToBack(boolean)}</li>
+ * <li>{@link android.app.Activity#setPersistent(boolean)}</li>
  * </ul>
  * 
  * <p>The following methods may be called but will not do anything.  For test purposes, you can use 

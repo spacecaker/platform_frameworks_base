@@ -22,8 +22,6 @@
 #include <unistd.h>
 
 #define LOG_TAG "ObbFile"
-
-#include <utils/Compat.h>
 #include <utils/Log.h>
 #include <utils/ObbFile.h>
 
@@ -69,6 +67,17 @@
     _rc; })
 #endif
 
+/*
+ * Work around situations where off_t is 64-bit and use off64_t in
+ * situations where it's 32-bit.
+ */
+#ifdef OFF_T_IS_64_BIT
+#define my_lseek64 lseek
+typedef off_t my_off64_t;
+#else
+#define my_lseek64 lseek64
+typedef off64_t my_off64_t;
+#endif
 
 namespace android {
 
@@ -116,7 +125,7 @@ bool ObbFile::readFrom(int fd)
 
 bool ObbFile::parseObbFile(int fd)
 {
-    off64_t fileLength = lseek64(fd, 0, SEEK_END);
+    my_off64_t fileLength = my_lseek64(fd, 0, SEEK_END);
 
     if (fileLength < kFooterMinSize) {
         if (fileLength < 0) {
@@ -131,7 +140,7 @@ bool ObbFile::parseObbFile(int fd)
     size_t footerSize;
 
     {
-        lseek64(fd, fileLength - kFooterTagSize, SEEK_SET);
+        my_lseek64(fd, fileLength - kFooterTagSize, SEEK_SET);
 
         char *footer = new char[kFooterTagSize];
         actual = TEMP_FAILURE_RETRY(read(fd, footer, kFooterTagSize));
@@ -162,8 +171,8 @@ bool ObbFile::parseObbFile(int fd)
         }
     }
 
-    off64_t fileOffset = fileLength - footerSize - kFooterTagSize;
-    if (lseek64(fd, fileOffset, SEEK_SET) != fileOffset) {
+    my_off64_t fileOffset = fileLength - footerSize - kFooterTagSize;
+    if (my_lseek64(fd, fileOffset, SEEK_SET) != fileOffset) {
         LOGW("seek %lld failed: %s\n", fileOffset, strerror(errno));
         return false;
     }
@@ -202,10 +211,10 @@ bool ObbFile::parseObbFile(int fd)
 
     memcpy(&mSalt, (unsigned char*)scanBuf + kSaltOffset, sizeof(mSalt));
 
-    size_t packageNameLen = get4LE((unsigned char*)scanBuf + kPackageNameLenOffset);
-    if (packageNameLen == 0
+    uint32_t packageNameLen = get4LE((unsigned char*)scanBuf + kPackageNameLenOffset);
+    if (packageNameLen <= 0
             || packageNameLen > (footerSize - kPackageNameOffset)) {
-        LOGW("bad ObbFile package name length (0x%04zx; 0x%04zx possible)\n",
+        LOGW("bad ObbFile package name length (0x%04x; 0x%04x possible)\n",
                 packageNameLen, footerSize - kPackageNameOffset);
         free(scanBuf);
         return false;
@@ -248,7 +257,7 @@ bool ObbFile::writeTo(int fd)
         return false;
     }
 
-    lseek64(fd, 0, SEEK_END);
+    my_lseek64(fd, 0, SEEK_END);
 
     if (mPackageName.size() == 0 || mVersion == -1) {
         LOGW("tried to write uninitialized ObbFile data\n");

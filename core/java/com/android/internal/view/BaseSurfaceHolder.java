@@ -49,7 +49,6 @@ public abstract class BaseSurfaceHolder implements SurfaceHolder {
     
     int mType = -1;
     final Rect mSurfaceFrame = new Rect();
-    Rect mTmpDirty;
     
     public abstract void onUpdateSurface();
     public abstract void onRelayoutContainer();
@@ -172,16 +171,9 @@ public abstract class BaseSurfaceHolder implements SurfaceHolder {
 
         Canvas c = null;
         if (onAllowLockCanvas()) {
-            if (dirty == null) {
-                if (mTmpDirty == null) {
-                    mTmpDirty = new Rect();
-                }
-                mTmpDirty.set(mSurfaceFrame);
-                dirty = mTmpDirty;
-            }
-
+            Rect frame = dirty != null ? dirty : mSurfaceFrame;
             try {
-                c = mSurface.lockCanvas(dirty);
+                c = mSurface.lockCanvas(frame);
             } catch (Exception e) {
                 Log.e(TAG, "Exception locking surface", e);
             }
@@ -222,12 +214,5 @@ public abstract class BaseSurfaceHolder implements SurfaceHolder {
 
     public Rect getSurfaceFrame() {
         return mSurfaceFrame;
-    }
-
-    public void setSurfaceFrameSize(int width, int height) {
-        mSurfaceFrame.top = 0;
-        mSurfaceFrame.left = 0;
-        mSurfaceFrame.right = width;
-        mSurfaceFrame.bottom = height;
     }
 };

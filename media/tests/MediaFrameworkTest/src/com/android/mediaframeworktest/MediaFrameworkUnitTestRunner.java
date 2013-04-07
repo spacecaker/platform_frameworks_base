@@ -47,7 +47,6 @@ public class MediaFrameworkUnitTestRunner extends InstrumentationTestRunner {
         addMediaMetadataRetrieverStateUnitTests(suite);
         addMediaRecorderStateUnitTests(suite);
         addMediaPlayerStateUnitTests(suite);
-        addMediaScannerUnitTests(suite);
         return suite;
     }
 
@@ -89,9 +88,5 @@ public class MediaFrameworkUnitTestRunner extends InstrumentationTestRunner {
         suite.addTestSuite(MediaPlayerSetAudioStreamTypeStateUnitTest.class);
         suite.addTestSuite(MediaPlayerSetVolumeStateUnitTest.class);
         suite.addTestSuite(MediaPlayerMetadataParserTest.class);
-    }
-
-    private void addMediaScannerUnitTests(TestSuite suite) {
-        suite.addTestSuite(MediaInserterTest.class);
     }
 }

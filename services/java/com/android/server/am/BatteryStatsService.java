@@ -16,12 +16,9 @@
 
 package com.android.server.am;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothHeadset;
-import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.Parcel;
@@ -49,8 +46,6 @@ public final class BatteryStatsService extends IBatteryStats.Stub {
     
     final BatteryStatsImpl mStats;
     Context mContext;
-    private boolean mBluetoothPendingStats;
-    private BluetoothHeadset mBluetoothHeadset;
 
     BatteryStatsService(String filename) {
         mStats = new BatteryStatsImpl(filename);
@@ -292,44 +287,22 @@ public final class BatteryStatsService extends IBatteryStats.Stub {
 
     public void noteBluetoothOn() {
         enforceCallingPermission();
-        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-        if (adapter != null) {
-            adapter.getProfileProxy(mContext, mBluetoothProfileServiceListener,
-                                    BluetoothProfile.HEADSET);
-        }
+        BluetoothHeadset headset = new BluetoothHeadset(mContext, null);
         synchronized (mStats) {
-            if (mBluetoothHeadset != null) {
-                mStats.noteBluetoothOnLocked();
-                mStats.setBtHeadset(mBluetoothHeadset);
-            } else {
-                mBluetoothPendingStats = true;
-            }
+            mStats.noteBluetoothOnLocked();
+            mStats.setBtHeadset(headset);
         }
     }
-
-    private BluetoothProfile.ServiceListener mBluetoothProfileServiceListener =
-        new BluetoothProfile.ServiceListener() {
-        public void onServiceConnected(int profile, BluetoothProfile proxy) {
-            mBluetoothHeadset = (BluetoothHeadset) proxy;
-            synchronized (mStats) {
-                if (mBluetoothPendingStats) {
-                    mStats.noteBluetoothOnLocked();
-                    mStats.setBtHeadset(mBluetoothHeadset);
-                    mBluetoothPendingStats = false;
-                }
-            }
-        }
-
-        public void onServiceDisconnected(int profile) {
-            mBluetoothHeadset = null;
-        }
-    };
-
+    
     public void noteBluetoothOff() {
         enforceCallingPermission();
+        BluetoothHeadset headset = null;
         synchronized (mStats) {
-            mBluetoothPendingStats = false;
             mStats.noteBluetoothOffLocked();
+            headset = mStats.getBtHeadset();
+        }
+        if (headset != null) {
+            headset.close();
         }
     }
     
@@ -417,13 +390,6 @@ public final class BatteryStatsService extends IBatteryStats.Stub {
         }
     }
 
-    public void noteNetworkInterfaceType(String iface, int type) {
-        enforceCallingPermission();
-        synchronized (mStats) {
-            mStats.noteNetworkInterfaceTypeLocked(iface, type);
-        }
-    }
-
     public boolean isOnBattery() {
         return mStats.isOnBattery();
     }
@@ -454,27 +420,9 @@ public final class BatteryStatsService extends IBatteryStats.Stub {
                 Binder.getCallingPid(), Binder.getCallingUid(), null);
     }
     
-    private void dumpHelp(PrintWriter pw) {
-        pw.println("Battery stats (batteryinfo) dump options:");
-        pw.println("  [--checkin] [--reset] [--write] [-h]");
-        pw.println("  --checkin: format output for a checkin report.");
-        pw.println("  --reset: reset the stats, clearing all current data.");
-        pw.println("  --write: force write current collected stats to disk.");
-        pw.println("  -h: print this help text.");
-    }
-
     @Override
     protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.DUMP)
-                != PackageManager.PERMISSION_GRANTED) {
-            pw.println("Permission Denial: can't dump BatteryStats from from pid="
-                    + Binder.getCallingPid() + ", uid=" + Binder.getCallingUid()
-                    + " without permission " + android.Manifest.permission.DUMP);
-            return;
-        }
-
         boolean isCheckin = false;
-        boolean noOutput = false;
         if (args != null) {
             for (String arg : args) {
                 if ("--checkin".equals(arg)) {
@@ -483,27 +431,9 @@ public final class BatteryStatsService extends IBatteryStats.Stub {
                     synchronized (mStats) {
                         mStats.resetAllStatsLocked();
                         pw.println("Battery stats reset.");
-                        noOutput = true;
                     }
-                } else if ("--write".equals(arg)) {
-                    synchronized (mStats) {
-                        mStats.writeSyncLocked();
-                        pw.println("Battery stats written.");
-                        noOutput = true;
-                    }
-                } else if ("-h".equals(arg)) {
-                    dumpHelp(pw);
-                    return;
-                } else if ("-a".equals(arg)) {
-                    // fall through
-                } else {
-                    pw.println("Unknown option: " + arg);
-                    dumpHelp(pw);
                 }
             }
-        }
-        if (noOutput) {
-            return;
         }
         if (isCheckin) {
             List<ApplicationInfo> apps = mContext.getPackageManager().getInstalledApplications(0);

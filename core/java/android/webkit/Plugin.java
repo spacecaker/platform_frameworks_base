@@ -27,23 +27,12 @@ import android.webkit.WebView;
  * Represents a plugin (Java equivalent of the PluginPackageAndroid
  * C++ class in libs/WebKitLib/WebKit/WebCore/plugins/android/)
  *
- * @hide
  * @deprecated This interface was intended to be used by Gears. Since Gears was
  * deprecated, so is this class.
  */
 @Deprecated
 public class Plugin {
-    /*
-     * @hide
-     * @deprecated This interface was intended to be used by Gears. Since Gears was
-     * deprecated, so is this class.
-     */
     public interface PreferencesClickHandler {
-        /*
-         * @hide
-         * @deprecated This interface was intended to be used by Gears. Since Gears was
-         * deprecated, so is this class.
-         */
         public void handleClickEvent(Context context);
     }
 
@@ -54,7 +43,6 @@ public class Plugin {
     private PreferencesClickHandler mHandler;
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -71,7 +59,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -81,7 +68,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -91,7 +77,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -101,7 +86,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -111,7 +95,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -121,7 +104,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -131,7 +113,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -141,7 +122,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -151,7 +131,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -161,7 +140,6 @@ public class Plugin {
     }
 
     /**
-     * @hide
      * @deprecated This interface was intended to be used by Gears. Since Gears was
      * deprecated, so is this class.
      */
@@ -173,7 +151,6 @@ public class Plugin {
    /**
     * Invokes the click handler for this plugin.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -187,7 +164,6 @@ public class Plugin {
    /**
     * Default click handler. The plugins should implement their own.
     *
-    * @hide
     * @deprecated This interface was intended to be used by Gears. Since Gears was
     * deprecated, so is this class.
     */
@@ -209,7 +185,6 @@ public class Plugin {
             }
         }
         /**
-         * @hide
          * @deprecated This interface was intended to be used by Gears. Since Gears was
          * deprecated, so is this class.
          */

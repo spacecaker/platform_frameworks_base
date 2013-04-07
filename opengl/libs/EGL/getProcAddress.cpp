@@ -20,7 +20,6 @@
 
 #include <cutils/log.h>
 
-#include "egldefs.h"
 #include "hooks.h"
 
 // ----------------------------------------------------------------------------
@@ -35,7 +34,7 @@ namespace android {
 #undef GL_EXTENSION_LIST
 #undef GET_TLS
 
-#if USE_FAST_TLS_KEY
+#if defined(__arm__)
 
     #ifdef HAVE_ARM_TLS_REGISTER
         #define GET_TLS(reg) \
@@ -78,7 +77,7 @@ namespace android {
 
     #define GL_EXTENSION(_n)
 
-    #warning "eglGetProcAddress() partially supported"
+    #warning "eglGetProcAddress() partially supported on this architecture"
 
 #endif
 
