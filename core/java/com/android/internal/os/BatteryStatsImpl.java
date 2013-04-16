@@ -984,7 +984,7 @@ public final class BatteryStatsImpl extends BatteryStats {
     
     private final Map<String, KernelWakelockStats> readKernelWakelockStats() {
         
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[4096];
         int len;
         
         try {
@@ -1031,11 +1031,9 @@ public final class BatteryStatsImpl extends BatteryStats {
                 for (endIndex=startIndex; 
                         endIndex < len && wlBuffer[endIndex] != '\n' && wlBuffer[endIndex] != '\0'; 
                         endIndex++);
-                endIndex++; // endIndex is an exclusive upper bound.
-                // Don't go over the end of the buffer, Process.parseProcLine might
-                // write to wlBuffer[endIndex]
-                if (endIndex >= (len - 1) ) {
-                    return m;
+                // Don't go over the end of the buffer
+                if (endIndex < len) {
+                    endIndex++; // endIndex is an exclusive upper bound.
                 }
 
                 String[] nameStringArray = mProcWakelocksName;
@@ -1182,10 +1180,6 @@ public final class BatteryStatsImpl extends BatteryStats {
             mBluetoothPingStart = getCurrentBluetoothPingCount();
         }
         mBtHeadset = headset;
-    }
-
-    public BluetoothHeadset getBtHeadset() {
-        return mBtHeadset;
     }
 
     int mChangedStates = 0;
@@ -1827,7 +1821,6 @@ public final class BatteryStatsImpl extends BatteryStats {
                     bin = DATA_CONNECTION_HSUPA;
                     break;
                 case TelephonyManager.NETWORK_TYPE_HSPA:
-                case TelephonyManager.NETWORK_TYPE_HSPAP:
                     bin = DATA_CONNECTION_HSPA;
                     break;
                 case TelephonyManager.NETWORK_TYPE_IDEN:

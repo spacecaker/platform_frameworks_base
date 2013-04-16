@@ -129,11 +129,6 @@ jint android_os_Process_myTid(JNIEnv* env, jobject clazz)
     return androidGetTid();
 }
 
-jint android_os_Process_getPpid(JNIEnv* env, jobject clazz)
-{
-    return getppid();
-}
-
 jint android_os_Process_getUidForName(JNIEnv* env, jobject clazz, jstring name)
 {
     if (name == NULL) {
@@ -909,7 +904,6 @@ static const JNINativeMethod methods[] = {
     {"getFreeMemory", "()J", (void*)android_os_Process_getFreeMemory},
     {"readProcLines", "(Ljava/lang/String;[Ljava/lang/String;[J)V", (void*)android_os_Process_readProcLines},
     {"getPids", "(Ljava/lang/String;[I)[I", (void*)android_os_Process_getPids},
-    {"getPpid", "()I", (void*)android_os_Process_getPpid},
     {"readProcFile", "(Ljava/lang/String;[I[Ljava/lang/String;[J[F)Z", (void*)android_os_Process_readProcFile},
     {"parseProcLine", "([BII[I[Ljava/lang/String;[J[F)Z", (void*)android_os_Process_parseProcLine},
     {"getElapsedCpuTime", "()J", (void*)android_os_Process_getElapsedCpuTime},

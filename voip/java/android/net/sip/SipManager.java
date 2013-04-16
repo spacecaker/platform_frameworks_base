@@ -471,10 +471,6 @@ public class SipManager {
         try {
             ISipSession session = mSipService.createSession(localProfile,
                     createRelay(listener, localProfile.getUriString()));
-            if (session == null) {
-                throw new SipException(
-                        "SipService.createSession() returns null");
-            }
             session.register(expiryTime);
         } catch (RemoteException e) {
             throw new SipException("register()", e);
@@ -496,10 +492,6 @@ public class SipManager {
         try {
             ISipSession session = mSipService.createSession(localProfile,
                     createRelay(listener, localProfile.getUriString()));
-            if (session == null) {
-                throw new SipException(
-                        "SipService.createSession() returns null");
-            }
             session.unregister();
         } catch (RemoteException e) {
             throw new SipException("unregister()", e);
@@ -521,7 +513,7 @@ public class SipManager {
         try {
             String callId = getCallId(incomingCallIntent);
             ISipSession s = mSipService.getPendingSession(callId);
-            return ((s == null) ? null : new SipSession(s));
+            return new SipSession(s);
         } catch (RemoteException e) {
             throw new SipException("getSessionFor()", e);
         }

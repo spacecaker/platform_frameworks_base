@@ -36,7 +36,6 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.Surface;
 
 /**
  * An implementation of SurfaceView that uses the dedicated surface for
@@ -1390,12 +1389,7 @@ public class GLSurfaceView extends SurfaceView implements SurfaceHolder.Callback
         }
 
         private boolean readyToDraw() {
-            boolean isSurfaceValid = false;
-            if(mHasSurface){
-                Surface sur = getHolder().getSurface();
-                if(sur.isValid())isSurfaceValid = true;
-            }
-            return (!mPaused) && isSurfaceValid
+            return (!mPaused) && mHasSurface
                 && (mWidth > 0) && (mHeight > 0)
                 && (mRequestRender || (mRenderMode == RENDERMODE_CONTINUOUSLY));
         }

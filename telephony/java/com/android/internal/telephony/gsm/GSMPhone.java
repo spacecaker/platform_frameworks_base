@@ -968,9 +968,7 @@ public class GSMPhone extends PhoneBase {
     }
 
     public void getCallWaiting(Message onComplete) {
-        // As per 3GPP TS 24.083, section 1.6 UE doesn't need to send service
-        // class parameter in call waiting interrogation to network
-        mCM.queryCallWaiting(CommandsInterface.SERVICE_CLASS_NONE, onComplete);
+        mCM.queryCallWaiting(CommandsInterface.SERVICE_CLASS_VOICE, onComplete);
     }
 
     public void setCallWaiting(boolean enable, Message onComplete) {
@@ -1499,9 +1497,5 @@ public class GSMPhone extends PhoneBase {
     public void setCellBroadcastSmsConfig(int[] configValuesArray, Message response) {
         Log.e(LOG_TAG, "[GSMPhone] setCellBroadcastSmsConfig() is obsolete; use SmsManager");
         response.sendToTarget();
-    }
-
-    public boolean isCspPlmnEnabled() {
-        return mSIMRecords.isCspPlmnEnabled();
     }
 }

@@ -59,7 +59,6 @@ import android.util.EventLog;
 import android.util.Log;
 import android.util.Config;
 import com.android.internal.app.IBatteryStats;
-import com.android.internal.app.ThemeUtils;
 
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -201,8 +200,6 @@ public class WifiStateTracker extends NetworkStateTracker {
 
     public static final int SUPPL_SCAN_HANDLING_NORMAL = 1;
     public static final int SUPPL_SCAN_HANDLING_LIST_ONLY = 2;
-
-    private Context mUiContext;
 
     private WifiMonitor mWifiMonitor;
     private WifiInfo mWifiInfo;
@@ -423,13 +420,6 @@ public class WifiStateTracker extends NetworkStateTracker {
                     }
                 }
             },new IntentFilter(ACTION_DHCP_RENEW));
-
-        ThemeUtils.registerThemeChangeReceiver(mContext, new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                mUiContext = null;
-            }
-        });
 
         PowerManager powerManager = (PowerManager)mContext.getSystemService(Context.POWER_SERVICE);
         mDhcpRenewWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG);
@@ -982,9 +972,7 @@ public class WifiStateTracker extends NetworkStateTracker {
                     resetConnections(true);
                 }
                 // When supplicant dies, kill the DHCP thread
-                if (mDhcpTarget != null) {
-                    mDhcpTarget.getLooper().quit();
-                }
+                mDhcpTarget.getLooper().quit();
 
                 mContext.removeStickyBroadcast(new Intent(WifiManager.NETWORK_STATE_CHANGED_ACTION));
                 if (ActivityManagerNative.isSystemReady()) {
@@ -1456,10 +1444,8 @@ public class WifiStateTracker extends NetworkStateTracker {
         NetworkUtils.resetConnections(mInterfaceName);
 
         // Stop DHCP
-        if (mDhcpTarget != null) {
-            mDhcpTarget.setCancelCallback(true);
-            mDhcpTarget.removeMessages(EVENT_DHCP_START);
-        }
+        mDhcpTarget.setCancelCallback(true);
+        mDhcpTarget.removeMessages(EVENT_DHCP_START);
 
         if (!NetworkUtils.stopDhcp(mInterfaceName)) {
             Log.e(TAG, "Could not stop DHCP");
@@ -1530,7 +1516,7 @@ public class WifiStateTracker extends NetworkStateTracker {
 
             String[] lines = reply.split("\n");
             for (String line : lines) {
-                String[] prop = line.split(" *= *", 2);
+                String[] prop = line.split(" *= *");
                 if (prop.length < 2)
                     continue;
                 String name = prop[0];
@@ -1565,10 +1551,6 @@ public class WifiStateTracker extends NetworkStateTracker {
      */
     private synchronized void requestPolledInfo(WifiInfo info, boolean polling)
     {
-        if (polling && info.getBSSID() == null) {
-            Log.w(TAG, "Skip RssiApprox, not connected...");
-            return;
-        }
         int newRssi = (polling ? getRssiApprox() : getRssi());
         if (newRssi != -1 && -200 < newRssi && newRssi < 256) { // screen out invalid values
             /* some implementations avoid negative values by adding 256
@@ -1729,24 +1711,6 @@ public class WifiStateTracker extends NetworkStateTracker {
      */
     public synchronized boolean unloadDriver() {
         return WifiNative.unloadDriver();
-    }
-
-    /**
-     * Load the Hotspot driver and firmware
-     *
-     * @return {@code true} if the operation succeeds, {@code false} otherwise
-     */
-    public synchronized boolean loadHotspotDriver() {
-        return WifiNative.loadHotspotDriver();
-    }
-
-    /**
-     * Unload the Hotspot driver and firmware
-     *
-     * @return {@code true} if the operation succeeds, {@code false} otherwise
-     */
-    public synchronized boolean unloadHotspotDriver() {
-        return WifiNative.unloadHotspotDriver();
     }
 
     /**
@@ -2058,7 +2022,7 @@ public class WifiStateTracker extends NetworkStateTracker {
         if (mWifiState.get() != WIFI_STATE_ENABLED || isDriverStopped()) {
             return -1;
         }
-        return WifiNative.getRssiCommand();
+        return WifiNative.getRssiApproxCommand();
     }
 
     /**
@@ -2409,7 +2373,7 @@ public class WifiStateTracker extends NetworkStateTracker {
             CharSequence details = mContext.getResources().getQuantityText(
                     com.android.internal.R.plurals.wifi_available_detailed, numNetworks);
             mNotification.tickerText = title;
-            mNotification.setLatestEventInfo(getUiContext(), title, details, mNotification.contentIntent);
+            mNotification.setLatestEventInfo(mContext, title, details, mNotification.contentIntent);
             
             mNotificationRepeatTime = System.currentTimeMillis() + NOTIFICATION_REPEAT_DELAY_MS;
 
@@ -2440,14 +2404,7 @@ public class WifiStateTracker extends NetworkStateTracker {
         mNotificationRepeatTime = 0;
         mNumScansSinceNetworkStateChange = 0;
     }
-
-    private Context getUiContext() {
-        if (mUiContext == null) {
-            mUiContext = ThemeUtils.createUiContext(mContext);
-        }
-        return mUiContext != null ? mUiContext : mContext;
-    }
-
+    
     @Override
     public String toString() {
         StringBuffer sb = new StringBuffer();
@@ -2639,10 +2596,6 @@ public class WifiStateTracker extends NetworkStateTracker {
         }
 
         private void setDhcpRenewalAlarm(long leaseDuration) {
-            //Skip renewal if we're on an infinite lease
-            if (leaseDuration < 0) {
-                return;
-            }
             //Do it a bit earlier than half the lease duration time
             //to beat the native DHCP client and avoid extra packets
             //48% for one hour lease time = 29 minutes
@@ -2656,7 +2609,7 @@ public class WifiStateTracker extends NetworkStateTracker {
         }
 
     }
-
+    
     private void checkUseStaticIp() {
         mUseStaticIp = false;
         final ContentResolver cr = mContext.getContentResolver();

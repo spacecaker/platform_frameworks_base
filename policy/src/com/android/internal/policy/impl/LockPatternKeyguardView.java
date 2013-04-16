@@ -17,7 +17,6 @@
 package com.android.internal.policy.impl;
 
 import com.android.internal.R;
-import com.android.internal.app.ThemeUtils;
 import com.android.internal.telephony.IccCard;
 import com.android.internal.widget.LockPatternUtils;
 
@@ -29,7 +28,6 @@ import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.app.AlertDialog;
 import android.app.admin.DevicePolicyManager;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
@@ -41,7 +39,6 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.os.SystemProperties;
-import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -81,8 +78,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
     private View mLockScreen;
     private View mUnlockScreen;
 
-    private Context mUiContext;
-
     private boolean mScreenOn = false;
     private boolean mEnableFallback = false; // assume no fallback UI until we know better
 
@@ -94,7 +89,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
 
     private boolean mRequiresSim;
 
-    private boolean mLockedButNotYetSecured = false;
 
     /**
      * Either a lock screen (an informational keyguard screen), or an unlock
@@ -115,11 +109,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
          * Unlock by drawing a pattern.
          */
         Pattern,
-
-        /**
-         * Unlock by swiping a finger.
-         */
-        Finger,
 
         /**
          * Unlock by entering a sim pin.
@@ -148,11 +137,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
     private Mode mMode = Mode.LockScreen;
 
     /**
-     * Whether the lockscreen should be disabled if security is on
-     */
-    private boolean mLockscreenDisableOnSecurity;
-
-    /**
      * Keeps track of what mode the current unlock screen is (cached from most recent computation in
      * {@link #getUnlockMode}).
      */
@@ -178,24 +162,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
      * The current configuration.
      */
     private Configuration mConfiguration;
-
-    /**
-     * Used to dismiss the timeout dialog
-     */
-    private AlertDialog mTimeoutDialog;
-
-
-    private Runnable mRecreateRunnable = new Runnable() {
-        public void run() {
-            recreateScreens();
-        }
-    };
-
-    private BroadcastReceiver mThemeChangeReceiver = new BroadcastReceiver() {
-        public void onReceive(Context context, Intent intent) {
-            mUiContext = null;
-        }
-    };
 
     /**
      * @return Whether we are stuck on the lock screen because the sim is
@@ -230,38 +196,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
         mUpdateMonitor = updateMonitor;
         mLockPatternUtils = lockPatternUtils;
         mWindowController = controller;
-        mTimeoutDialog = null;
-
-        // By design, this situation should never happen.
-        // If finger lock is in use, we should only allow the finger settings menu
-        // to delete all enrolled fingers. Other applications, like TSMDemo, should
-        // not get access to the database.
-        //
-        // Simply disable the finger key guard since it will fail to work in this case.
-        if (mLockPatternUtils.isLockFingerEnabled() && !mLockPatternUtils.savedFingerExists()) {
-            mLockPatternUtils.setLockFingerEnabled(false);
-        }
-
-        int LockscreenDisableOnSecurityValue = Settings.System.getInt(
-                mContext.getContentResolver(), Settings.System.LOCKSCREEN_DISABLE_ON_SECURITY, 3);
-
-        if (LockscreenDisableOnSecurityValue == 3) {
-            // We don't have the option set, check if pattern security is
-            // enabled and set the option accordingly
-            final boolean usingLockPattern = mLockPatternUtils.isLockPatternEnabled();
-
-            if (usingLockPattern) {
-                Settings.System.putInt(mContext.getContentResolver(),
-                        Settings.System.LOCKSCREEN_DISABLE_ON_SECURITY, 1);
-                LockscreenDisableOnSecurityValue = 1;
-            } else {
-                Settings.System.putInt(mContext.getContentResolver(),
-                        Settings.System.LOCKSCREEN_DISABLE_ON_SECURITY, 0);
-                LockscreenDisableOnSecurityValue = 0;
-            }
-        }
-
-        mLockscreenDisableOnSecurity = LockscreenDisableOnSecurityValue == 1;
 
         mMode = getInitialMode();
 
@@ -284,10 +218,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                 if (stuckOnLockScreenBecauseSimMissing()
                          || (simState == IccCard.State.PUK_REQUIRED)){
                     // stuck on lock screen when sim missing or puk'd
-
-                    // Clear IsSecure() override flag if we have entered a bad
-                    // SIM state.
-                    LockPatternKeyguardView.this.mLockedButNotYetSecured = false;
                     return;
                 }
                 if (!isSecure()) {
@@ -295,13 +225,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                 } else {
                     updateScreen(Mode.UnlockScreen);
                 }
-
-                // Modifying this flag state before now would cause IsSecure()
-                // to fail to short circuit (if flag were set) as intended,
-                // causing the keyguard to proceed to the unlock screen even if
-                // in the interstital locked-but-not-yet-secured state. Clearing
-                // now so that subsequent operations proceed without override.
-                LockPatternKeyguardView.this.mLockedButNotYetSecured = false;
             }
 
             public void forgotPattern(boolean isForgotten) {
@@ -316,20 +239,12 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
             }
 
             public boolean isVerifyUnlockOnly() {
-                // This is a good place to dismiss the timeout dialog if there is one.
-                if (mTimeoutDialog != null) {
-                    if (mTimeoutDialog.isShowing()) {
-                        mTimeoutDialog.dismiss();
-                    }
-                    mTimeoutDialog = null;
-                }
                 return mIsVerifyUnlockOnly;
             }
 
             public void recreateMe(Configuration config) {
                 mConfiguration = config;
-                removeCallbacks(mRecreateRunnable);
-                post(mRecreateRunnable);
+                recreateScreens();
             }
 
             public void takeEmergencyCallAction() {
@@ -369,13 +284,11 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                     " (enableFallback=" + mEnableFallback + ")");
                 final boolean usingLockPattern = mLockPatternUtils.getKeyguardStoredPasswordQuality()
                         == DevicePolicyManager.PASSWORD_QUALITY_SOMETHING;
-                final boolean usingLockFinger = mLockPatternUtils.getKeyguardStoredPasswordQuality()
-                        == DevicePolicyManager.PASSWORD_QUALITY_FINGER;
-                if ((usingLockPattern || usingLockFinger) && mEnableFallback && failedAttempts ==
+                if (usingLockPattern && mEnableFallback && failedAttempts ==
                         (LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
                                 - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT)) {
                     showAlmostAtAccountLoginDialog();
-                } else if ((usingLockPattern || usingLockFinger) && mEnableFallback
+                } else if (usingLockPattern && mEnableFallback
                         && failedAttempts >= LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET) {
                     mLockPatternUtils.setPermanentlyLocked(true);
                     updateScreen(mMode);
@@ -498,7 +411,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
 
     @Override
     public void onScreenTurnedOff() {
-        Log.d(TAG, "onScreenTurnedOff()");
         mScreenOn = false;
         mForgotPattern = false;
         if (mMode == Mode.LockScreen) {
@@ -510,7 +422,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
 
     @Override
     public void onScreenTurnedOn() {
-        Log.d(TAG, "onScreenTurnedOn()");
         mScreenOn = true;
         if (mMode == Mode.LockScreen) {
            ((KeyguardScreen) mLockScreen).onResume();
@@ -549,20 +460,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
         recreateLockScreen();
         recreateUnlockScreen();
         updateScreen(mMode);
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        ThemeUtils.registerThemeChangeReceiver(mContext, mThemeChangeReceiver);
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        removeCallbacks(mRecreateRunnable);
-        mContext.unregisterReceiver(mThemeChangeReceiver);
-        mUiContext = null;
-        super.onDetachedFromWindow();
     }
 
     @Override
@@ -605,20 +502,11 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
     }
 
     private boolean isSecure() {
-        // If the LockScreen has been enabled via its timeout and the security
-        // lock timeout has not been reached then we are not secure (prevents
-        // the LockScreen exit from immediately invoking the UnlockScreen)
-        if (mLockedButNotYetSecured)
-            return false;
-
         UnlockMode unlockMode = getUnlockMode();
         boolean secure = false;
         switch (unlockMode) {
             case Pattern:
                 secure = mLockPatternUtils.isLockPatternEnabled();
-                break;
-            case Finger:
-                secure = mLockPatternUtils.isLockFingerEnabled();
                 break;
             case SimPin:
                 secure = mUpdateMonitor.getSimState() == IccCard.State.PIN_REQUIRED
@@ -634,31 +522,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                 throw new IllegalStateException("unknown unlock mode " + unlockMode);
         }
         return secure;
-    }
-
-    public void onLockedButNotSecured(boolean lockedButNotSecured) {
-        // Setting the flag ensures that IsSecure() will short-circuit and
-        // report false
-        mLockedButNotYetSecured = lockedButNotSecured;
-
-        if (!lockedButNotSecured) {
-            // At this point we are security locking the phone
-            // So get the initialMode and set it, if it's different
-            // to current mode.
-            // getInitialMode() handles, if there should be an slider-
-            // lock in front of security lock.
-            Mode initialMode = getInitialMode();
-            if (mMode != initialMode) {
-                updateScreen(initialMode);
-            }
-        } else if (lockedButNotSecured && mMode != Mode.LockScreen) {
-            // If lockedButNotSecured is enabled, frob the screen to lock
-            updateScreen(Mode.LockScreen);
-        } else {
-            if (DEBUG_CONFIGURATION)
-                Log.v(TAG, "onLockedButNotSecured() : nothing to do");
-        }
-
     }
 
     private void updateScreen(final Mode mode) {
@@ -728,18 +591,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                 "createUnlockScreenFor(" + unlockMode + "): mEnableFallback=" + mEnableFallback);
             view.setEnableFallback(mEnableFallback);
             unlockView = view;
-        } else if (unlockMode == UnlockMode.Finger) {
-            FingerUnlockScreen view = new FingerUnlockScreen(
-                    mContext,
-                    mConfiguration,
-                    mLockPatternUtils,
-                    mUpdateMonitor,
-                    mKeyguardScreenCallback,
-                    mUpdateMonitor.getFailedAttempts());
-            if (DEBUG) Log.d(TAG,
-                "createUnlockScreenFor(" + unlockMode + "): mEnableFallback=" + mEnableFallback);
-            view.setEnableFallback(mEnableFallback);
-            unlockView = view;
         } else if (unlockMode == UnlockMode.SimPin) {
             unlockView = new SimUnlockScreen(
                     mContext,
@@ -793,9 +644,10 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
         if (stuckOnLockScreenBecauseSimMissing() || (simState == IccCard.State.PUK_REQUIRED)) {
             return Mode.LockScreen;
         } else {
-            // Disable LockScreen if security lockscreen is active and option in CMParts set
-            // Also don't show the slider lockscreen if pin is required
-            if (mLockscreenDisableOnSecurity && isSecure() || (simState == IccCard.State.PIN_REQUIRED)) {
+            // Show LockScreen first for any screen other than Pattern unlock.
+            final boolean usingLockPattern = mLockPatternUtils.getKeyguardStoredPasswordQuality()
+                    == DevicePolicyManager.PASSWORD_QUALITY_SOMETHING;
+            if (isSecure() && usingLockPattern) {
                 return Mode.UnlockScreen;
             } else {
                 return Mode.LockScreen;
@@ -819,14 +671,11 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                 case DevicePolicyManager.PASSWORD_QUALITY_ALPHANUMERIC:
                     currentMode = UnlockMode.Password;
                     break;
-                case DevicePolicyManager.PASSWORD_QUALITY_FINGER:
                 case DevicePolicyManager.PASSWORD_QUALITY_SOMETHING:
                 case DevicePolicyManager.PASSWORD_QUALITY_UNSPECIFIED:
-                    // "forgot pattern" button is only available in the pattern mode and finger mode...
+                    // "forgot pattern" button is only available in the pattern mode...
                     if (mForgotPattern || mLockPatternUtils.isPermanentlyLocked()) {
                         currentMode = UnlockMode.Account;
-                    } else if (mode == DevicePolicyManager.PASSWORD_QUALITY_FINGER) {
-                        currentMode = UnlockMode.Finger;
                     } else {
                         currentMode = UnlockMode.Pattern;
                     }
@@ -840,21 +689,11 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
 
     private void showTimeoutDialog() {
         int timeoutInSeconds = (int) LockPatternUtils.FAILED_ATTEMPT_TIMEOUT_MS / 1000;
-        String message;
-
-        if (mUnlockScreenMode == UnlockMode.Finger) {
-            message = mContext.getString(
-                R.string.lockscreen_too_many_failed_fingers_dialog_message,
-                mUpdateMonitor.getFailedAttempts(),
-                timeoutInSeconds);
-        } else {
-            message = mContext.getString(
+        String message = mContext.getString(
                 R.string.lockscreen_too_many_failed_attempts_dialog_message,
                 mUpdateMonitor.getFailedAttempts(),
                 timeoutInSeconds);
-        }
-
-        final AlertDialog dialog = new AlertDialog.Builder(getUiContext())
+        final AlertDialog dialog = new AlertDialog.Builder(mContext)
                 .setTitle(null)
                 .setMessage(message)
                 .setNeutralButton(R.string.ok, null)
@@ -866,38 +705,18 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                     WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
                     WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
         }
-        mTimeoutDialog = dialog;
         dialog.show();
-    }
-
-    private Context getUiContext() {
-        if (mUiContext == null) {
-            mUiContext = ThemeUtils.createUiContext(mContext);
-        }
-        return mUiContext != null ? mUiContext : mContext;
     }
 
     private void showAlmostAtAccountLoginDialog() {
         int timeoutInSeconds = (int) LockPatternUtils.FAILED_ATTEMPT_TIMEOUT_MS / 1000;
-        String message;
-
-        if (mUnlockScreenMode == UnlockMode.Finger) {
-            message = mContext.getString(
-                R.string.lockscreen_failed_fingers_almost_glogin,
-                LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
-                - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
-                LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
-                timeoutInSeconds);
-        } else {
-            message = mContext.getString(
+        String message = mContext.getString(
                 R.string.lockscreen_failed_attempts_almost_glogin,
                 LockPatternUtils.FAILED_ATTEMPTS_BEFORE_RESET
                 - LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
                 LockPatternUtils.FAILED_ATTEMPTS_BEFORE_TIMEOUT,
                 timeoutInSeconds);
-        }
-
-        final AlertDialog dialog = new AlertDialog.Builder(getUiContext())
+        final AlertDialog dialog = new AlertDialog.Builder(mContext)
                 .setTitle(null)
                 .setMessage(message)
                 .setNeutralButton(R.string.ok, null)
@@ -909,7 +728,6 @@ public class LockPatternKeyguardView extends KeyguardViewBase {
                     WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
                     WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
         }
-        mTimeoutDialog = dialog;
         dialog.show();
     }
 

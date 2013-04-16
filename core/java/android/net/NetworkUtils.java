@@ -155,10 +155,4 @@ public class NetworkUtils {
      * {@hide}
      */
     public native static boolean runDhcpRenew(String interfaceName, DhcpInfo ipInfo);
-
-    /**
-     * {@hide}
-     */
-    public native static int addRoutingRule(String param1, String param2, String param3, int param4);
-
 }

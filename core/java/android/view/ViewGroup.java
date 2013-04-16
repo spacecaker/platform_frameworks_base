@@ -64,7 +64,7 @@ import java.util.ArrayList;
  * @attr ref android.R.styleable#ViewGroup_addStatesFromChildren
  * @attr ref android.R.styleable#ViewGroup_descendantFocusability
  */
-public abstract class ViewGroup extends View implements ViewParent, ViewOpacityManager, ViewManager {
+public abstract class ViewGroup extends View implements ViewParent, ViewManager {
     private static final boolean DBG = false;
 
     /**
@@ -3318,26 +3318,9 @@ public abstract class ViewGroup extends View implements ViewParent, ViewOpacityM
      */
     public void requestTransparentRegion(View child) {
         if (child != null) {
-            child.mTransparentRequests++;
             child.mPrivateFlags |= View.REQUEST_TRANSPARENT_REGIONS;
             if (mParent != null) {
                 mParent.requestTransparentRegion(this);
-            }
-        }
-    }
-
-    /**
-     * {@inheritDoc}
-     * @hide
-     */
-
-    public void releaseTransparentRegion(View child) {
-        if (child != null) {
-            if ((child.mTransparentRequests > 0) && (--child.mTransparentRequests == 0)) {
-                child.mPrivateFlags &= ~View.REQUEST_TRANSPARENT_REGIONS;
-            }
-            if (mParent != null && mParent instanceof ViewOpacityManager) {
-                ((ViewOpacityManager) mParent).releaseTransparentRegion(this);
             }
         }
     }

@@ -16,7 +16,6 @@
 
 package com.android.layoutlib.bridge.android;
 
-import com.android.ide.common.rendering.api.DeclareStyleableResourceValue;
 import com.android.ide.common.rendering.api.LayoutLog;
 import com.android.ide.common.rendering.api.RenderResources;
 import com.android.ide.common.rendering.api.ResourceValue;
@@ -24,10 +23,10 @@ import com.android.ide.common.rendering.api.StyleResourceValue;
 import com.android.internal.util.XmlUtils;
 import com.android.layoutlib.bridge.Bridge;
 import com.android.layoutlib.bridge.BridgeConstants;
-import com.android.layoutlib.bridge.impl.ParserFactory;
 import com.android.layoutlib.bridge.impl.ResourceHelper;
 import com.android.resources.ResourceType;
 
+import org.kxml2.io.KXmlParser;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -41,6 +40,7 @@ import android.view.LayoutInflater_Delegate;
 import android.view.ViewGroup.LayoutParams;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -49,23 +49,18 @@ import java.util.Map;
  */
 public final class BridgeTypedArray extends TypedArray {
 
-    private final BridgeResources mBridgeResources;
-    private final BridgeContext mContext;
-    private final boolean mPlatformFile;
-    private final boolean mPlatformStyleable;
-    private final String mStyleableName;
-
+    private BridgeResources mBridgeResources;
+    private BridgeContext mContext;
     private ResourceValue[] mResourceData;
     private String[] mNames;
+    private final boolean mPlatformFile;
 
     public BridgeTypedArray(BridgeResources resources, BridgeContext context, int len,
-            boolean platformFile, boolean platformStyleable, String styleableName) {
+            boolean platformFile) {
         super(null, null, null, 0);
         mBridgeResources = resources;
         mContext = context;
         mPlatformFile = platformFile;
-        mPlatformStyleable = platformStyleable;
-        mStyleableName = styleableName;
         mResourceData = new ResourceValue[len];
         mNames = new String[len];
     }
@@ -207,18 +202,7 @@ public final class BridgeTypedArray extends TypedArray {
         // Field is not null and is not an integer.
         // Check for possible constants and try to find them.
         // Get the map of attribute-constant -> IntegerValue
-        Map<String, Integer> map = null;
-        if (mPlatformStyleable) {
-            map = Bridge.getEnumValues(mNames[index]);
-        } else if (mStyleableName != null) {
-            // get the styleable matching the resolved name
-            RenderResources res = mContext.getRenderResources();
-            ResourceValue styleable = res.getProjectResource(ResourceType.DECLARE_STYLEABLE,
-                    mStyleableName);
-            if (styleable instanceof DeclareStyleableResourceValue) {
-                map = ((DeclareStyleableResourceValue) styleable).getAttributeValues(mNames[index]);
-            }
-        }
+        Map<String, Integer> map = Bridge.getEnumValues(mNames[index]);
 
         if (map != null) {
             // accumulator to store the value of the 1+ constants.
@@ -330,7 +314,9 @@ public final class BridgeTypedArray extends TypedArray {
         File f = new File(value);
         if (f.isFile()) {
             try {
-                XmlPullParser parser = ParserFactory.create(f);
+                KXmlParser parser = new KXmlParser();
+                parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
+                parser.setInput(new FileInputStream(f), "UTF-8"); //$NON-NLS-1$);
 
                 BridgeXmlBlockParser blockParser = new BridgeXmlBlockParser(
                         parser, mContext, resValue.isFramework());
@@ -374,7 +360,26 @@ public final class BridgeTypedArray extends TypedArray {
      */
     @Override
     public int getInteger(int index, int defValue) {
-        return getInt(index, defValue);
+        if (mResourceData[index] == null) {
+            return defValue;
+        }
+
+        String s = mResourceData[index].getValue();
+
+        if (s != null) {
+            try {
+                return Integer.parseInt(s);
+            } catch (NumberFormatException e) {
+                Bridge.getLog().warning(LayoutLog.TAG_RESOURCES_FORMAT,
+                        String.format(
+                            "\"%s\" in attribute \"%2$s\" cannont be converted to an integer.",
+                            s, mNames[index]), null /*data*/);
+
+                // The default value is returned below.
+            }
+        }
+
+        return defValue;
     }
 
     /**
@@ -412,7 +417,7 @@ public final class BridgeTypedArray extends TypedArray {
             return defValue;
         }
 
-        if (ResourceHelper.parseFloatAttribute(mNames[index], s, mValue, true /*requireUnit*/)) {
+        if (ResourceHelper.stringToFloat(s, mValue)) {
             return mValue.getDimension(mBridgeResources.mMetrics);
         }
 
@@ -539,7 +544,7 @@ public final class BridgeTypedArray extends TypedArray {
             throw new RuntimeException();
         }
 
-        if (ResourceHelper.parseFloatAttribute(mNames[index], s, mValue, true /*requireUnit*/)) {
+        if (ResourceHelper.stringToFloat(s, mValue)) {
             float f = mValue.getDimension(mBridgeResources.mMetrics);
 
             final int res = (int)(f+0.5f);
@@ -577,15 +582,14 @@ public final class BridgeTypedArray extends TypedArray {
             return defValue;
         }
 
-        if (ResourceHelper.parseFloatAttribute(mNames[index], value, mValue,
-                false /*requireUnit*/)) {
+        if (ResourceHelper.stringToFloat(value, mValue)) {
             return mValue.getFraction(base, pbase);
         }
 
         // looks like we were unable to resolve the fraction value
         Bridge.getLog().warning(LayoutLog.TAG_RESOURCES_FORMAT,
                 String.format(
-                    "\"%1$s\" in attribute \"%2$s\" cannot be converted to a fraction.",
+                    "\"%1$s\" in attribute \"%2$s\" cannont be converted to a fraction.",
                     value, mNames[index]), null /*data*/);
 
         return defValue;
@@ -782,8 +786,7 @@ public final class BridgeTypedArray extends TypedArray {
 
         String s = mResourceData[index].getValue();
 
-        return ResourceHelper.parseFloatAttribute(mNames[index], s, outValue,
-                false /*requireUnit*/);
+        return ResourceHelper.stringToFloat(s, outValue);
     }
 
     /**

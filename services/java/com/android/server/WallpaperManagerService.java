@@ -446,7 +446,7 @@ class WallpaperManagerService extends IWallpaperManager.Stub {
         if (name == null) name = "";
         try {
             ParcelFileDescriptor fd = ParcelFileDescriptor.open(WALLPAPER_FILE,
-                    MODE_CREATE|MODE_READ_WRITE|MODE_TRUNCATE);
+                    MODE_CREATE|MODE_READ_WRITE);
             mName = name;
             return fd;
         } catch (FileNotFoundException e) {
@@ -587,8 +587,6 @@ class WallpaperManagerService extends IWallpaperManager.Stub {
                 mIWindowManager.removeWindowToken(mWallpaperConnection.mToken);
             } catch (RemoteException e) {
             }
-            mWallpaperConnection.mService = null;
-            mWallpaperConnection.mEngine = null;
             mWallpaperConnection = null;
         }
     }

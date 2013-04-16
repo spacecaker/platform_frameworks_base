@@ -96,38 +96,6 @@ AudioTrack::AudioTrack(
             0, false, sessionId);
 }
 
-#ifdef USE_KINETO_COMPATIBILITY
-// Really dirty hack to give a Froyo-compatible constructor
-extern "C" AudioTrack *_ZN7android10AudioTrackC1EijiiijPFviPvS1_ES1_ii(
-        AudioTrack *This,
-        int streamType,
-        uint32_t sampleRate,
-        int format,
-        int channels,
-        int frameCount,
-        uint32_t flags,
-        AudioTrack::callback_t cbf,
-        void* user,
-        int notificationFrames,
-        int sessionId);
-extern "C" AudioTrack *_ZN7android10AudioTrackC1EijiiijPFviPvS1_ES1_i(
-        AudioTrack *This,
-        int streamType,
-        uint32_t sampleRate,
-        int format,
-        int channels,
-        int frameCount,
-        uint32_t flags,
-        AudioTrack::callback_t cbf,
-        void* user,
-        int notificationFrames)
-{
-    return _ZN7android10AudioTrackC1EijiiijPFviPvS1_ES1_ii(This,
-        streamType, sampleRate, format, channels,
-        frameCount, flags, cbf, user, notificationFrames, 0);
-}
-#endif
-
 AudioTrack::AudioTrack(
         int streamType,
         uint32_t sampleRate,
@@ -163,42 +131,6 @@ AudioTrack::~AudioTrack()
         IPCThreadState::self()->flushCommands();
     }
 }
-
-#ifdef USE_KINETO_COMPATIBILITY
-// another hack, this time for a Froyo-compatible AudioTrack::set method
-extern "C" status_t _ZN7android10AudioTrack3setEijiiijPFviPvS1_ES1_iRKNS_2spINS_7IMemoryEEEbi(
-        AudioTrack *This,
-        int streamType,
-        uint32_t sampleRate,
-        int format,
-        int channels,
-        int frameCount,
-        uint32_t flags,
-        AudioTrack::callback_t cbf,
-        void* user,
-        int notificationFrames,
-        const sp<IMemory>& sharedBuffer,
-        bool threadCanCallJava,
-        int sessionId);
-extern "C" status_t _ZN7android10AudioTrack3setEijiiijPFviPvS1_ES1_iRKNS_2spINS_7IMemoryEEEb(
-        AudioTrack *This,
-        int streamType,
-        uint32_t sampleRate,
-        int format,
-        int channels,
-        int frameCount,
-        uint32_t flags,
-        AudioTrack::callback_t cbf,
-        void* user,
-        int notificationFrames,
-        const sp<IMemory>& sharedBuffer,
-        bool threadCanCallJava)
-{
-    return _ZN7android10AudioTrack3setEijiiijPFviPvS1_ES1_iRKNS_2spINS_7IMemoryEEEbi(
-        This, streamType, sampleRate, format, channels, frameCount, flags, cbf,
-        user, notificationFrames, sharedBuffer, threadCanCallJava, 0);
-}
-#endif
 
 status_t AudioTrack::set(
         int streamType,
@@ -392,7 +324,7 @@ void AudioTrack::start()
         }
 
         if (mCblk->flags & CBLK_INVALID_MSK) {
-            LOGE("start() track %p invalidated, creating a new one", this);
+            LOGW("start() track %p invalidated, creating a new one", this);
             // no need to clear the invalid flag as this cblk will not be used anymore
             // force new track creation
             status = DEAD_OBJECT;
@@ -400,8 +332,7 @@ void AudioTrack::start()
             status = mAudioTrack->start();
         }
         if (status == DEAD_OBJECT) {
-            LOGE("start() dead IAudioTrack: creating a new one");
-            mSessionId = 0;
+            LOGV("start() dead IAudioTrack: creating a new one");
             status = createTrack(mStreamType, mCblk->sampleRate, mFormat, mChannelCount,
                                  mFrameCount, mFlags, mSharedBuffer, getOutput(), false);
             if (status == NO_ERROR) {
@@ -885,9 +816,8 @@ status_t AudioTrack::obtainBuffer(Buffer* audioBuffer, int32_t waitCount)
                         cblk->lock.unlock();
                         result = mAudioTrack->start();
                         if (result == DEAD_OBJECT) {
-                            LOGE("obtainBuffer() dead IAudioTrack: creating a new one");
+                            LOGW("obtainBuffer() dead IAudioTrack: creating a new one");
 create_new_track:
-                            mSessionId = 0;
                             result = createTrack(mStreamType, cblk->sampleRate, mFormat, mChannelCount,
                                                  mFrameCount, mFlags, mSharedBuffer, getOutput(), false);
                             if (result == NO_ERROR) {

@@ -83,7 +83,6 @@ LOCAL_SRC_FILES += \
 	core/java/android/app/IBackupAgent.aidl \
 	core/java/android/app/IInstrumentationWatcher.aidl \
 	core/java/android/app/INotificationManager.aidl \
-	core/java/android/app/IProfileManager.aidl \
 	core/java/android/app/ISearchManager.aidl \
 	core/java/android/app/ISearchManagerCallback.aidl \
 	core/java/android/app/IServiceConnection.aidl \
@@ -100,9 +99,7 @@ LOCAL_SRC_FILES += \
 	core/java/android/bluetooth/IBluetoothA2dp.aidl \
 	core/java/android/bluetooth/IBluetoothCallback.aidl \
 	core/java/android/bluetooth/IBluetoothHeadset.aidl \
-	core/java/android/bluetooth/IBluetoothHid.aidl \
 	core/java/android/bluetooth/IBluetoothPbap.aidl \
-	core/java/android/bluetooth/IBluetoothNetwork.aidl \
 	core/java/android/content/IContentService.aidl \
 	core/java/android/content/IIntentReceiver.aidl \
 	core/java/android/content/IIntentSender.aidl \
@@ -157,7 +154,6 @@ LOCAL_SRC_FILES += \
 	core/java/com/android/internal/app/IBatteryStats.aidl \
 	core/java/com/android/internal/app/IUsageStats.aidl \
 	core/java/com/android/internal/app/IMediaContainerService.aidl \
-	core/java/com/android/internal/app/IAssetRedirectionManager.aidl \
 	core/java/com/android/internal/appwidget/IAppWidgetService.aidl \
 	core/java/com/android/internal/appwidget/IAppWidgetHost.aidl \
 	core/java/com/android/internal/backup/IBackupTransport.aidl \
@@ -194,8 +190,7 @@ LOCAL_SRC_FILES += \
 	vpn/java/android/net/vpn/IVpnService.aidl \
 	voip/java/android/net/sip/ISipSession.aidl \
 	voip/java/android/net/sip/ISipSessionListener.aidl \
-	voip/java/android/net/sip/ISipService.aidl \
-	core/java/com/authentec/TrueSuiteMobile/RelayReceiverService.aidl
+	voip/java/android/net/sip/ISipService.aidl
 #
 
 
@@ -245,8 +240,6 @@ aidl_files := \
 	frameworks/base/core/java/android/accounts/IAccountAuthenticator.aidl \
 	frameworks/base/core/java/android/accounts/IAccountAuthenticatorResponse.aidl \
 	frameworks/base/core/java/android/app/Notification.aidl \
-	frameworks/base/core/java/android/app/NotificationGroup.aidl \
-	frameworks/base/core/java/android/app/Profile.aidl \
 	frameworks/base/core/java/android/app/PendingIntent.aidl \
 	frameworks/base/core/java/android/bluetooth/BluetoothDevice.aidl \
 	frameworks/base/core/java/android/content/ComponentName.aidl \

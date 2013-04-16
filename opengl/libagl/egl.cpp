@@ -158,7 +158,6 @@ struct egl_surface_t
     virtual     EGLint      getSwapBehavior() const;
     virtual     EGLBoolean  swapBuffers();
     virtual     EGLBoolean  setSwapRectangle(EGLint l, EGLint t, EGLint w, EGLint h);
-    virtual     EGLClientBuffer getRenderBuffer() const;
 protected:
     GGLSurface              depth;
 };
@@ -202,9 +201,6 @@ EGLBoolean egl_surface_t::setSwapRectangle(
 {
     return EGL_FALSE;
 }
-EGLClientBuffer egl_surface_t::getRenderBuffer() const {
-    return 0;
-}
 
 // ----------------------------------------------------------------------------
 
@@ -230,8 +226,7 @@ struct egl_window_surface_v2_t : public egl_surface_t
     virtual     EGLint      getRefreshRate() const;
     virtual     EGLint      getSwapBehavior() const;
     virtual     EGLBoolean  setSwapRectangle(EGLint l, EGLint t, EGLint w, EGLint h);
-    virtual     EGLClientBuffer  getRenderBuffer() const;
-
+    
 private:
     status_t lock(android_native_buffer_t* buf, int usage, void** vaddr);
     status_t unlock(android_native_buffer_t* buf);
@@ -485,13 +480,13 @@ void egl_window_surface_v2_t::copyBlt(
     copybit_device_t* const copybit = blitengine;
     if (copybit)  {
         copybit_image_t simg;
-        simg.w = src->stride;
+        simg.w = src->width;
         simg.h = src->height;
         simg.format = src->format;
         simg.handle = const_cast<native_handle_t*>(src->handle);
 
         copybit_image_t dimg;
-        dimg.w = dst->stride;
+        dimg.w = dst->width;
         dimg.h = dst->height;
         dimg.format = dst->format;
         dimg.handle = const_cast<native_handle_t*>(dst->handle);
@@ -626,28 +621,6 @@ EGLBoolean egl_window_surface_v2_t::setSwapRectangle(
     return EGL_TRUE;
 }
 
-EGLClientBuffer egl_window_surface_v2_t::getRenderBuffer() const
-{
-    return buffer;
-}
-
-#ifdef LIBAGL_USE_GRALLOC_COPYBITS
-
-static bool supportedCopybitsDestinationFormat(int format) {
-    // Hardware supported
-    switch (format) {
-    case HAL_PIXEL_FORMAT_RGB_565:
-    case HAL_PIXEL_FORMAT_RGBA_8888:
-    case HAL_PIXEL_FORMAT_RGBX_8888:
-    case HAL_PIXEL_FORMAT_RGBA_4444:
-    case HAL_PIXEL_FORMAT_RGBA_5551:
-    case HAL_PIXEL_FORMAT_BGRA_8888:
-        return true;
-    }
-    return false;
-}
-#endif
-
 EGLBoolean egl_window_surface_v2_t::bindDrawSurface(ogles_context_t* gl)
 {
     GGLSurface buffer;
@@ -660,18 +633,6 @@ EGLBoolean egl_window_surface_v2_t::bindDrawSurface(ogles_context_t* gl)
     gl->rasterizer.procs.colorBuffer(gl, &buffer);
     if (depth.data != gl->rasterizer.state.buffers.depth.data)
         gl->rasterizer.procs.depthBuffer(gl, &depth);
-
-#ifdef LIBAGL_USE_GRALLOC_COPYBITS
-    gl->copybits.drawSurfaceBuffer = 0;
-    if (gl->copybits.blitEngine != NULL) {
-        if (supportedCopybitsDestinationFormat(buffer.format)) {
-            buffer_handle_t handle = this->buffer->handle;
-            if (handle != NULL) {
-                gl->copybits.drawSurfaceBuffer = this->buffer;
-            }
-        }
-    }
-#endif // LIBAGL_USE_GRALLOC_COPYBITS
 
     return EGL_TRUE;
 }
@@ -889,7 +850,6 @@ static char const * const gExtensionsString =
         // "KHR_image_pixmap "
         "EGL_ANDROID_image_native_buffer "
         "EGL_ANDROID_swap_rectangle "
-        "EGL_ANDROID_get_render_buffer "
         ;
 
 // ----------------------------------------------------------------------------
@@ -942,8 +902,6 @@ static const extention_map_t gExtentionMap[] = {
             (__eglMustCastToProperFunctionPointerType)&eglDestroyImageKHR }, 
     { "eglSetSwapRectangleANDROID", 
             (__eglMustCastToProperFunctionPointerType)&eglSetSwapRectangleANDROID }, 
-    { "eglGetRenderBufferANDROID",
-            (__eglMustCastToProperFunctionPointerType)&eglGetRenderBufferANDROID },
 };
 
 /*
@@ -2022,11 +1980,7 @@ EGLBoolean eglSwapInterval(EGLDisplay dpy, EGLint interval)
     if (egl_display_t::is_valid(dpy) == EGL_FALSE)
         return setError(EGL_BAD_DISPLAY, EGL_FALSE);
     // TODO: eglSwapInterval()
-    /* TODO: [ahatala 2009-10-09] changing this to default to succeeding,
-       as this will cause eglSwapInterval to fail even if the hw implementation
-       correctly supports it. */
-    //return setError(EGL_BAD_PARAMETER, EGL_FALSE);
-    return EGL_TRUE;
+    return setError(EGL_BAD_PARAMETER, EGL_FALSE);
 }
 
 // ----------------------------------------------------------------------------
@@ -2172,19 +2126,4 @@ EGLBoolean eglSetSwapRectangleANDROID(EGLDisplay dpy, EGLSurface draw,
     d->setSwapRectangle(left, top, width, height);
 
     return EGL_TRUE;
-}
-
-EGLClientBuffer eglGetRenderBufferANDROID(EGLDisplay dpy, EGLSurface draw)
-{
-    if (egl_display_t::is_valid(dpy) == EGL_FALSE)
-        return setError(EGL_BAD_DISPLAY, (EGLClientBuffer)0);
-
-    egl_surface_t* d = static_cast<egl_surface_t*>(draw);
-    if (!d->isValid())
-        return setError(EGL_BAD_SURFACE, (EGLClientBuffer)0);
-    if (d->dpy != dpy)
-        return setError(EGL_BAD_DISPLAY, (EGLClientBuffer)0);
-
-    // post the surface
-    return d->getRenderBuffer();
 }

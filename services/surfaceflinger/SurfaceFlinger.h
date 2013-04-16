@@ -215,21 +215,12 @@ public:
 
             overlay_control_device_t* getOverlayEngine() const;
 
-            inline int                  getRenderEffect() const { return mRenderEffect; }
-            inline int                  getRenderColorR() const { return mRenderColorR; }
-            inline int                  getRenderColorG() const { return mRenderColorG; }
-            inline int                  getRenderColorB() const { return mRenderColorB; }
-            inline int                  getUseDithering() const { return mUseDithering; }
-
     status_t removeLayer(const sp<LayerBase>& layer);
     status_t addLayer(const sp<LayerBase>& layer);
     status_t invalidateLayerVisibility(const sp<LayerBase>& layer);
     void destroyLayer(LayerBase const* layer);
 
     sp<Layer> getLayer(const sp<ISurface>& sur) const;
-#ifdef OMAP_ENHANCEMENT
-    PixelFormat getFormat() const;
-#endif
 
 private:
     friend class Client;
@@ -345,14 +336,6 @@ private:
                     uint32_t* width, uint32_t* height, PixelFormat* format,
                     uint32_t reqWidth = 0, uint32_t reqHeight = 0);
 
-            status_t directCaptureScreenImplLocked(DisplayID dpy,
-                    sp<IMemoryHeap>* heap,
-                    uint32_t* width, uint32_t* height, PixelFormat* format,
-                    uint32_t reqWidth, uint32_t reqHeight);
-
-            status_t directRenderScreenToTextureLocked(DisplayID dpy,
-                    GLuint* textureName, GLfloat* uOut, GLfloat* vOut);
-
             status_t turnElectronBeamOffImplLocked(int32_t mode);
             status_t turnElectronBeamOnImplLocked(int32_t mode);
             status_t electronBeamOffAnimationImplLocked();
@@ -373,10 +356,11 @@ private:
                 return (mFreezeDisplay || mFreezeCount>0) && mBootFinished;
             }
 
+            
             void        debugFlashRegions();
             void        debugShowFPS() const;
             void        drawWormhole() const;
-            void        triggerScreenRepaint();
+           
 
     mutable     MessageQueue    mEventQueue;
 
@@ -409,7 +393,7 @@ private:
                 Permission                  mAccessSurfaceFlinger;
                 Permission                  mReadFramebuffer;
                 Permission                  mDump;
-
+                
                 // Can only accessed from the main thread, these members
                 // don't need synchronization
                 Region                      mDirtyRegion;
@@ -429,10 +413,6 @@ private:
                 // don't use a lock for these, we don't care
                 int                         mDebugRegion;
                 int                         mDebugBackground;
-                int                         mRenderEffect;
-		int			    mRenderColorR;
-		int			    mRenderColorG;
-		int			    mRenderColorB;
                 volatile nsecs_t            mDebugInSwapBuffers;
                 nsecs_t                     mLastSwapBufferTime;
                 volatile nsecs_t            mDebugInTransaction;
@@ -456,9 +436,6 @@ private:
 
    // only written in the main thread, only read in other threads
    volatile     int32_t                     mSecureFrameBuffer;
-
-                bool                        mUseDithering;
-                bool                        mUse16bppAlpha;
 };
 
 // ---------------------------------------------------------------------------

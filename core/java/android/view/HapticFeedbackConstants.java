@@ -36,12 +36,6 @@ public class HapticFeedbackConstants {
     public static final int VIRTUAL_KEY = 1;
     
     /**
-     * User has released a virtual on-screen key.
-     * @hide
-     */
-    public static final int VIRTUAL_RELEASED = 2;
-
-    /**
      * The user has pressed a soft keyboard key.
      */
     public static final int KEYBOARD_TAP = 3;

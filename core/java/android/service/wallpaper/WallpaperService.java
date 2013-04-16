@@ -514,11 +514,8 @@ public abstract class WallpaperService extends Service {
                         mLayout.windowAnimations =
                                 com.android.internal.R.style.Animation_Wallpaper;
                         mInputChannel = new InputChannel();
-                        if (mSession.add(mWindow, mLayout, View.VISIBLE, mContentInsets,
-                                mInputChannel) < 0) {
-                            Log.w(TAG, "Failed to add window while updating wallpaper surface.");
-                            return;
-                        }
+                        mSession.add(mWindow, mLayout, View.VISIBLE, mContentInsets,
+                                mInputChannel);
                         mCreated = true;
 
                         InputQueue.registerInputChannel(mInputChannel, mInputHandler,
@@ -763,7 +760,6 @@ public abstract class WallpaperService extends Service {
         }
         
         void detach() {
-           synchronized (mLock) {
             if (mDestroyed) {
                 return;
             }
@@ -805,7 +801,6 @@ public abstract class WallpaperService extends Service {
                     mInputChannel = null;
                 }
             }
-           }
         }
     }
     
@@ -876,17 +871,13 @@ public abstract class WallpaperService extends Service {
                     }
                     Engine engine = onCreateEngine();
                     mEngine = engine;
-                    synchronized (mActiveEngines) {
-                        mActiveEngines.add(engine);
-                    }
+                    mActiveEngines.add(engine);
                     engine.attach(this);
                     return;
                 }
                 case DO_DETACH: {
+                    mActiveEngines.remove(mEngine);
                     mEngine.detach();
-                    synchronized (mActiveEngines) {
-                        mActiveEngines.remove(mEngine);
-                    }
                     return;
                 }
                 case DO_SET_DESIRED_SIZE: {
@@ -964,12 +955,10 @@ public abstract class WallpaperService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        synchronized (mActiveEngines) {
-           for (int i=0; i<mActiveEngines.size(); i++) {
-               mActiveEngines.get(i).detach();
-           }
-           mActiveEngines.clear();
+        for (int i=0; i<mActiveEngines.size(); i++) {
+            mActiveEngines.get(i).detach();
         }
+        mActiveEngines.clear();
     }
 
     /**

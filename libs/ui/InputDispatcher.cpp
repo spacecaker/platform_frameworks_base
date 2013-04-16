@@ -592,12 +592,6 @@ InputDispatcher::KeyEntry* InputDispatcher::synthesizeKeyRepeatLocked(
     // mKeyRepeatState.lastKeyEntry in addition to the one we return.
     entry->refCount += 1;
 
-    if (entry->repeatCount == 1) {
-        entry->flags |= AKEY_EVENT_FLAG_LONG_PRESS;
-    } else {
-        entry->flags &= ~AKEY_EVENT_FLAG_LONG_PRESS;
-    }
-
     mKeyRepeatState.nextRepeatTime = currentTime + keyRepeatDelay;
     return entry;
 }
@@ -739,19 +733,17 @@ bool InputDispatcher::dispatchMotionLocked(
         return true;
     }
 
-    bool isTouchEvent = ! ((entry->source & AINPUT_SOURCE_TOUCHSCREEN) ^ AINPUT_SOURCE_TOUCHSCREEN);
-    bool isMouseEvent = ! ((entry->source & AINPUT_SOURCE_MOUSE) ^ AINPUT_SOURCE_MOUSE);
-    bool isDownEvent = (entry->action & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_DOWN;
+    bool isPointerEvent = entry->source & AINPUT_SOURCE_CLASS_POINTER;
 
     // Identify targets.
     if (! mCurrentInputTargetsValid) {
         int32_t injectionResult;
-        if (isTouchEvent || (isMouseEvent && (isDownEvent || mTouchState.down))) {
-            // Touch-like event.  (eg. touchscreen or mouse drag-n-drop )
+        if (isPointerEvent) {
+            // Pointer event.  (eg. touchscreen)
             injectionResult = findTouchedWindowTargetsLocked(currentTime,
                     entry, nextWakeupTime);
         } else {
-            // Non touch event.  (eg. trackball or mouse simple move)
+            // Non touch event.  (eg. trackball)
             injectionResult = findFocusedWindowTargetsLocked(currentTime,
                     entry, nextWakeupTime);
         }
@@ -2149,11 +2141,6 @@ void InputDispatcher::notifyMotion(nsecs_t eventTime, int32_t deviceId, int32_t 
     }
 
     policyFlags |= POLICY_FLAG_TRUSTED;
-    if ((source & AINPUT_SOURCE_CLASS_NAVIGATION) &&
-                    (action == AMOTION_EVENT_ACTION_DOWN || action == AMOTION_EVENT_ACTION_UP)) {
-            mPolicy->interceptNavigationButtonBeforeQueueing(eventTime, deviceId,
-                flags, action, policyFlags);
-    }
     mPolicy->interceptGenericBeforeQueueing(eventTime, /*byref*/ policyFlags);
 
     bool needWake;

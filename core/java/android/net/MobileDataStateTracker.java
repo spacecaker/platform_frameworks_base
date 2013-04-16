@@ -32,9 +32,6 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.text.TextUtils;
 
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-
 /**
  * Track the state of mobile data connectivity. This is done by
  * receiving broadcast intents from the Phone process whenever
@@ -90,16 +87,18 @@ public class MobileDataStateTracker extends NetworkStateTracker {
             mEnabled = false;
         }
 
-        String[] ifNames = SystemProperties.get(
-            "mobiledata.interfaces",
-            "rmnet0,eth0,gprs,ppp0"
-        ).split(",");
+        mDnsPropNames = new String[] {
+                "net.rmnet0.dns1",
+                "net.rmnet0.dns2",
+                "net.eth0.dns1",
+                "net.eth0.dns2",
+                "net.eth0.dns3",
+                "net.eth0.dns4",
+                "net.gprs.dns1",
+                "net.gprs.dns2",
+                "net.ppp0.dns1",
+                "net.ppp0.dns2"};
 
-        mDnsPropNames = new String[2 * ifNames.length];
-        for (int i = 0; i < ifNames.length; ++i) {
-            mDnsPropNames[2*i+0] = "net." + ifNames[i] + ".dns1";
-            mDnsPropNames[2*i+1] = "net." + ifNames[i] + ".dns2";
-        }
     }
 
     /**
@@ -246,14 +245,7 @@ public class MobileDataStateTracker extends NetworkStateTracker {
                                 if (mInterfaceName == null) {
                                     Log.d(TAG, "CONNECTED event did not supply interface name.");
                                 }
-
-                                // Samsung CDMA devices do not export gateway to the framework correctly
-                                // if using FroYo RIL blobs, we can extract it from system properties
-                                if (SystemProperties.get("ro.ril.samsung_cdma").equals("true"))
-                                    mDefaultGatewayAddr = getIpFromString(SystemProperties.get("net.ppp0.remote-ip"));
-                                else
-                                    mDefaultGatewayAddr = intent.getIntExtra(Phone.DATA_GATEWAY_KEY, 0);
-
+                                mDefaultGatewayAddr = intent.getIntExtra(Phone.DATA_GATEWAY_KEY, 0);
                                 if (mDefaultGatewayAddr == 0) {
                                     Log.d(TAG, "CONNECTED event did not supply a default gateway.");
                                 }
@@ -272,24 +264,6 @@ public class MobileDataStateTracker extends NetworkStateTracker {
                 }
             }
         }
-    }
-
-    private int getIpFromString(String ip)
-    {
-        InetAddress inetAddress;
-        try {
-            inetAddress = InetAddress.getByName(ip);
-        } catch (UnknownHostException e) {
-            return -1;
-        }
-        byte[] addrBytes;
-        int addr;
-        addrBytes = inetAddress.getAddress();
-        addr = ((addrBytes[3] & 0xff) << 24)
-                | ((addrBytes[2] & 0xff) << 16)
-                | ((addrBytes[1] & 0xff) << 8)
-                |  (addrBytes[0] & 0xff);
-        return addr;
     }
 
     private void getPhoneService(boolean forceRefresh) {
@@ -356,7 +330,6 @@ public class MobileDataStateTracker extends NetworkStateTracker {
             networkTypeStr = "hsupa";
             break;
         case TelephonyManager.NETWORK_TYPE_HSPA:
-        case TelephonyManager.NETWORK_TYPE_HSPAP:
             networkTypeStr = "hspa";
             break;
         case TelephonyManager.NETWORK_TYPE_CDMA:

@@ -126,10 +126,8 @@ class AppWidgetService extends IAppWidgetService.Stub
     public void systemReady(boolean safeMode) {
         mSafeMode = safeMode;
 
-        synchronized (mAppWidgetIds) {
-            loadAppWidgetList();
-            loadStateLocked();
-        }
+        loadAppWidgetList();
+        loadStateLocked();
 
         // Register for the boot completed broadcast, so we can send the
         // ENABLE broacasts.  If we try to send them now, they time out,
@@ -903,7 +901,6 @@ class AppWidgetService extends IAppWidgetService.Stub
             out.endTag(null, "gs");
 
             out.endDocument();
-            stream.getFD().sync();
             stream.close();
             return true;
         } catch (IOException e) {

@@ -101,10 +101,6 @@ public class LockPatternView extends View {
     private boolean mInStealthMode = false;
     private boolean mTactileFeedbackEnabled = true;
     private boolean mPatternInProgress = false;
-    
-    private boolean mVisibleDots = true;
-    private boolean mShowErrorPath = true;
-    private int mDelay = 2000;
 
     private float mDiameterFactor = 0.5f;
     private float mHitFactor = 0.6f;
@@ -336,22 +332,6 @@ public class LockPatternView extends View {
     public void setInStealthMode(boolean inStealthMode) {
         mInStealthMode = inStealthMode;
     }
-    
-    public void setVisibleDots(boolean visibleDots) {
-        mVisibleDots = visibleDots;
-    }
-    
-    public boolean isVisibleDots() {
-        return mVisibleDots;
-    }
-    
-    public void setShowErrorPath(boolean showErrorPath) {
-        mShowErrorPath = showErrorPath;
-    }
-    
-    public boolean isShowErrorPath() {
-        return mShowErrorPath;
-    }
 
     /**
      * Set whether the view will use tactile feedback.  If true, there will be
@@ -452,14 +432,6 @@ public class LockPatternView extends View {
      */
     public void enableInput() {
         mInputEnabled = true;
-    }
-    
-    public int getIncorrectDelay() {
-        return mDelay;
-    }
-    
-    public void setIncorrectDelay(int delay) {
-        mDelay = delay;
     }
 
     @Override
@@ -866,10 +838,7 @@ public class LockPatternView extends View {
         // only the last segment of the path should be computed here
         // draw the path of the pattern (unless the user is in progress, and
         // we are in stealth mode)
-        final boolean drawPath = ((!mInStealthMode && mPatternDisplayMode != DisplayMode.Wrong)
-                                    || (mPatternDisplayMode == DisplayMode.Wrong && mShowErrorPath));
-        
-        //final boolean drawPath = (!mInStealthMode || mPatternDisplayMode == DisplayMode.Wrong);
+        final boolean drawPath = (!mInStealthMode || mPatternDisplayMode == DisplayMode.Wrong);
         if (drawPath) {
             boolean anyCircles = false;
             for (int i = 0; i < count; i++) {
@@ -903,15 +872,13 @@ public class LockPatternView extends View {
         // draw the circles
         final int paddingTop = mPaddingTop;
         final int paddingLeft = mPaddingLeft;
-        
-        if (mVisibleDots) {
-            for (int i = 0; i < 3; i++) {
-                float topY = paddingTop + i * squareHeight;
-                //float centerY = mPaddingTop + i * mSquareHeight + (mSquareHeight / 2);
-                for (int j = 0; j < 3; j++) {
-                    float leftX = paddingLeft + j * squareWidth;
-                    drawCircle(canvas, (int) leftX, (int) topY, drawLookup[i][j]);
-                }
+
+        for (int i = 0; i < 3; i++) {
+            float topY = paddingTop + i * squareHeight;
+            //float centerY = mPaddingTop + i * mSquareHeight + (mSquareHeight / 2);
+            for (int j = 0; j < 3; j++) {
+                float leftX = paddingLeft + j * squareWidth;
+                drawCircle(canvas, (int) leftX, (int) topY, drawLookup[i][j]);
             }
         }
 
@@ -992,15 +959,8 @@ public class LockPatternView extends View {
             innerCircle = mBitmapBtnTouched;
         } else if (mPatternDisplayMode == DisplayMode.Wrong) {
             // the pattern is wrong
-            
-            if (mShowErrorPath) {
-                outerCircle = mBitmapCircleRed;
-                innerCircle = mBitmapBtnDefault;
-            }
-            else {
-                outerCircle = mBitmapCircleDefault;
-                innerCircle = mBitmapBtnDefault;
-            }            
+            outerCircle = mBitmapCircleRed;
+            innerCircle = mBitmapBtnDefault;
         } else if (mPatternDisplayMode == DisplayMode.Correct ||
                 mPatternDisplayMode == DisplayMode.Animate) {
             // the pattern is correct
@@ -1029,7 +989,7 @@ public class LockPatternView extends View {
         return new SavedState(superState,
                 LockPatternUtils.patternToString(mPattern),
                 mPatternDisplayMode.ordinal(),
-                mInputEnabled, mInStealthMode, mTactileFeedbackEnabled, mVisibleDots, mShowErrorPath);
+                mInputEnabled, mInStealthMode, mTactileFeedbackEnabled);
     }
 
     @Override
@@ -1043,8 +1003,6 @@ public class LockPatternView extends View {
         mInputEnabled = ss.isInputEnabled();
         mInStealthMode = ss.isInStealthMode();
         mTactileFeedbackEnabled = ss.isTactileFeedbackEnabled();
-        mVisibleDots = ss.isVisibleDots();
-        mShowErrorPath = ss.isShowErrorPath();
     }
 
     /**
@@ -1057,22 +1015,18 @@ public class LockPatternView extends View {
         private final boolean mInputEnabled;
         private final boolean mInStealthMode;
         private final boolean mTactileFeedbackEnabled;
-        private final boolean mVisibleDots;
-        private final boolean mShowErrorPath;
 
         /**
          * Constructor called from {@link LockPatternView#onSaveInstanceState()}
          */
         private SavedState(Parcelable superState, String serializedPattern, int displayMode,
-                boolean inputEnabled, boolean inStealthMode, boolean tactileFeedbackEnabled, boolean visibleDots, boolean showErrorPath) {
+                boolean inputEnabled, boolean inStealthMode, boolean tactileFeedbackEnabled) {
             super(superState);
             mSerializedPattern = serializedPattern;
             mDisplayMode = displayMode;
             mInputEnabled = inputEnabled;
             mInStealthMode = inStealthMode;
             mTactileFeedbackEnabled = tactileFeedbackEnabled;
-            mVisibleDots = visibleDots;
-            mShowErrorPath = showErrorPath;
         }
 
         /**
@@ -1085,8 +1039,6 @@ public class LockPatternView extends View {
             mInputEnabled = (Boolean) in.readValue(null);
             mInStealthMode = (Boolean) in.readValue(null);
             mTactileFeedbackEnabled = (Boolean) in.readValue(null);
-            mVisibleDots = (Boolean) in.readValue(null);
-            mShowErrorPath = (Boolean) in.readValue(null);
         }
 
         public String getSerializedPattern() {
@@ -1108,14 +1060,6 @@ public class LockPatternView extends View {
         public boolean isTactileFeedbackEnabled(){
             return mTactileFeedbackEnabled;
         }
-        
-        public boolean isVisibleDots() {
-            return mVisibleDots;
-        }
-        
-        public boolean isShowErrorPath() {
-            return mShowErrorPath;
-        }
 
         @Override
         public void writeToParcel(Parcel dest, int flags) {
@@ -1125,8 +1069,6 @@ public class LockPatternView extends View {
             dest.writeValue(mInputEnabled);
             dest.writeValue(mInStealthMode);
             dest.writeValue(mTactileFeedbackEnabled);
-            dest.writeValue(mVisibleDots);
-            dest.writeValue(mShowErrorPath);
         }
 
         public static final Parcelable.Creator<SavedState> CREATOR =

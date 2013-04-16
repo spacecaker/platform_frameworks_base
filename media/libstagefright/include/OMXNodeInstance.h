@@ -49,12 +49,6 @@ struct OMXNodeInstance {
     status_t getConfig(OMX_INDEXTYPE index, void *params, size_t size);
     status_t setConfig(OMX_INDEXTYPE index, const void *params, size_t size);
 
-#if defined(OMAP_ENHANCEMENT) && defined(TARGET_OMAP4)
-    status_t useBuffer(
-            OMX_U32 portIndex, const sp<IMemory> &params,
-            OMX::buffer_id *buffer, size_t size);
-#endif
-
     status_t useBuffer(
             OMX_U32 portIndex, const sp<IMemory> &params,
             OMX::buffer_id *buffer);
@@ -88,14 +82,11 @@ struct OMXNodeInstance {
 private:
     Mutex mLock;
 
-    bool pmem_registered_with_client;
-
     OMX *mOwner;
     OMX::node_id mNodeID;
     OMX_HANDLETYPE mHandle;
     sp<IOMXObserver> mObserver;
     bool mDying;
-    OMX_U8* mBase;
 
     struct ActiveBuffer {
         OMX_U32 mPortIndex;

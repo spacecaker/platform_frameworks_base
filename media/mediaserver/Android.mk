@@ -1,4 +1,3 @@
-ifndef TARGET_PROVIDES_MEDIASERVER
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -22,4 +21,3 @@ LOCAL_C_INCLUDES := \
 LOCAL_MODULE:= mediaserver
 
 include $(BUILD_EXECUTABLE)
-endif

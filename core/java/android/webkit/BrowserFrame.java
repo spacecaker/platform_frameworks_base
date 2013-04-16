@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
- * Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +29,6 @@ import android.net.WebAddress;
 import android.net.http.SslCertificate;
 import android.os.Handler;
 import android.os.Message;
-import android.os.SystemProperties;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.util.TypedValue;
@@ -196,7 +194,7 @@ class BrowserFrame extends Handler {
             ActivityManager am = (ActivityManager) context
                     .getSystemService(Context.ACTIVITY_SERVICE);
             if (am.getMemoryClass() > 16) {
-                sJavaBridge.setCacheSize(SystemProperties.getInt("webkit.cache.size", 8 * 1024 * 1024));
+                sJavaBridge.setCacheSize(8 * 1024 * 1024);
             } else {
                 sJavaBridge.setCacheSize(4 * 1024 * 1024);
             }
@@ -230,22 +228,6 @@ class BrowserFrame extends Handler {
         if (DebugFlags.BROWSER_FRAME) {
             Log.v(LOGTAG, "BrowserFrame constructor: this=" + this);
         }
-    }
-
-    public void startDnsPrefetch() {
-        if (DebugFlags.BROWSER_FRAME) {
-            Log.v(LOGTAG, "Starting DNS prefetch");
-        }
-
-        DnsResolver dnsResolver = DnsResolver.getInstance();
-        if(dnsResolver == null )
-            return;
-
-        HashMap hostsMap = nativeGetEmbeddedHostNames(dnsResolver.getMaxParallelDnsQueryPerPage());
-        if(hostsMap == null)
-            return;
-
-        dnsResolver.resolveDnsForHostMap(hostsMap);
     }
 
     /**
@@ -362,8 +344,7 @@ class BrowserFrame extends Handler {
             mFirstLayoutDone = true;
             // ensure {@link WebViewCore#webkitDraw} is called as we were
             // blocking the update in {@link #loadStarted}
-            //we pass false as the parameter paintHeader to contentDraw since here we are not painting a cached header
-            mWebViewCore.contentDraw(false);
+            mWebViewCore.contentDraw();
         }
     }
 
@@ -666,9 +647,7 @@ class BrowserFrame extends Handler {
                                               boolean userGesture,
                                               boolean synchronous,
                                               String username,
-                                              String password,
-                                              int priority,
-                                              boolean commit) {
+                                              String password) {
         PerfChecker checker = new PerfChecker();
 
         if (mSettings.getCacheMode() != WebSettings.LOAD_DEFAULT) {
@@ -742,8 +721,6 @@ class BrowserFrame extends Handler {
         LoadListener loadListener = LoadListener.getLoadListener(mContext,
                 this, url, loaderHandle, synchronous, isMainFramePage,
                 mainResource, userGesture, postDataIdentifier, username, password);
-        loadListener.setPriority(priority);
-        loadListener.setShouldCommit(commit);
 
         mCallbackProxy.onLoadResource(url);
 
@@ -813,11 +790,6 @@ class BrowserFrame extends Handler {
      */
     private BrowserFrame createWindow(boolean dialog, boolean userGesture) {
         return mCallbackProxy.createWindow(dialog, userGesture);
-    }
-
-    private void resolveDnsForHost(String host) {
-        if(DnsResolver.getInstance() != null)
-            DnsResolver.getInstance().resolveDnsForHost(host,"1");
     }
 
     /**
@@ -994,8 +966,6 @@ class BrowserFrame extends Handler {
 
     private native void nativeLoadData(String baseUrl, String data,
             String mimeType, String encoding, String historyUrl);
-
-    private native HashMap nativeGetEmbeddedHostNames(int maxDnsHostCount);
 
     /**
      * Stop loading the current page.

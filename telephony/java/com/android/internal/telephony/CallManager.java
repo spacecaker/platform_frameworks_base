@@ -25,7 +25,6 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.RegistrantList;
 import android.os.Registrant;
-import android.os.SystemProperties;
 import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
 import android.util.Log;
@@ -79,7 +78,6 @@ public final class CallManager {
     private static final int EVENT_SUPP_SERVICE_FAILED = 117;
     private static final int EVENT_SERVICE_STATE_CHANGED = 118;
     private static final int EVENT_POST_DIAL_CHARACTER = 119;
-    private static final int EVENT_SUPP_SERVICE_NOTIFY = 120;
 
     // Singleton instance
     private static final CallManager INSTANCE = new CallManager();
@@ -102,7 +100,6 @@ public final class CallManager {
     // default phone as the first phone registered, which is PhoneBase obj
     private Phone mDefaultPhone;
 
-    private boolean acceptingRingingCall;
     // state registrants
     protected final RegistrantList mPreciseCallStateRegistrants
     = new RegistrantList();
@@ -161,9 +158,6 @@ public final class CallManager {
     protected final RegistrantList mSuppServiceFailedRegistrants
     = new RegistrantList();
 
-    protected final RegistrantList mSuppServiceNotificationRegistrants
-    = new RegistrantList();
-
     protected final RegistrantList mServiceStateChangedRegistrants
     = new RegistrantList();
 
@@ -176,7 +170,6 @@ public final class CallManager {
         mBackgroundCalls = new ArrayList<Call>();
         mForegroundCalls = new ArrayList<Call>();
         mDefaultPhone = null;
-        acceptingRingingCall = false;
     }
 
     /**
@@ -295,27 +288,6 @@ public final class CallManager {
      * @return true if register successfully
      */
     public boolean registerPhone(Phone phone) {
-        return this.registerPhoneInternal(phone, false);
-    }
-
-    /**
-     * Register phone to CallManager and force it as the default phone
-     *
-     * @param phone to be registered
-     * @return true if register successfully
-     */
-    public boolean registerPhoneAsDefault(Phone phone) {
-        return this.registerPhoneInternal(phone, true);
-    }
-
-    /**
-     * Internal phone registration function used in two phone registering cases
-     *
-     * @param phone to be registered
-     * @param overrideDefaultPhone is there a need to set this phone to be the default one
-     * @return true if register successfully
-     */
-    private boolean registerPhoneInternal(Phone phone, boolean overrideDefaultPhone) {
         Phone basePhone = getPhoneBase(phone);
 
         if (basePhone != null && !mPhones.contains(basePhone)) {
@@ -325,7 +297,7 @@ public final class CallManager {
                         phone.getPhoneName() + " " + phone + ")");
             }
 
-            if (mPhones.isEmpty() || overrideDefaultPhone) {
+            if (mPhones.isEmpty()) {
                 mDefaultPhone = basePhone;
             }
             mPhones.add(basePhone);
@@ -404,12 +376,7 @@ public final class CallManager {
         int mode = AudioManager.MODE_NORMAL;
         switch (getState()) {
             case RINGING:
-                if (acceptingRingingCall) {
-                  mode = AudioManager.MODE_IN_CALL;
-                  acceptingRingingCall = false;
-                } else {
-                  mode = AudioManager.MODE_RINGTONE;
-                }
+                mode = AudioManager.MODE_RINGTONE;
                 break;
             case OFFHOOK:
                 Phone fgPhone = getFgPhone();
@@ -427,20 +394,6 @@ public final class CallManager {
                 }
                 break;
         }
-
-        // Some samsung devices need a special parameter "realcall" set for incall audio
-        boolean mSamsungRealCall = SystemProperties.getBoolean("ro.telephony.samsung.realcall", false);
-
-        if(mSamsungRealCall == true) {
-            if (mode == AudioManager.MODE_IN_CALL) {
-                Log.d(LOG_TAG, "setAudioMode(): realcall=on");
-                audioManager.setParameters("realcall=on");
-            } else if (mode == AudioManager.MODE_NORMAL) {
-                Log.d(LOG_TAG, "setAudioMode(): realcall=off");
-                audioManager.setParameters("realcall=off");
-            }
-        }
-
         // calling audioManager.setMode() multiple times in a short period of
         // time seems to break the audio recorder in in-call mode
         if (audioManager.getMode() != mode) audioManager.setMode(mode);
@@ -468,9 +421,6 @@ public final class CallManager {
         phone.registerForMmiComplete(mHandler, EVENT_MMI_COMPLETE, null);
         phone.registerForSuppServiceFailed(mHandler, EVENT_SUPP_SERVICE_FAILED, null);
         phone.registerForServiceStateChanged(mHandler, EVENT_SERVICE_STATE_CHANGED, null);
-        if (phone.getPhoneType() == Phone.PHONE_TYPE_GSM) {
-            phone.registerForSuppServiceNotification(mHandler, EVENT_SUPP_SERVICE_NOTIFY, null);
-        }
 
         // for events supported only by GSM and CDMA phone
         if (phone.getPhoneType() == Phone.PHONE_TYPE_GSM ||
@@ -503,7 +453,6 @@ public final class CallManager {
         phone.unregisterForMmiInitiate(mHandler);
         phone.unregisterForMmiComplete(mHandler);
         phone.unregisterForSuppServiceFailed(mHandler);
-        phone.unregisterForSuppServiceNotification(mHandler);
         phone.unregisterForServiceStateChanged(mHandler);
 
         // for events supported only by GSM and CDMA phone
@@ -561,7 +510,6 @@ public final class CallManager {
         }
 
         ringingPhone.acceptCall();
-        acceptingRingingCall = true;
 
         if (VDBG) {
             Log.d(LOG_TAG, "End acceptCall(" +ringingCall + ")");
@@ -1312,27 +1260,6 @@ public final class CallManager {
     }
 
     /**
-     * Register for supplementary service notifications.
-     * Message.obj will contain an AsyncResult.
-     *
-     * @param h Handler that receives the notification message.
-     * @param what User-defined message code.
-     * @param obj User object.
-     */
-    public void registerForSuppServiceNotification(Handler h, int what, Object obj){
-        mSuppServiceNotificationRegistrants.addUnique(h, what, obj);
-    }
-
-    /**
-     * Unregister for supplementary service notifications.
-     *
-     * @param h Handler to be removed from the registrant list.
-     */
-    public void unregisterForSuppServiceNotification(Handler h){
-        mSuppServiceNotificationRegistrants.remove(h);
-    }
-
-    /**
      * Register for notifications when a sInCall VoicePrivacy is enabled
      *
      * @param h Handler that receives the notification message.
@@ -1840,10 +1767,6 @@ public final class CallManager {
                 case EVENT_SUPP_SERVICE_FAILED:
                     if (VDBG) Log.d(LOG_TAG, " handleMessage (EVENT_SUPP_SERVICE_FAILED)");
                     mSuppServiceFailedRegistrants.notifyRegistrants((AsyncResult) msg.obj);
-                    break;
-                case EVENT_SUPP_SERVICE_NOTIFY:
-                    if (VDBG) Log.d(LOG_TAG, " handleMessage (EVENT_SUPP_SERVICE_NOTIFICATION)");
-                    mSuppServiceNotificationRegistrants.notifyRegistrants((AsyncResult) msg.obj);
                     break;
                 case EVENT_SERVICE_STATE_CHANGED:
                     if (VDBG) Log.d(LOG_TAG, " handleMessage (EVENT_SERVICE_STATE_CHANGED)");

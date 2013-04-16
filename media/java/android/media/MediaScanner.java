@@ -45,7 +45,6 @@ import android.text.TextUtils;
 import android.util.Config;
 import android.util.Log;
 import android.util.Xml;
-import android.os.SystemProperties;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -389,7 +388,7 @@ public class MediaScanner
     private class MyMediaScannerClient implements MediaScannerClient {
 
         private String mArtist;
-        private String mAlbumArtist;
+        private String mAlbumArtist;    // use this if mArtist is missing
         private String mAlbum;
         private String mTitle;
         private String mComposer;
@@ -642,7 +641,7 @@ public class MediaScanner
                 map.put(Audio.Media.ARTIST, (mArtist != null && mArtist.length() > 0) ?
                         mArtist : MediaStore.UNKNOWN_STRING);
                 map.put(Audio.Media.ALBUM_ARTIST, (mAlbumArtist != null &&
-                        mAlbumArtist.length() > 0) ? mAlbumArtist : MediaStore.UNKNOWN_STRING);
+                        mAlbumArtist.length() > 0) ? mAlbumArtist : null);
                 map.put(Audio.Media.ALBUM, (mAlbum != null && mAlbum.length() > 0) ?
                         mAlbum : MediaStore.UNKNOWN_STRING);
                 map.put(Audio.Media.COMPOSER, mComposer);
@@ -679,11 +678,6 @@ public class MediaScanner
              // use album artist if artist is missing
             if (mArtist == null || mArtist.length() == 0) {
                 mArtist = mAlbumArtist;
-            }
-
-             // use artist if album artist is missing
-            if (mAlbumArtist == null || mAlbumArtist.length() == 0) {
-                mAlbumArtist = mArtist;
             }
 
             ContentValues values = toValues();
@@ -736,9 +730,7 @@ public class MediaScanner
                 values.put(Audio.Media.IS_ALARM, alarms);
                 values.put(Audio.Media.IS_MUSIC, music);
                 values.put(Audio.Media.IS_PODCAST, podcasts);
-            } else if ((mFileType == MediaFile.FILE_TYPE_JPEG) ||
-                       ((SystemProperties.OMAP_ENHANCEMENT) && (mFileType == MediaFile.FILE_TYPE_JPS)) ||
-                       ((SystemProperties.OMAP_ENHANCEMENT) && (mFileType == MediaFile.FILE_TYPE_MPO))) {
+            } else if (mFileType == MediaFile.FILE_TYPE_JPEG) {
                 ExifInterface exif = null;
                 try {
                     exif = new ExifInterface(entry.mPath);
@@ -794,7 +786,7 @@ public class MediaScanner
                 result = ContentUris.withAppendedId(tableUri, rowId);
                 mMediaProvider.update(result, values, null, null);
             }
-            if (mProcessGenres && mGenre != null && isAudio) {
+            if (mProcessGenres && mGenre != null) {
                 String genre = mGenre;
                 Uri uri = mGenreCache.get(genre);
                 if (uri == null) {
@@ -1228,12 +1220,8 @@ public class MediaScanner
             prescan(path);
 
             File file = new File(path);
-
-            // lastModified is in milliseconds on Files.
-            long lastModifiedSeconds = file.lastModified() / 1000;
-
             // always scan the file, so we can return the content://media Uri for existing files
-            return mClient.doScanFile(path, mimeType, lastModifiedSeconds, file.length(), true);
+            return mClient.doScanFile(path, mimeType, file.lastModified(), file.length(), true);
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException in MediaScanner.scanFile()", e);
             return null;

@@ -64,7 +64,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.android.internal.R;
-import com.android.internal.app.ThemeUtils;
 import com.android.internal.telephony.ITelephony;
 import com.android.internal.telephony.TelephonyIntents;
 
@@ -91,7 +90,6 @@ public class AccountManagerService
     private static final int DATABASE_VERSION = 4;
 
     private final Context mContext;
-    private Context mUiContext;
 
     private final PackageManager mPackageManager;
 
@@ -156,12 +154,6 @@ public class AccountManagerService
             new HashMap<Account, Integer>();
     private static AtomicReference<AccountManagerService> sThis =
             new AtomicReference<AccountManagerService>();
-
-    private BroadcastReceiver mThemeChangeReceiver = new BroadcastReceiver() {
-        public void onReceive(Context context, Intent intent) {
-            mUiContext = null;
-        }
-    };
 
     private static final boolean isDebuggableMonkeyBuild =
             SystemProperties.getBoolean("ro.monkey", false);
@@ -233,8 +225,6 @@ public class AccountManagerService
 
         mAuthenticatorCache = new AccountAuthenticatorCache(mContext);
         mAuthenticatorCache.setListener(this, null /* Handler */);
-
-        ThemeUtils.registerThemeChangeReceiver(mContext, mThemeChangeReceiver);
 
         sThis.set(this);
 
@@ -998,7 +988,7 @@ public class AccountManagerService
         final int index = titleAndSubtitle.indexOf('\n');
         final String title = titleAndSubtitle.substring(0, index);
         final String subtitle = titleAndSubtitle.substring(index + 1);
-        n.setLatestEventInfo(getUiContext(),
+        n.setLatestEventInfo(mContext,
                 title, subtitle,
                 PendingIntent.getActivity(mContext, 0, intent, PendingIntent.FLAG_CANCEL_CURRENT));
         ((NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE))
@@ -1778,7 +1768,7 @@ public class AccountManagerService
                         0 /* when */);
                 final String notificationTitleFormat =
                         mContext.getText(R.string.notification_title).toString();
-                n.setLatestEventInfo(getUiContext(),
+                n.setLatestEventInfo(mContext,
                         String.format(notificationTitleFormat, account.name),
                         message, PendingIntent.getActivity(
                         mContext, 0, intent, PendingIntent.FLAG_CANCEL_CURRENT));
@@ -1798,13 +1788,6 @@ public class AccountManagerService
         } finally {
             restoreCallingIdentity(identityToken);
         }
-    }
-
-    private Context getUiContext() {
-        if (mUiContext == null) {
-            mUiContext = ThemeUtils.createUiContext(mContext);
-        }
-        return mUiContext != null ? mUiContext : mContext;
     }
 
     /** Succeeds if any of the specified permissions are granted. */

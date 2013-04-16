@@ -261,8 +261,7 @@ static void Bitmap_recycle(JNIEnv* env, jobject, SkBitmap* bitmap) {
 // These must match the int values in Bitmap.java
 enum JavaEncodeFormat {
     kJPEG_JavaEncodeFormat = 0,
-    kPNG_JavaEncodeFormat = 1,
-    kWEBP_JavaEncodeFormat = 2
+    kPNG_JavaEncodeFormat = 1
 };
 
 static bool Bitmap_compress(JNIEnv* env, jobject clazz, SkBitmap* bitmap,
@@ -276,9 +275,6 @@ static bool Bitmap_compress(JNIEnv* env, jobject clazz, SkBitmap* bitmap,
         break;
     case kPNG_JavaEncodeFormat:
         fm = SkImageEncoder::kPNG_Type;
-        break;
-    case kWEBP_JavaEncodeFormat:
-        fm = SkImageEncoder::kWEBP_Type;
         break;
     default:
         return false;

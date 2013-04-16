@@ -180,18 +180,15 @@ public class ContentType {
     }
 
     public static boolean isImageType(String contentType) {
-        return (null != contentType) && (contentType.startsWith("image/") ||
-                                    sSupportedImageTypes.contains(contentType));
+        return (null != contentType) && contentType.startsWith("image/");
     }
 
     public static boolean isAudioType(String contentType) {
-        return (null != contentType) && (contentType.startsWith("audio/") ||
-                                    sSupportedAudioTypes.contains(contentType));
+        return (null != contentType) && contentType.startsWith("audio/");
     }
 
     public static boolean isVideoType(String contentType) {
-        return (null != contentType) && (contentType.startsWith("video/") ||
-                                    sSupportedVideoTypes.contains(contentType));
+        return (null != contentType) && contentType.startsWith("video/");
     }
 
     public static boolean isDrmType(String contentType) {

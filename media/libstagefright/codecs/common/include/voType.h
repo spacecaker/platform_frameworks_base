@@ -101,7 +101,7 @@ typedef signed long VO_S32;
    since the compiler does not support the way the component was written.
 */
 #ifndef VO_SKIP64BIT
-#ifdef _MSC_VER
+#ifdef _WIN32
 /** VO_U64 is a 64 bit unsigned quantity that is 64 bit word aligned */
 typedef unsigned __int64  VO_U64;
 /** VO_S64 is a 64 bit signed quantity that is 64 bit word aligned */

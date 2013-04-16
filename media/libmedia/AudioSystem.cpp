@@ -369,7 +369,7 @@ int AudioSystem::newAudioSessionId() {
     if (af == 0) return 0;
     return af->newAudioSessionId();
 }
-
+ /*
 #ifdef HAVE_FM_RADIO
 status_t AudioSystem::setFmVolume(float value)
 {
@@ -378,6 +378,7 @@ status_t AudioSystem::setFmVolume(float value)
     return af->setFmVolume(value);
 }
 #endif
+*/
 
 // ---------------------------------------------------------------------------
 

@@ -246,10 +246,7 @@ public class UsbManager {
     }
 
     private static File getFunctionEnableFile(String function) {
-        if((new File("/sys/class/usb_composite/" + function + "/enable")).exists())
-            return new File("/sys/class/usb_composite/" + function + "/enable");
-        else
-            return new File("/sys/devices/platform/android_usb/functions/" + function);
+        return new File("/sys/class/usb_composite/" + function + "/enable");
     }
 
     /**

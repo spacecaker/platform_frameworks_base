@@ -16,8 +16,6 @@
 
 package com.android.internal.telephony.cdma;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import android.os.Message;
 import android.util.Log;
 
@@ -58,11 +56,14 @@ public class RuimPhoneBookInterfaceManager extends IccPhoneBookInterfaceManager 
             recordSize = new int[3];
 
             //Using mBaseHandler, no difference in EVENT_GET_SIZE_DONE handling
-            AtomicBoolean status = new AtomicBoolean(false);
-            Message response = mBaseHandler.obtainMessage(EVENT_GET_SIZE_DONE, status);
+            Message response = mBaseHandler.obtainMessage(EVENT_GET_SIZE_DONE);
 
             phone.getIccFileHandler().getEFLinearRecordSize(efid, response);
-            waitForResult(status);
+            try {
+                mLock.wait();
+            } catch (InterruptedException e) {
+                logd("interrupted while trying to load from the RUIM");
+            }
         }
 
         return recordSize;

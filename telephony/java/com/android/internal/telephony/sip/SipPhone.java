@@ -41,7 +41,6 @@ import com.android.internal.telephony.UUSInfo;
 
 import java.text.ParseException;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * {@hide}
@@ -384,8 +383,8 @@ public class SipPhone extends SipPhoneBase {
         Connection dial(String originalNumber) throws SipException {
             String calleeSipUri = originalNumber;
             if (!calleeSipUri.contains("@")) {
-                String replaceStr = Pattern.quote(mProfile.getUserName() + "@");
-                calleeSipUri = mProfile.getUriString().replaceFirst(replaceStr,
+                calleeSipUri = mProfile.getUriString().replaceFirst(
+                        mProfile.getUserName() + "@",
                         calleeSipUri + "@");
             }
             try {

@@ -30,10 +30,8 @@ import android.os.IBinder;
 import android.os.Binder;
 import android.os.SystemClock;
 import android.os.WorkSource;
-import android.provider.Settings;
 import android.util.Slog;
 
-import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.ListIterator;
 
@@ -114,29 +112,6 @@ public class VibratorService extends IVibratorService.Stub {
         context.registerReceiver(mIntentReceiver, filter);
     }
 
-    private boolean inQuietHours() {
-        boolean mQuietHoursEnabled = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_ENABLED, 0) != 0;
-        int mQuietHoursStart = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_START, 0);
-        int mQuietHoursEnd = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_END, 0);
-        boolean mQuietHoursHaptic = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.QUIET_HOURS_HAPTIC, 0) != 0;
-        if (mQuietHoursEnabled && mQuietHoursHaptic && (mQuietHoursStart != mQuietHoursEnd)) {
-            // Get the date in "quiet hours" format.
-            Calendar calendar = Calendar.getInstance();
-            int minutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE);
-            if (mQuietHoursEnd < mQuietHoursStart) {
-                // Starts at night, ends in the morning.
-                return (minutes > mQuietHoursStart) || (minutes < mQuietHoursEnd);
-            } else {
-                return (minutes > mQuietHoursStart) && (minutes < mQuietHoursEnd);
-            }
-        }
-        return false;
-    }
-
     public void vibrate(long milliseconds, IBinder token) {
         if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.VIBRATE)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -147,7 +122,7 @@ public class VibratorService extends IVibratorService.Stub {
         // timeout of 0 or negative. This will ensure that a vibration has
         // either a timeout of > 0 or a non-null pattern.
         if (milliseconds <= 0 || (mCurrentVibration != null
-                && mCurrentVibration.hasLongerTimeout(milliseconds)) || inQuietHours()) {
+                && mCurrentVibration.hasLongerTimeout(milliseconds))) {
             // Ignore this vibration since the current vibration will play for
             // longer than milliseconds.
             return;
@@ -175,9 +150,6 @@ public class VibratorService extends IVibratorService.Stub {
         if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.VIBRATE)
                 != PackageManager.PERMISSION_GRANTED) {
             throw new SecurityException("Requires VIBRATE permission");
-        }
-        if (inQuietHours()) {
-            return;
         }
         int uid = Binder.getCallingUid();
         // so wakelock calls will succeed
@@ -271,7 +243,6 @@ public class VibratorService extends IVibratorService.Stub {
     // Lock held on mVibrations
     private void startNextVibrationLocked() {
         if (mVibrations.size() <= 0) {
-            mCurrentVibration = null;
             return;
         }
         mCurrentVibration = mVibrations.getFirst();
@@ -298,25 +269,15 @@ public class VibratorService extends IVibratorService.Stub {
             Vibration vib = iter.next();
             if (vib.mToken == token) {
                 iter.remove();
-                unlinkVibration(vib);
                 return vib;
             }
         }
         // We might be looking for a simple vibration which is only stored in
         // mCurrentVibration.
         if (mCurrentVibration != null && mCurrentVibration.mToken == token) {
-            unlinkVibration(mCurrentVibration);
             return mCurrentVibration;
         }
         return null;
-    }
-
-    private void unlinkVibration(Vibration vib) {
-        if (vib.mPattern != null) {
-            // If Vibration object has a pattern,
-            // the Vibration object has also been linkedToDeath.
-            vib.mToken.unlinkToDeath(vib, 0);
-        }
     }
 
     private class VibrateThread extends Thread {
@@ -332,8 +293,8 @@ public class VibratorService extends IVibratorService.Stub {
 
         private void delay(long duration) {
             if (duration > 0) {
+                long bedtime = SystemClock.uptimeMillis();
                 do {
-                    long bedtime = SystemClock.uptimeMillis();
                     try {
                         this.wait(duration);
                     }
@@ -343,7 +304,7 @@ public class VibratorService extends IVibratorService.Stub {
                         break;
                     }
                     duration = duration
-                            - (SystemClock.uptimeMillis() - bedtime);
+                            - SystemClock.uptimeMillis() - bedtime;
                 } while (duration > 0);
             }
         }
@@ -395,7 +356,6 @@ public class VibratorService extends IVibratorService.Stub {
                     // If this vibration finished naturally, start the next
                     // vibration.
                     mVibrations.remove(mVibration);
-                    unlinkVibration(mVibration);
                     startNextVibrationLocked();
                 }
             }

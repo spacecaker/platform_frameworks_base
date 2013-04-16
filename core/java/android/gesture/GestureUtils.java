@@ -38,8 +38,6 @@ import static android.gesture.GestureConstants.*;
  */
 public final class GestureUtils {
   
-    /** Delta used for floating point equality checks. */
-    private static final float FP_EQUALITY_DELTA = 1e-8f;
     private static final float SCALING_THRESHOLD = 0.26f;
     private static final float NONUNIFORM_SCALE = (float) Math.sqrt(2);
     
@@ -550,7 +548,7 @@ public final class GestureUtils {
         float rightside = (float) Math.sqrt(Math.pow(value, 2) - b);
         float lambda1 = -value + rightside;
         float lambda2 = -value - rightside;
-        if (Math.abs(lambda1 - lambda2) < FP_EQUALITY_DELTA) {
+        if (lambda1 == lambda2) {
             targetVector[0] = 0;
             targetVector[1] = 0;
         } else {
