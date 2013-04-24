@@ -108,9 +108,7 @@ public:
     virtual     bool        getMicMute() const;
 
     virtual     bool        isStreamActive(int stream) const;
-#ifdef OMAP_ENHANCEMENT
-   virtual     status_t	setFMRxActive(bool state);
-#endif
+
     virtual     status_t    setParameters(int ioHandle, const String8& keyValuePairs);
     virtual     String8     getParameters(int ioHandle, const String8& keys);
 
@@ -172,10 +170,6 @@ public:
 
     virtual status_t moveEffects(int session, int srcOutput, int dstOutput);
 
-#ifdef HAVE_FM_RADIO
-    virtual status_t setFmVolume(float volume);
-#endif
-
     enum hardware_call_state {
         AUDIO_HW_IDLE = 0,
         AUDIO_HW_INIT,
@@ -193,9 +187,6 @@ public:
         AUDIO_HW_SET_MIC_MUTE,
         AUDIO_SET_VOICE_VOLUME,
         AUDIO_SET_PARAMETER,
-#ifdef HAVE_FM_RADIO
-        AUDIO_SET_FM_VOLUME
-#endif
     };
 
     // record interface
@@ -589,9 +580,6 @@ private:
         virtual     bool        streamMute(int stream) const;
 
                     bool        isStreamActive(int stream) const;
-#ifdef OMAP_ENHANCEMENT
-        virtual     status_t	setFMRxActive(bool state);
-#endif
 
                     sp<Track>   createTrack_l(
                                     const sp<AudioFlinger::Client>& client,
@@ -671,9 +659,6 @@ private:
         int                             mSuspended;
         int                             mBytesWritten;
         bool                            mMasterMute;
-#ifdef OMAP_ENHANCEMENT
-        bool                            mFmInplay;
-#endif
         SortedVector< wp<Track> >       mActiveTracks;
 
         virtual int             getTrackName_l() = 0;
@@ -1188,9 +1173,6 @@ private:
 
                 mutable     Mutex                   mHardwareLock;
                 AudioHardwareInterface*             mAudioHardware;
-#ifdef OMAP_ENHANCEMENT
-                bool                                mFmEnabled;
-#endif
     mutable     int                                 mHardwareStatus;
 
 
@@ -1208,9 +1190,6 @@ private:
 #endif
                 uint32_t mMode;
 
-#ifdef HAVE_FM_RADIO
-                bool                                mFmOn;
-#endif
 };
 
 // ----------------------------------------------------------------------------
