@@ -97,11 +97,10 @@ final class NativeDaemonConnector implements Runnable {
                     LocalSocketAddress.Namespace.RESERVED);
 
             socket.connect(address);
-
-            mOutputStream = socket.getOutputStream();
             mCallbacks.onDaemonConnected();
 
             InputStream inputStream = socket.getInputStream();
+            mOutputStream = socket.getOutputStream();
 
             byte[] buffer = new byte[BUFFER_SIZE];
             int start = 0;

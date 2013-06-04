@@ -434,13 +434,10 @@ class AppWidgetService extends IAppWidgetService.Stub
                 return;
             }
             ArrayList<AppWidgetId> instances = p.instances;
-            final int callingUid = getCallingUid();
             final int N = instances.size();
             for (int i=0; i<N; i++) {
                 AppWidgetId id = instances.get(i);
-                if (canAccessAppWidgetId(id, callingUid)) {
-                    updateAppWidgetInstanceLocked(id, views);
-                }
+                updateAppWidgetInstanceLocked(id, views);
             }
         }
     }
