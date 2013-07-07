@@ -1403,7 +1403,6 @@ class MountService extends IMountService.Stub
         validatePermission(android.Manifest.permission.MOUNT_UNMOUNT_FILESYSTEMS);
 
         // TODO: Add support for multiple share methods
-
         for (String path : getShareableVolumes()) {
             /*
              * If the volume is mounted and we're enabling then unmount it

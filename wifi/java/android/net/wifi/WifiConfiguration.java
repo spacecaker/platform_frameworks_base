@@ -211,6 +211,10 @@ public class WifiConfiguration implements Parcelable {
         public static final String[] strings = { "current", "disabled", "enabled" };
     }
 
+    /**
+     * Possible modes of a network configuration.
+     * @hide
+     */
     public static class Mode {
         private Mode() { }
 

@@ -1,6 +1,7 @@
 /* //device/libs/android_runtime/android_os_Power.cpp
 **
 ** Copyright 2006, The Android Open Source Project
+** Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -92,7 +93,6 @@ SetUnstableMemoryState(JNIEnv *env, jobject clazz, jboolean on)
     return set_unstable_memory_state(on);
 }
 #endif
-
 
 static JNINativeMethod method_table[] = {
     { "acquireWakeLock", "(ILjava/lang/String;)V", (void*)acquireWakeLock },

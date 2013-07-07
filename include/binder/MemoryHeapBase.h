@@ -64,7 +64,6 @@ public:
 #ifndef BINDER_COMPAT
     virtual uint32_t    getOffset() const;
 #endif
-
     const char*         getDevice() const;
 
     /* this closes this heap -- use carefully */

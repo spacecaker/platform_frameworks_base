@@ -28,12 +28,21 @@
 #include <ui/GraphicBufferMapper.h>
 #include <gui/ISurfaceTexture.h>
 
+#ifdef QCOM_LEGACY_OMX
+#include <gralloc_priv.h>
+#endif
+
 namespace android {
 
 #ifdef QCOM_HARDWARE
 static const int QOMX_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka = 0x7FA30C03;
 static const int OMX_QCOM_COLOR_FormatYVU420SemiPlanar = 0x7FA30C00;
 #endif
+
+static int ALIGN(int x, int y) {
+    // y must be a power of 2.
+    return (x + y - 1) & ~(y - 1);
+}
 
 SoftwareRenderer::SoftwareRenderer(
         const sp<ANativeWindow> &nativeWindow, const sp<MetaData> &meta)
@@ -81,9 +90,9 @@ SoftwareRenderer::SoftwareRenderer(
         case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
         {
             halFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
-            bufWidth = (mCropWidth + 1) & ~1;
-            bufHeight = (mCropHeight + 1) & ~1;
-            mAlign = ((mWidth + 15) & -16) * ((mHeight + 15) & -16);
+            bufWidth = ALIGN(mCropWidth, 16);
+            bufHeight = ALIGN(mCropHeight, 2);
+            mAlign = ALIGN(mWidth, 16) * ALIGN(mHeight, 16);
             break;
         }
 #endif
@@ -112,7 +121,11 @@ SoftwareRenderer::SoftwareRenderer(
             native_window_set_usage(
             mNativeWindow.get(),
             GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN
-            | GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_EXTERNAL_DISP));
+            | GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_EXTERNAL_DISP
+#ifdef QCOM_LEGACY_OMX
+            | GRALLOC_USAGE_PRIVATE_ADSP_HEAP | GRALLOC_USAGE_PRIVATE_UNCACHED
+#endif
+            ));
 
     CHECK_EQ(0,
             native_window_set_scaling_mode(
@@ -144,11 +157,6 @@ SoftwareRenderer::SoftwareRenderer(
 SoftwareRenderer::~SoftwareRenderer() {
     delete mConverter;
     mConverter = NULL;
-}
-
-static int ALIGN(int x, int y) {
-    // y must be a power of 2.
-    return (x + y - 1) & ~(y - 1);
 }
 
 void SoftwareRenderer::render(
@@ -227,10 +235,11 @@ void SoftwareRenderer::render(
         uint8_t *src_u = src_y + mAlign;
         uint8_t *dst_y = (uint8_t *)dst;
         uint8_t *dst_u = dst_y + buf->stride * buf->height;
+        size_t bufsz = ALIGN(mCropWidth, 16) * ALIGN(mCropHeight, 2);
 
         // Legacy codec doesn't return crop params. Ignore it for speedup :)
-        memcpy(dst_y, src_y, mCropWidth * mCropHeight);
-        memcpy(dst_u, src_u, mCropWidth * mCropHeight / 2);
+        memcpy(dst_y, src_y, bufsz);
+        memcpy(dst_u, src_u, bufsz / 2);
 
         /*for(size_t y = 0; y < mCropHeight; ++y) {
             memcpy(dst_y, src_y, mCropWidth);

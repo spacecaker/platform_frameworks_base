@@ -201,7 +201,7 @@ void DisplayHardware::init(uint32_t dpy)
     err = selectConfigForPixelFormat(display, attribs, format, &config);
     LOGE_IF(err, "couldn't find an EGLConfig matching the screen format");
 #endif
-
+    
     EGLint r,g,b,a;
     eglGetConfigAttrib(display, config, EGL_RED_SIZE,   &r);
     eglGetConfigAttrib(display, config, EGL_GREEN_SIZE, &g);
@@ -394,6 +394,10 @@ void DisplayHardware::flip(const Region& dirty) const
     if (mHwc->initCheck() == NO_ERROR) {
         mHwc->commit();
     } else {
+#ifdef STE_HARDWARE
+        // Make sure the swapbuffer call is done in sync
+        mNativeWindow->compositionComplete();
+#endif
         eglSwapBuffers(dpy, surface);
     }
     checkEGLErrors("eglSwapBuffers");
@@ -417,3 +421,10 @@ void DisplayHardware::dump(String8& res) const
 {
     mNativeWindow->dump(res);
 }
+
+#ifdef QCOM_HDMI_OUT
+void DisplayHardware::orientationChanged(int orientation) const
+{
+    mNativeWindow->orientationChanged(EVENT_ORIENTATION_CHANGE, orientation);
+}
+#endif

@@ -30,6 +30,7 @@ commonSources:= \
 	LinearTransform.cpp \
 	ObbFile.cpp \
 	PropertyMap.cpp \
+	PackageRedirectionMap.cpp \
 	RefBase.cpp \
 	ResourceTypes.cpp \
 	SharedBuffer.cpp \
@@ -49,6 +50,8 @@ commonSources:= \
 	ZipFileCRO.cpp \
 	ZipFileRO.cpp \
 	ZipUtils.cpp \
+	../../tools/aapt/ZipFile.cpp \
+	../../tools/aapt/ZipEntry.cpp \
 	misc.cpp
 
 
@@ -61,7 +64,7 @@ LOCAL_SRC_FILES:= $(commonSources)
 
 LOCAL_MODULE:= libutils
 
-LOCAL_CFLAGS += -DLIBUTILS_NATIVE=1 $(TOOL_CFLAGS) -fpermissive
+LOCAL_CFLAGS += -DLIBUTILS_NATIVE=1 $(TOOL_CFLAGS)
 LOCAL_C_INCLUDES += external/zlib
 
 ifeq ($(HOST_OS),windows)

@@ -490,6 +490,7 @@ bool Parcel::enforceInterface(const String16& interface) const
 	return enforceInterface(interface,NULL);
 }
 
+
 bool Parcel::checkInterface(IBinder* binder) const
 {
     return enforceInterface(binder->getInterfaceDescriptor(),NULL);

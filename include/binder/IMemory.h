@@ -46,7 +46,6 @@ public:
 #ifndef BINDER_COMPAT
     virtual uint32_t    getOffset() const = 0;
 #endif
-
     // these are there just for backward source compatibility
     int32_t heapID() const { return getHeapID(); }
     void*   base() const  { return getBase(); }

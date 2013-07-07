@@ -77,7 +77,6 @@ status_t GraphicBufferMapper::lock(buffer_handle_t handle,
     err = mAllocMod->lock(mAllocMod, handle, usage,
             bounds.left, bounds.top, bounds.width(), bounds.height(),
             vaddr);
-
 #ifdef MISSING_GRALLOC_BUFFERS
     while (err && tries) {
 	usleep(1000);
@@ -101,6 +100,7 @@ status_t GraphicBufferMapper::unlock(buffer_handle_t handle)
 
     LOGW_IF(err, "unlock(...) failed %d (%s)", err, strerror(-err));
     return err;
+}
 
 #ifdef EXYNOS4210_ENHANCEMENTS
 status_t GraphicBufferMapper::getphys(buffer_handle_t handle, void** paddr)
@@ -114,7 +114,6 @@ status_t GraphicBufferMapper::getphys(buffer_handle_t handle, void** paddr)
     return err;
 }
 #endif
-}
 
 // ---------------------------------------------------------------------------
 }; // namespace android

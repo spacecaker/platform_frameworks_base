@@ -22,7 +22,7 @@ commonSources:= \
 	KeyLayoutMap.cpp \
 	KeyCharacterMap.cpp \
 	VirtualKeyMap.cpp \
-    Overlay.cpp
+        Overlay.cpp
 
 # For the host
 # =====================================================

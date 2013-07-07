@@ -69,6 +69,12 @@ public:
                                         uint32_t channels = 0,
                                         audio_policy_output_flags_t flags =
                                             AUDIO_POLICY_OUTPUT_FLAG_INDIRECT);
+#ifdef WITH_QCOM_LPA
+    virtual audio_io_handle_t getSession(audio_stream_type_t stream,
+                                        uint32_t format = AUDIO_FORMAT_DEFAULT,
+                                        audio_policy_output_flags_t flags = AUDIO_POLICY_OUTPUT_FLAG_DIRECT,
+                                        int32_t sessionId=-1);
+#endif
     virtual status_t startOutput(audio_io_handle_t output,
                                  audio_stream_type_t stream,
                                  int session = 0);
@@ -76,13 +82,23 @@ public:
                                 audio_stream_type_t stream,
                                 int session = 0);
     virtual void releaseOutput(audio_io_handle_t output);
+#ifdef WITH_QCOM_LPA
+    virtual status_t pauseSession(audio_io_handle_t output, audio_stream_type_t stream);
+    virtual status_t resumeSession(audio_io_handle_t output, audio_stream_type_t stream);
+    virtual status_t closeSession(audio_io_handle_t output);
+#endif
     virtual audio_io_handle_t getInput(int inputSource,
                                     uint32_t samplingRate = 0,
                                     uint32_t format = AUDIO_FORMAT_DEFAULT,
                                     uint32_t channels = 0,
                                     audio_in_acoustics_t acoustics =
                                             (audio_in_acoustics_t)0,
+#ifdef STE_AUDIO
+                                    int audioSession = 0,
+                                    audio_input_clients *inputClientId = NULL);
+#else
                                     int audioSession = 0);
+#endif
     virtual status_t startInput(audio_io_handle_t input);
     virtual status_t stopInput(audio_io_handle_t input);
     virtual void releaseInput(audio_io_handle_t input);
@@ -133,6 +149,9 @@ public:
     virtual status_t startTone(audio_policy_tone_t tone, audio_stream_type_t stream);
     virtual status_t stopTone();
     virtual status_t setVoiceVolume(float volume, int delayMs = 0);
+#if defined(QCOM_HARDWARE) && defined(HAVE_FM_RADIO)
+    virtual status_t setFmVolume(float volume, int delayMs = 0);
+#endif
 
 private:
                         AudioPolicyService();
@@ -156,7 +175,10 @@ private:
             STOP_TONE,
             SET_VOLUME,
             SET_PARAMETERS,
-            SET_VOICE_VOLUME
+            SET_VOICE_VOLUME,
+#if defined(QCOM_HARDWARE) && defined(HAVE_FM_RADIO)
+            SET_FM_VOLUME
+#endif
         };
 
         AudioCommandThread (String8 name);
@@ -174,6 +196,9 @@ private:
                     status_t    volumeCommand(int stream, float volume, int output, int delayMs = 0);
                     status_t    parametersCommand(int ioHandle, const char *keyValuePairs, int delayMs = 0);
                     status_t    voiceVolumeCommand(float volume, int delayMs = 0);
+#if defined(QCOM_HARDWARE) && defined(HAVE_FM_RADIO)
+                    status_t    fmVolumeCommand(float volume, int delayMs = 0);
+#endif
                     void        insertCommand_l(AudioCommand *command, int delayMs = 0);
 
     private:
@@ -217,6 +242,13 @@ private:
         public:
             float mVolume;
         };
+
+#if defined(QCOM_HARDWARE) && defined(HAVE_FM_RADIO)
+        class FmVolumeData {
+        public:
+            float mVolume;
+        };
+#endif
 
         Mutex   mLock;
         Condition mWaitWorkCV;

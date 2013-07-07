@@ -143,7 +143,7 @@ void rsdGLShutdown(const Context *rsc) {
             dc->gl.wndSurface->decStrong(NULL);
             dc->gl.wndSurface = NULL;
         }
-#endif        
+#endif
         RSD_CALL_GL(eglDestroyContext, dc->gl.egl.display, dc->gl.egl.context);
         checkEglError("eglDestroyContext");
     }

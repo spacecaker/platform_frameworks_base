@@ -418,4 +418,5 @@ public class StorageNotification extends StorageEventListener {
             notificationManager.cancel(notificationId);
         }
     }
+
 }

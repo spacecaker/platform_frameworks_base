@@ -136,12 +136,11 @@ int SurfaceTextureClient::setSwapInterval(int interval) {
 
     if (interval > maxSwapInterval)
         interval = maxSwapInterval;
-        
+
 #ifdef EGL_ALWAYS_ASYNC
     if (mReqUsage != 0)
         interval = 0;
 #endif
-
     status_t res = mSurfaceTexture->setSynchronousMode(interval ? true : false);
 
     return res;
@@ -341,7 +340,7 @@ int SurfaceTextureClient::perform(int operation, va_list args)
 #ifdef QCOM_HARDWARE
         res = dispatchPerformQcomOperation(operation, args);
 #else
-        res = NAME_NOT_FOUND;
+	res = NAME_NOT_FOUND;
 #endif
         break;
     }

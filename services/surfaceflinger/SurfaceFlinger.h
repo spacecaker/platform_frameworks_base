@@ -182,6 +182,15 @@ public:
     virtual int                         setOrientation(DisplayID dpy, int orientation, uint32_t flags);
     virtual bool                        authenticateSurfaceTexture(const sp<ISurfaceTexture>& surface) const;
 
+#ifdef QCOM_HDMI_OUT
+    //HDMI Specific
+    virtual void                        enableExternalDisplay(int disp_type, int externaltype);
+#endif
+#ifdef STE_HDMI
+    //HDMI Specific
+    virtual int                         setHDMIParameter(int disp_type, int externaltype);
+#endif
+
     virtual status_t captureScreen(DisplayID dpy,
             sp<IMemoryHeap>* heap,
             uint32_t* width, uint32_t* height,
@@ -214,6 +223,7 @@ public:
 
     GLuint getProtectedTexName() const { return mProtectedTexName; }
 
+    // 0: surface doesn't need dithering, 1: use if necessary, 2: use permanently
     inline int  getUseDithering() const { return mUseDithering; }
 
 
@@ -406,7 +416,7 @@ private:
                 volatile nsecs_t            mDebugInTransaction;
                 nsecs_t                     mLastTransactionTime;
                 bool                        mBootFinished;
-                
+
 #ifdef QCOM_HDMI_OUT
                 //HDMI specific
                 int                         mExtDispOutput;
@@ -435,7 +445,8 @@ private:
    // only written in the main thread, only read in other threads
    volatile     int32_t                     mSecureFrameBuffer;
 
-                bool                        mUseDithering;
+                int                         mUseDithering;
+                bool                        mPrefer16bpp;
 };
 
 // ---------------------------------------------------------------------------

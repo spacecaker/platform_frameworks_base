@@ -50,6 +50,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.Interpolator;
 import android.widget.ImageView;
+import android.provider.Settings;
 
 import com.android.systemui.R;
 
@@ -348,7 +349,10 @@ class GlobalScreenshot {
         // only in the natural orientation of the device :!)
         mDisplay.getRealMetrics(mDisplayMetrics);
         float[] dims = {mDisplayMetrics.widthPixels, mDisplayMetrics.heightPixels};
-        float degrees = getDegreesForRotation(mDisplay.getRotation());
+        int rot = mDisplay.getRotation();
+        // Allow for abnormal hardware orientation
+        rot = (rot + (android.os.SystemProperties.getInt("ro.sf.hwrotation",0) / 90 )) % 4;
+        float degrees = getDegreesForRotation(rot);
         boolean requiresRotation = (degrees > 0);
         if (requiresRotation) {
             // Get the dimensions of the device in its native orientation
@@ -422,7 +426,9 @@ class GlobalScreenshot {
             @Override
             public void run() {
                 // Play the shutter sound to notify that we've taken a screenshot
-                mCameraSound.playSound(CameraSound.SHUTTER_CLICK);
+                if (Settings.System.getInt(mContext.getContentResolver(),
+                    Settings.System.SCREENSHOT_SOUND, 1) == 1)
+                    mCameraSound.playSound(CameraSound.SHUTTER_CLICK);
 
                 mScreenshotView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
                 mScreenshotView.buildLayer();

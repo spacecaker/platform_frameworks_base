@@ -2108,6 +2108,7 @@ public class WifiStateMachine extends StateMachine {
                             }
                             break;
                     }
+
                     mWakeLock.release();
                 }
             }).start();

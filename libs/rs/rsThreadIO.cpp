@@ -134,18 +134,18 @@ bool ThreadIO::playCoreCommands(Context *con, bool waitForCommand, uint64_t time
             if (delay > timeToWait) {
                 delay = 0;
             }
+        }
 
         if (delay == 0 && timeToWait != 0 && mToCore.isEmpty()) {
             break;
         }
 
-        }
         const void * data = mToCore.get(&cmdID, &cmdSize, delay);
         if (!cmdSize) {
             // exception or timeout occurred.
             break;
         }
-        ret=true;
+        ret = true;
         if (con->props.mLogTimes) {
             con->timerSet(Context::RS_TIMER_INTERNAL);
         }

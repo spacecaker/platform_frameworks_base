@@ -247,7 +247,6 @@ BpMemoryHeap::BpMemoryHeap(const sp<IBinder>& impl)
 #ifdef QCOM_HARDWARE
     mIonFd = open("/dev/ion", O_RDONLY);
 #endif
-
 }
 
 BpMemoryHeap::~BpMemoryHeap() {
@@ -292,7 +291,7 @@ void BpMemoryHeap::assertMapped() const
                 mBase   = heap->mBase;
                 mSize   = heap->mSize;
 #ifndef BINDER_COMPAT
-                 mOffset = heap->mOffset;
+                mOffset = heap->mOffset;
 #endif
                 android_atomic_write( dup( heap->mHeapId ), &mHeapId );
             }
@@ -347,7 +346,7 @@ void BpMemoryHeap::assertReallyMapped() const
                 mSize = size;
                 mFlags = flags;
 #ifndef BINDER_COMPAT
-                 mOffset = offset;
+                mOffset = offset;
 #endif
                 android_atomic_write(fd, &mHeapId);
             }

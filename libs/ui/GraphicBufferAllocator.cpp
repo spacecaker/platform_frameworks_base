@@ -107,7 +107,6 @@ status_t GraphicBufferAllocator::alloc(uint32_t w, uint32_t h, PixelFormat forma
 	usage ^= GRALLOC_USAGE_EXTERNAL_DISP;
     }
 #endif
-    
     err = mAllocDev->alloc(mAllocDev, w, h, format, usage, handle, stride);
 
     LOGW_IF(err, "alloc(%u, %u, %d, %08x, ...) failed %d (%s)",

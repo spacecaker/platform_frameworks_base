@@ -25,6 +25,7 @@ import android.graphics.PixelFormat;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.provider.Settings;
 import android.util.Slog;
 import android.util.Log;
 import android.view.Display;
@@ -59,9 +60,16 @@ public abstract class StatusBar extends SystemUI implements CommandQueue.Callbac
 
     private DoNotDisturb mDoNotDisturb;
 
+    private boolean mShowNotificationCounts;
+
     public void start() {
         // First set up our views and stuff.
         View sb = makeStatusBarView();
+
+        mStatusBarContainer.addView(sb);
+
+        mShowNotificationCounts = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.STATUS_BAR_NOTIF_COUNT, 0) == 1;
 
         // Connect in to the status bar manager service
         StatusBarIconList iconList = new StatusBarIconList();
@@ -110,6 +118,9 @@ public abstract class StatusBar extends SystemUI implements CommandQueue.Callbac
 
         // Put up the view
         final int height = getStatusBarHeight();
+        final int transparency = Settings.System.getInt(
+                                        sb.getContext().getContentResolver(),
+                                        Settings.STATUSBAR_TRANSPARENCY, 100);
 
         final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -121,7 +132,13 @@ public abstract class StatusBar extends SystemUI implements CommandQueue.Callbac
                 // We use a pixel format of RGB565 for the status bar to save memory bandwidth and
                 // to ensure that the layer can be handled by HWComposer.  On some devices the
                 // HWComposer is unable to handle SW-rendered RGBX_8888 layers.
-                PixelFormat.RGB_565);
+               (transparency != 100 ? PixelFormat.TRANSPARENT : PixelFormat.RGB_565));
+
+        if (transparency != 100) {
+            sb.setBackgroundColor(
+                (int) (((float)transparency / 100.0F) * 255) * 0x1000000);
+        }
+        //sb.setBackgroundColor(144 * 0x1000000);
         
         // the status bar should be in an overlay if possible
         final Display defaultDisplay 
@@ -137,7 +154,7 @@ public abstract class StatusBar extends SystemUI implements CommandQueue.Callbac
         lp.setTitle("StatusBar");
         lp.packageName = mContext.getPackageName();
         lp.windowAnimations = R.style.Animation_StatusBar;
-        WindowManagerImpl.getDefault().addView(sb, lp);
+        WindowManagerImpl.getDefault().addView(mStatusBarContainer, lp);
 
         if (SPEW) {
             Slog.d(TAG, "Added status bar view: gravity=0x" + Integer.toHexString(lp.gravity) 

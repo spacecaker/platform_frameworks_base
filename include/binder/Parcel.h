@@ -79,7 +79,6 @@ public:
 #ifdef _INTERNAL_BINDER_PARCEL_
     bool                enforceInterface(const String16& interface) const;
 #endif
-
     bool                checkInterface(IBinder*) const;
 
     void                freeData();

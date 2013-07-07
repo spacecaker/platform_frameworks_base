@@ -701,7 +701,8 @@ public class SurfaceView extends View {
                     return;
                 default:
                     break;
-            }            // for backward compatibility reason, OPAQUE always
+            }
+            // for backward compatibility reason, OPAQUE always
             // means 565 for SurfaceView
             if (format == PixelFormat.OPAQUE)
                 format = PixelFormat.RGB_565;

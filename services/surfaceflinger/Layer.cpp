@@ -43,9 +43,8 @@
 #include <qcom_ui.h>
 #define SHIFT_SRC_TRANSFORM 4
 #endif
- 
-#define DEBUG_RESIZE    0
 
+#define DEBUG_RESIZE    0
 
 namespace android {
 
@@ -183,11 +182,17 @@ status_t Layer::setBuffers( uint32_t w, uint32_t h,
     mSurfaceTexture->setDefaultBufferSize(w, h);
     mSurfaceTexture->setDefaultBufferFormat(format);
 
-    if (mFlinger->getUseDithering()) {
-        // we use the red index
-        int displayRedSize = displayInfo.getSize(PixelFormatInfo::INDEX_RED);
-        int layerRedsize = info.getSize(PixelFormatInfo::INDEX_RED);
-        mNeedsDithering = layerRedsize > displayRedSize;
+    int useDither = mFlinger->getUseDithering();
+    if (useDither) {
+        if (useDither == 2) {
+            mNeedsDithering = true;
+        }
+        else {
+            // we use the red index
+            int displayRedSize = displayInfo.getSize(PixelFormatInfo::INDEX_RED);
+            int layerRedsize = info.getSize(PixelFormatInfo::INDEX_RED);
+            mNeedsDithering = (layerRedsize > displayRedSize);
+        }
     } else {
         mNeedsDithering = false;
     }
@@ -220,8 +225,8 @@ void Layer::setGeometry(hwc_layer_t* hwcl)
     // we can't do alpha-fade with the hwc HAL
     const State& s(drawingState());
     if (s.alpha < 0xFF) {
-        hwcl->flags = HWC_SKIP_LAYER;
-     }
+	hwcl->flags = HWC_SKIP_LAYER;
+    }
 #endif
 
     /*
@@ -290,6 +295,18 @@ void Layer::setPerFrameData(hwc_layer_t* hwcl) {
 
 void Layer::onDraw(const Region& clip) const
 {
+#ifdef STE_HARDWARE
+    // Convert the texture to a native format if need be.
+    // convert() returns immediately if no conversion is necessary.
+    if (mSurfaceTexture != NULL) {
+        status_t res = mSurfaceTexture->convert();
+        if (res != NO_ERROR) {
+            LOGE("Layer::onDraw: texture conversion failed. "
+                "Texture content for this layer will not be initialized.");
+        }
+    }
+#endif
+
     if (CC_UNLIKELY(mActiveBuffer == 0)) {
         // the texture has not been created yet, this Layer has
         // in fact never been drawn into. This happens frequently with
@@ -316,14 +333,14 @@ void Layer::onDraw(const Region& clip) const
 #ifdef SAMSUNG_CODEC_SUPPORT
             clearWithOpenGL(holes, 0, 0, 0, 0);
 #else
-             clearWithOpenGL(holes, 0, 0, 0, 1);
+            clearWithOpenGL(holes, 0, 0, 0, 1);
 #endif
         }
         return;
     }
 
 #ifdef QCOM_HARDWARE
-        if (!isGPUSupportedFormat(mActiveBuffer->format)) {
+	if (!isGPUSupportedFormat(mActiveBuffer->format)) {
 	    clearWithOpenGL(clip, 0, 0, 0, 1);
         return;
 	}
@@ -337,7 +354,7 @@ void Layer::onDraw(const Region& clip) const
 #ifdef DECIDE_TEXTURE_TARGET
         glBindTexture(currentTextureTarget, mTextureName);
 #else
-         glBindTexture(GL_TEXTURE_EXTERNAL_OES, mTextureName);
+        glBindTexture(GL_TEXTURE_EXTERNAL_OES, mTextureName);
 #endif
         GLenum filter = GL_NEAREST;
         if (getFiltering() || needsFiltering() || isFixedSize() || isCropped()) {
@@ -358,25 +375,25 @@ void Layer::onDraw(const Region& clip) const
 #ifdef DECIDE_TEXTURE_TARGET
         glEnable(currentTextureTarget);
 #else
-         glEnable(GL_TEXTURE_EXTERNAL_OES);
+        glEnable(GL_TEXTURE_EXTERNAL_OES);
 #endif
-     } else {
+    } else {
 #ifdef DECIDE_TEXTURE_TARGET
         glBindTexture(currentTextureTarget, mFlinger->getProtectedTexName());
 #else
-         glBindTexture(GL_TEXTURE_2D, mFlinger->getProtectedTexName());
+        glBindTexture(GL_TEXTURE_2D, mFlinger->getProtectedTexName());
 #endif
-         glMatrixMode(GL_TEXTURE);
-         glLoadIdentity();
-         glMatrixMode(GL_MODELVIEW);
+        glMatrixMode(GL_TEXTURE);
+        glLoadIdentity();
+        glMatrixMode(GL_MODELVIEW);
 #ifdef DECIDE_TEXTURE_TARGET
         glEnable(currentTextureTarget);
 #else
-         glDisable(GL_TEXTURE_EXTERNAL_OES);
-         glEnable(GL_TEXTURE_2D);
+        glDisable(GL_TEXTURE_EXTERNAL_OES);
+        glEnable(GL_TEXTURE_2D);
 #endif
-     }
- 
+    }
+
 #ifdef QCOM_HARDWARE
     if(needsDithering()) {
         glEnable(GL_DITHER);
@@ -388,11 +405,11 @@ void Layer::onDraw(const Region& clip) const
     else
         drawWithOpenGL(clip);
 #else
-     drawWithOpenGL(clip);
+    drawWithOpenGL(clip);
 #endif
- 
-     glDisable(GL_TEXTURE_EXTERNAL_OES);
-     glDisable(GL_TEXTURE_2D);
+
+    glDisable(GL_TEXTURE_EXTERNAL_OES);
+    glDisable(GL_TEXTURE_2D);
 #ifdef QCOM_HARDWARE
     if(needsDithering()) {
         glDisable(GL_DITHER);
@@ -438,6 +455,7 @@ bool Layer::isProtected() const
     return (activeBuffer != 0) &&
             (activeBuffer->getUsage() & GRALLOC_USAGE_PROTECTED);
 }
+
 #ifdef QCOM_HARDWARE
 void Layer::setIsUpdating(bool isUpdating)
 {
@@ -514,19 +532,22 @@ void Layer::lockPageFlip(bool& recomputeVisibleRegions)
 
         if (mSurfaceTexture->updateTexImage(isComposition) < NO_ERROR) {
 #else
-         if (mSurfaceTexture->updateTexImage() < NO_ERROR) {
+#ifndef STE_HARDWARE
+        if (mSurfaceTexture->updateTexImage() < NO_ERROR) {
+#else
+        if (mSurfaceTexture->updateTexImage(true) < NO_ERROR) {
+#endif
 #endif
             // something happened!
             recomputeVisibleRegions = true;
             return;
         }
-
 #ifdef QCOM_HARDWARE
         updateLayerQcomFlags(LAYER_UPDATE_STATUS, true, mLayerQcomFlags);
 #endif
-         // update the active buffer
-         mActiveBuffer = mSurfaceTexture->getCurrentBuffer();
- 
+        // update the active buffer
+        mActiveBuffer = mSurfaceTexture->getCurrentBuffer();
+
 #ifdef QCOM_HARDWARE
         //Buffer validity changed. Reset HWC geometry flags.
         if(oldActiveBuffer == NULL && mActiveBuffer != NULL) {
@@ -682,7 +703,7 @@ uint32_t Layer::getEffectiveUsage(uint32_t usage) const
 #ifdef MISSING_GRALLOC_BUFFERS
     usage |= GraphicBuffer::USAGE_HW_TEXTURE;
 #else
-     usage |= GraphicBuffer::USAGE_HW_COMPOSER;
+    usage |= GraphicBuffer::USAGE_HW_COMPOSER;
 #endif
 
     return usage;

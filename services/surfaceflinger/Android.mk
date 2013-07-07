@@ -18,8 +18,7 @@ LOCAL_SRC_FILES:= \
     MessageQueue.cpp 						\
     SurfaceFlinger.cpp 						\
     SurfaceTextureLayer.cpp 				\
-    Transform.cpp 							
-    
+    Transform.cpp
 
 LOCAL_CFLAGS:= -DLOG_TAG=\"SurfaceFlinger\"
 LOCAL_CFLAGS += -DGL_GLEXT_PROTOTYPES -DEGL_EGLEXT_PROTOTYPES
@@ -35,7 +34,6 @@ ifeq ($(TARGET_BOARD_PLATFORM), s5pc110)
 	LOCAL_CFLAGS += -DREFRESH_RATE=56
 endif
 
-
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	libhardware \
@@ -48,6 +46,12 @@ LOCAL_SHARED_LIBRARIES := \
 
 # this is only needed for DDMS debugging
 LOCAL_SHARED_LIBRARIES += libdvm libandroid_runtime
+
+ifeq ($(BOARD_USES_LGE_HDMI_ROTATION),true)
+LOCAL_CFLAGS += -DUSE_LGE_HDMI
+LOCAL_SHARED_LIBRARIES += \
+	libnvdispmgr_d
+endif
 
 ifeq ($(BOARD_ADRENO_DECIDE_TEXTURE_TARGET),true)
     LOCAL_CFLAGS += -DDECIDE_TEXTURE_TARGET
