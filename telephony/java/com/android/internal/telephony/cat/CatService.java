@@ -104,7 +104,7 @@ public class CatService extends Handler implements AppInterface {
     private static final int DEV_ID_TERMINAL    = 0x82;
     private static final int DEV_ID_NETWORK     = 0x83;
 
-    static final String STK_DEFAULT = "Defualt Message";
+    static final String STK_DEFAULT = "Default Message";
 
     // Sms send result constants.
     static final int SMS_SEND_OK = 0;
@@ -140,9 +140,7 @@ public class CatService extends Handler implements AppInterface {
         mIccRecords = ir;
 
         // Register for SIM ready event.
-        mCmdIf.registerForSIMReady(this, MSG_ID_SIM_READY, null);
-        mCmdIf.registerForRUIMReady(this, MSG_ID_SIM_READY, null);
-        mCmdIf.registerForNVReady(this, MSG_ID_SIM_READY, null);
+        ic.registerForReady(this, MSG_ID_SIM_READY, null);
         mIccRecords.registerForRecordsLoaded(this, MSG_ID_ICC_RECORDS_LOADED, null);
 
         // Check if STK application is availalbe
@@ -188,8 +186,11 @@ public class CatService extends Handler implements AppInterface {
             } catch (ClassCastException e) {
                 // for error handling : cast exception
                 CatLog.d(this, "Fail to parse proactive command");
-                sendTerminalResponse(mCurrntCmd.mCmdDet, ResultCode.CMD_DATA_NOT_UNDERSTOOD,
+                // Don't send Terminal Resp if command detail is not available
+                if (mCurrntCmd != null) {
+                    sendTerminalResponse(mCurrntCmd.mCmdDet, ResultCode.CMD_DATA_NOT_UNDERSTOOD,
                                      false, 0x00, null);
+                }
                 break;
             }
             if (cmdParams != null) {
@@ -459,11 +460,11 @@ public class CatService extends Handler implements AppInterface {
                     }
                     break;
                 default:
-                    CatLog.d(this, "encodeOptionalTags() Unsupported Cmd:" + cmdDet.typeOfCommand);
+                    CatLog.d(this, "encodeOptionalTags() Unsupported Cmd details=" + cmdDet);
                     break;
             }
         } else {
-            CatLog.d(this, "encodeOptionalTags() bad Cmd:" + cmdDet.typeOfCommand);
+            CatLog.d(this, "encodeOptionalTags() bad Cmd details=" + cmdDet);
         }
     }
 
@@ -585,12 +586,12 @@ public class CatService extends Handler implements AppInterface {
      * @param ic Icc card
      * @return The only Service object in the system
      */
-    public static CatService getInstance(CommandsInterface ci, IccRecords ir,
-            Context context, IccFileHandler fh, IccCard ic, IccSmsInterfaceManager iccSmsInt) {
+    public static CatService getInstance(CommandsInterface ci, IccRecords ir, Context context,
+            IccFileHandler fh, IccCard ic, IccSmsInterfaceManager iccSmsInt) {
         synchronized (sInstanceLock) {
             if (sInstance == null) {
                 if (ci == null || ir == null || context == null || fh == null
-                        || ic == null || iccSmsInt == null) {
+                    || ic == null || iccSmsInt == null) {
                     return null;
                 }
                 HandlerThread thread = new HandlerThread("Cat Telephony service");
@@ -714,6 +715,9 @@ public class CatService extends Handler implements AppInterface {
                         break;
                     }
             }
+            break;
+        case MSG_ID_TIMEOUT:
+            CatLog.d(this, "CAT Timeout");
             break;
         default:
             throw new AssertionError("Unrecognized CAT command: " + msg.what);

@@ -19,6 +19,7 @@ package com.android.internal.os;
 import static android.net.NetworkStats.IFACE_ALL;
 import static android.net.NetworkStats.UID_ALL;
 import static android.text.format.DateUtils.SECOND_IN_MILLIS;
+import static com.android.server.NetworkManagementSocketTagger.PROP_QTAGUID_ENABLED;
 
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadset;
@@ -35,6 +36,7 @@ import android.os.ParcelFormatException;
 import android.os.Parcelable;
 import android.os.Process;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.WorkSource;
 import android.telephony.ServiceState;
 import android.telephony.SignalStrength;
@@ -1982,6 +1984,9 @@ public final class BatteryStatsImpl extends BatteryStats {
                     break;
                 case TelephonyManager.NETWORK_TYPE_EHRPD:
                     bin = DATA_CONNECTION_EHRPD;
+                    break;
+                case TelephonyManager.NETWORK_TYPE_HSPAP:
+                    bin = DATA_CONNECTION_HSPAP;
                     break;
                 default:
                     bin = DATA_CONNECTION_OTHER;
@@ -5713,11 +5718,17 @@ public final class BatteryStatsImpl extends BatteryStats {
         synchronized (this) {
             if (mNetworkSummaryCache == null
                     || mNetworkSummaryCache.getElapsedRealtimeAge() > SECOND_IN_MILLIS) {
-                try {
-                    mNetworkSummaryCache = mNetworkStatsFactory.readNetworkStatsSummary();
-                } catch (IllegalStateException e) {
-                    // log problem and return empty object
-                    Log.wtf(TAG, "problem reading network stats", e);
+                mNetworkSummaryCache = null;
+
+                if (SystemProperties.getBoolean(PROP_QTAGUID_ENABLED, false)) {
+                    try {
+                        mNetworkSummaryCache = mNetworkStatsFactory.readNetworkStatsSummaryDev();
+                    } catch (IllegalStateException e) {
+                        Log.wtf(TAG, "problem reading network stats", e);
+                    }
+                }
+
+                if (mNetworkSummaryCache == null) {
                     mNetworkSummaryCache = new NetworkStats(SystemClock.elapsedRealtime(), 0);
                 }
             }
@@ -5730,12 +5741,18 @@ public final class BatteryStatsImpl extends BatteryStats {
         synchronized (this) {
             if (mNetworkDetailCache == null
                     || mNetworkDetailCache.getElapsedRealtimeAge() > SECOND_IN_MILLIS) {
-                try {
-                    mNetworkDetailCache = mNetworkStatsFactory
-                            .readNetworkStatsDetail().groupedByUid();
-                } catch (IllegalStateException e) {
-                    // log problem and return empty object
-                    Log.wtf(TAG, "problem reading network stats", e);
+                mNetworkDetailCache = null;
+
+                if (SystemProperties.getBoolean(PROP_QTAGUID_ENABLED, false)) {
+                    try {
+                        mNetworkDetailCache = mNetworkStatsFactory
+                                .readNetworkStatsDetail().groupedByUid();
+                    } catch (IllegalStateException e) {
+                        Log.wtf(TAG, "problem reading network stats", e);
+                    }
+                }
+
+                if (mNetworkDetailCache == null) {
                     mNetworkDetailCache = new NetworkStats(SystemClock.elapsedRealtime(), 0);
                 }
             }

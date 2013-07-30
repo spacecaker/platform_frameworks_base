@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (c) 2012 Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,10 +32,16 @@ public class AudioFormat {
     public static final int ENCODING_INVALID = 0;
     /** Default audio data format */
     public static final int ENCODING_DEFAULT = 1;
+    // These two values must be kept in sync with JNI code for AudioTrack, AudioRecord
     /** Audio data format: PCM 16 bit per sample. Guaranteed to be supported by devices. */
-    public static final int ENCODING_PCM_16BIT = 2; // accessed by native code
+    public static final int ENCODING_PCM_16BIT = 2;
     /** Audio data format: PCM 8 bit per sample. Not guaranteed to be supported by devices. */
     public static final int ENCODING_PCM_8BIT = 3;  // accessed by native code
+    public static final int ENCODING_AMRNB = 100;   // accessed by native code
+    public static final int ENCODING_AMRWB = 101;   // accessed by native code
+    public static final int ENCODING_EVRC = 102;    // accessed by native code
+    public static final int ENCODING_EVRCB = 103;   // accessed by native code
+    public static final int ENCODING_EVRCWB = 104;  // accessed by native code
 
     /** Invalid audio channel configuration */
     /** @deprecated use CHANNEL_INVALID instead  */

@@ -84,7 +84,8 @@ class CommandParamsFactory extends Handler {
                 try {
                     cmdDet = ValueParser.retrieveCommandDetails(ctlvCmdDet);
                 } catch (ResultException e) {
-                    CatLog.d(this, "Failed to procees command details");
+                    CatLog.d(this,
+                            "processCommandDetails: Failed to procees command details e=" + e);
                 }
             }
         }
@@ -179,6 +180,7 @@ class CommandParamsFactory extends Handler {
                 return;
             }
         } catch (ResultException e) {
+            CatLog.d(this, "make: caught ResultException e=" + e);
             mCmdParams = new CommandParams(cmdDet);
             sendCmdParams(e.result());
             return;

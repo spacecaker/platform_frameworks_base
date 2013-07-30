@@ -27,6 +27,7 @@ import android.database.ContentObserver;
 import android.os.BatteryManager;
 import android.os.Handler;
 import android.provider.Settings;
+import android.util.Slog;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -85,6 +86,7 @@ public class BatteryController extends BroadcastReceiver {
 
     public BatteryController(Context context) {
         mContext = context;
+
         mHandler = new Handler();
 
         SettingsObserver settingsObserver = new SettingsObserver(mHandler);
@@ -109,7 +111,6 @@ public class BatteryController extends BroadcastReceiver {
         if (action.equals(Intent.ACTION_BATTERY_CHANGED)) {
             final int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
             mBatteryPlugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0;
-
             int N = mIconViews.size();
             for (int i=0; i<N; i++) {
                 ImageView v = mIconViews.get(i);

@@ -9,7 +9,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.net.Uri;
-import android.preference.ListPreferenceMultiSelect;
 import android.provider.Settings;
 import android.view.View;
 
@@ -134,7 +133,7 @@ public class SoundButton extends PowerButton {
     }
 
     private void updateSettings(ContentResolver resolver) {
-        String[] modes = ListPreferenceMultiSelect.parseStoredValue(Settings.System.getString(
+        String[] modes = parseStoredValue(Settings.System.getString(
                 resolver, Settings.System.EXPANDED_RING_MODE));
         if (modes == null || modes.length == 0) {
             mRingerValues = new int[] {

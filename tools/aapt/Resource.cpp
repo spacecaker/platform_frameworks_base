@@ -14,6 +14,8 @@
 #include "FileFinder.h"
 #include "CacheUpdater.h"
 
+#include <utils/WorkQueue.h>
+
 #if HAVE_PRINTF_ZD
 #  define ZD "%zd"
 #  define ZD_TYPE ssize_t
@@ -23,6 +25,9 @@
 #endif
 
 #define NOISY(x) // x
+
+// Number of threads to use for preprocessing images.
+static const size_t MAX_THREADS = 4;
 
 // ==========================================================================
 // ==========================================================================
@@ -302,20 +307,51 @@ static status_t makeFileResources(Bundle* bundle, const sp<AaptAssets>& assets,
     return hasErrors ? UNKNOWN_ERROR : NO_ERROR;
 }
 
-static status_t preProcessImages(Bundle* bundle, const sp<AaptAssets>& assets,
+class PreProcessImageWorkUnit : public WorkQueue::WorkUnit {
+public:
+    PreProcessImageWorkUnit(const Bundle* bundle, const sp<AaptAssets>& assets,
+            const sp<AaptFile>& file, volatile bool* hasErrors) :
+            mBundle(bundle), mAssets(assets), mFile(file), mHasErrors(hasErrors) {
+    }
+
+    virtual bool run() {
+        status_t status = preProcessImage(mBundle, mAssets, mFile, NULL);
+        if (status) {
+            *mHasErrors = true;
+        }
+        return true; // continue even if there are errors
+    }
+
+private:
+    const Bundle* mBundle;
+    sp<AaptAssets> mAssets;
+    sp<AaptFile> mFile;
+    volatile bool* mHasErrors;
+};
+
+static status_t preProcessImages(const Bundle* bundle, const sp<AaptAssets>& assets,
                           const sp<ResourceTypeSet>& set, const char* type)
 {
-    bool hasErrors = false;
+    volatile bool hasErrors = false;
     ssize_t res = NO_ERROR;
     if (bundle->getUseCrunchCache() == false) {
+        WorkQueue wq(MAX_THREADS, false);
         ResourceDirIterator it(set, String8(type));
-        Vector<sp<AaptFile> > newNameFiles;
-        Vector<String8> newNamePaths;
         while ((res=it.next()) == NO_ERROR) {
-            res = preProcessImage(bundle, assets, it.getFile(), NULL);
-            if (res < NO_ERROR) {
+            PreProcessImageWorkUnit* w = new PreProcessImageWorkUnit(
+                    bundle, assets, it.getFile(), &hasErrors);
+            status_t status = wq.schedule(w);
+            if (status) {
+                fprintf(stderr, "preProcessImages failed: schedule() returned %d\n", status);
                 hasErrors = true;
+                delete w;
+                break;
             }
+        }
+        status_t status = wq.finish();
+        if (status) {
+            fprintf(stderr, "preProcessImages failed: finish() returned %d\n", status);
+            hasErrors = true;
         }
     }
     return (hasErrors || (res < NO_ERROR)) ? UNKNOWN_ERROR : NO_ERROR;
@@ -847,8 +883,7 @@ status_t buildResources(Bundle* bundle, const sp<AaptAssets>& assets)
      * request UTF-16 encoding and the parameters of this package
      * allow UTF-8 to be used.
      */
-    if (!bundle->getWantUTF16()
-            && bundle->isMinSdkAtLeast(SDK_FROYO)) {
+    if (!bundle->getUTF16StringsOption()) {
         xmlFlags |= XML_COMPILE_UTF8;
     }
 
@@ -1809,7 +1844,7 @@ static status_t writeSymbolClass(
         if (sym.typeCode != AaptSymbolEntry::TYPE_INT32) {
             continue;
         }
-        if (!includePrivate && !sym.isPublic) {
+        if (!assets->isJavaSymbol(sym, includePrivate)) {
             continue;
         }
         String16 name(sym.name);
@@ -1865,7 +1900,7 @@ static status_t writeSymbolClass(
         if (sym.typeCode != AaptSymbolEntry::TYPE_STRING) {
             continue;
         }
-        if (!includePrivate && !sym.isPublic) {
+        if (!assets->isJavaSymbol(sym, includePrivate)) {
             continue;
         }
         String16 name(sym.name);
@@ -1977,7 +2012,8 @@ status_t writeResourceSymbols(Bundle* bundle, const sp<AaptAssets>& assets,
         "\n"
         "package %s;\n\n", package.string());
 
-        status_t err = writeSymbolClass(fp, assets, includePrivate, symbols, className, 0, bundle->getNonConstantId());
+        status_t err = writeSymbolClass(fp, assets, includePrivate, symbols,
+                className, 0, bundle->getNonConstantId());
         if (err != NO_ERROR) {
             return err;
         }
@@ -2045,6 +2081,23 @@ addProguardKeepRule(ProguardKeepSet* keep, const String8& inClassName,
     rule += " { <init>(...); }";
 
     String8 location("view ");
+    location += srcName;
+    char lineno[20];
+    sprintf(lineno, ":%d", line);
+    location += lineno;
+
+    keep->add(rule, location);
+}
+
+void
+addProguardKeepMethodRule(ProguardKeepSet* keep, const String8& memberName,
+        const char* pkg, const String8& srcName, int line)
+{
+    String8 rule("-keepclassmembers class * { *** ");
+    rule += memberName;
+    rule += "(...); }";
+
+    String8 location("onClick ");
     location += srcName;
     char lineno[20];
     sprintf(lineno, ":%d", line);
@@ -2157,7 +2210,7 @@ struct NamespaceAttributePair {
 
 status_t
 writeProguardForXml(ProguardKeepSet* keep, const sp<AaptFile>& layoutFile,
-        const char* startTag, const KeyedVector<String8, NamespaceAttributePair>* tagAttrPairs)
+        const char* startTag, const KeyedVector<String8, Vector<NamespaceAttributePair> >* tagAttrPairs)
 {
     status_t err;
     ResXMLTree tree;
@@ -2201,28 +2254,48 @@ writeProguardForXml(ProguardKeepSet* keep, const sp<AaptFile>& layoutFile,
         } else if (tagAttrPairs != NULL) {
             ssize_t tagIndex = tagAttrPairs->indexOfKey(tag);
             if (tagIndex >= 0) {
-                const NamespaceAttributePair& nsAttr = tagAttrPairs->valueAt(tagIndex);
-                ssize_t attrIndex = tree.indexOfAttribute(nsAttr.ns, nsAttr.attr);
-                if (attrIndex < 0) {
-                    // fprintf(stderr, "%s:%d: <%s> does not have attribute %s:%s.\n",
-                    //        layoutFile->getPrintableSource().string(), tree.getLineNumber(),
-                    //        tag.string(), nsAttr.ns, nsAttr.attr);
-                } else {
-                    size_t len;
-                    addProguardKeepRule(keep,
-                                        String8(tree.getAttributeStringValue(attrIndex, &len)), NULL,
-                                        layoutFile->getPrintableSource(), tree.getLineNumber());
+                const Vector<NamespaceAttributePair>& nsAttrVector = tagAttrPairs->valueAt(tagIndex);
+                for (size_t i = 0; i < nsAttrVector.size(); i++) {
+                    const NamespaceAttributePair& nsAttr = nsAttrVector[i];
+
+                    ssize_t attrIndex = tree.indexOfAttribute(nsAttr.ns, nsAttr.attr);
+                    if (attrIndex < 0) {
+                        // fprintf(stderr, "%s:%d: <%s> does not have attribute %s:%s.\n",
+                        //        layoutFile->getPrintableSource().string(), tree.getLineNumber(),
+                        //        tag.string(), nsAttr.ns, nsAttr.attr);
+                    } else {
+                        size_t len;
+                        addProguardKeepRule(keep,
+                                            String8(tree.getAttributeStringValue(attrIndex, &len)), NULL,
+                                            layoutFile->getPrintableSource(), tree.getLineNumber());
+                    }
                 }
             }
+        }
+        ssize_t attrIndex = tree.indexOfAttribute(RESOURCES_ANDROID_NAMESPACE, "onClick");
+        if (attrIndex >= 0) {
+            size_t len;
+            addProguardKeepMethodRule(keep,
+                                String8(tree.getAttributeStringValue(attrIndex, &len)), NULL,
+                                layoutFile->getPrintableSource(), tree.getLineNumber());
         }
     }
 
     return NO_ERROR;
 }
 
-static void addTagAttrPair(KeyedVector<String8, NamespaceAttributePair>* dest,
+static void addTagAttrPair(KeyedVector<String8, Vector<NamespaceAttributePair> >* dest,
         const char* tag, const char* ns, const char* attr) {
-    dest->add(String8(tag), NamespaceAttributePair(ns, attr));
+    String8 tagStr(tag);
+    ssize_t index = dest->indexOfKey(tagStr);
+
+    if (index < 0) {
+        Vector<NamespaceAttributePair> vector;
+        vector.add(NamespaceAttributePair(ns, attr));
+        dest->add(tagStr, vector);
+    } else {
+        dest->editValueAt(index).add(NamespaceAttributePair(ns, attr));
+    }
 }
 
 status_t
@@ -2231,13 +2304,13 @@ writeProguardForLayouts(ProguardKeepSet* keep, const sp<AaptAssets>& assets)
     status_t err;
 
     // tag:attribute pairs that should be checked in layout files.
-    KeyedVector<String8, NamespaceAttributePair> kLayoutTagAttrPairs;
+    KeyedVector<String8, Vector<NamespaceAttributePair> > kLayoutTagAttrPairs;
     addTagAttrPair(&kLayoutTagAttrPairs, "view", NULL, "class");
     addTagAttrPair(&kLayoutTagAttrPairs, "fragment", NULL, "class");
     addTagAttrPair(&kLayoutTagAttrPairs, "fragment", RESOURCES_ANDROID_NAMESPACE, "name");
 
     // tag:attribute pairs that should be checked in xml files.
-    KeyedVector<String8, NamespaceAttributePair> kXmlTagAttrPairs;
+    KeyedVector<String8, Vector<NamespaceAttributePair> > kXmlTagAttrPairs;
     addTagAttrPair(&kXmlTagAttrPairs, "PreferenceScreen", RESOURCES_ANDROID_NAMESPACE, "fragment");
     addTagAttrPair(&kXmlTagAttrPairs, "header", RESOURCES_ANDROID_NAMESPACE, "fragment");
 
@@ -2247,12 +2320,15 @@ writeProguardForLayouts(ProguardKeepSet* keep, const sp<AaptAssets>& assets)
         const sp<AaptDir>& d = dirs.itemAt(k);
         const String8& dirName = d->getLeaf();
         const char* startTag = NULL;
-        const KeyedVector<String8, NamespaceAttributePair>* tagAttrPairs = NULL;
+        const KeyedVector<String8, Vector<NamespaceAttributePair> >* tagAttrPairs = NULL;
         if ((dirName == String8("layout")) || (strncmp(dirName.string(), "layout-", 7) == 0)) {
             tagAttrPairs = &kLayoutTagAttrPairs;
         } else if ((dirName == String8("xml")) || (strncmp(dirName.string(), "xml-", 4) == 0)) {
             startTag = "PreferenceScreen";
             tagAttrPairs = &kXmlTagAttrPairs;
+        } else if ((dirName == String8("menu")) || (strncmp(dirName.string(), "menu-", 5) == 0)) {
+            startTag = "menu";
+            tagAttrPairs = NULL;
         } else {
             continue;
         }
@@ -2276,6 +2352,7 @@ writeProguardForLayouts(ProguardKeepSet* keep, const sp<AaptAssets>& assets)
     if (overlay.get()) {
         return writeProguardForLayouts(keep, overlay);
     }
+
     return NO_ERROR;
 }
 

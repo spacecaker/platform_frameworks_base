@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
- * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  * This code has been modified.  Portions copyright (C) 2010, T-Mobile USA, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +34,7 @@ import android.media.AudioService;
 import android.net.wifi.p2p.WifiP2pService;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.os.SchedulingPolicyService;
 import android.os.ServiceManager;
 import android.os.StrictMode;
 import android.os.SystemClock;
@@ -43,20 +43,23 @@ import android.provider.Settings;
 import android.server.BluetoothA2dpService;
 import android.server.BluetoothService;
 import android.server.search.SearchManagerService;
+import android.service.dreams.DreamManagerService;
 import android.util.DisplayMetrics;
 import android.util.EventLog;
 import android.util.Log;
 import android.util.Slog;
 import android.view.WindowManager;
 
-import com.android.internal.app.ShutdownThread;
 import com.android.internal.os.BinderInternal;
 import com.android.internal.os.SamplingProfilerIntegration;
+import com.android.internal.widget.LockSettingsService;
 import com.android.server.accessibility.AccessibilityManagerService;
 import com.android.server.am.ActivityManagerService;
+import com.android.server.input.InputManagerService;
 import com.android.server.net.NetworkPolicyManagerService;
 import com.android.server.net.NetworkStatsService;
 import com.android.server.pm.PackageManagerService;
+import com.android.server.pm.ShutdownThread;
 import com.android.server.usb.UsbService;
 import com.android.server.wm.WindowManagerService;
 
@@ -66,8 +69,6 @@ import dalvik.system.Zygote;
 import java.io.File;
 import java.util.Timer;
 import java.util.TimerTask;
-import com.stericsson.hardware.fm.FmReceiverService;
-import com.stericsson.hardware.fm.FmTransmitterService;
 
 class ServerThread extends Thread {
     private static final String TAG = "SystemServer";
@@ -128,11 +129,14 @@ class ServerThread extends Thread {
         String factoryTestStr = SystemProperties.get("ro.factorytest");
         int factoryTest = "".equals(factoryTestStr) ? SystemServer.FACTORY_TEST_OFF
                 : Integer.parseInt(factoryTestStr);
+        final boolean headless = "1".equals(SystemProperties.get("ro.config.headless", "0"));
 
+        AccountManagerService accountManager = null;
+        ContentService contentService = null;
         LightsService lights = null;
         PowerManagerService power = null;
-        DynamicMemoryManagerService dmm = null;
         BatteryService battery = null;
+        VibratorService vibrator = null;
         AlarmManagerService alarm = null;
         NetworkManagementService networkManagement = null;
         NetworkStatsService networkStats = null;
@@ -140,6 +144,7 @@ class ServerThread extends Thread {
         ConnectivityService connectivity = null;
         WifiP2pService wifiP2p = null;
         WifiService wifi = null;
+        NsdService serviceDiscovery= null;
         IPackageManager pm = null;
         Context context = null;
         WindowManagerService wm = null;
@@ -148,16 +153,18 @@ class ServerThread extends Thread {
         DockObserver dock = null;
         RotationSwitchObserver rotateSwitch = null;
         UsbService usb = null;
+        SerialService serial = null;
         UiModeManagerService uiMode = null;
         RecognitionManagerService recognition = null;
         ThrottleService throttle = null;
         NetworkTimeUpdateService networkTimeUpdater = null;
-        CpuGovernorService cpuGovernorManager = null;
+        CommonTimeManagementService commonTimeMgmtService = null;
+        InputManagerService inputManager = null;
 
         // Critical services...
         try {
-            Slog.i(TAG, "Entropy Service");
-            ServiceManager.addService("entropy", new EntropyService());
+            Slog.i(TAG, "Entropy Mixer");
+            ServiceManager.addService("entropy", new EntropyMixer());
 
             Slog.i(TAG, "Power Manager");
             power = new PowerManagerService();
@@ -168,6 +175,10 @@ class ServerThread extends Thread {
 
             Slog.i(TAG, "Telephony Registry");
             ServiceManager.addService("telephony.registry", new TelephonyRegistry(context));
+
+            Slog.i(TAG, "Scheduling Policy");
+            ServiceManager.addService(Context.SCHEDULING_POLICY_SERVICE,
+                    new SchedulingPolicyService());
 
             AttributeCache.init(context);
 
@@ -199,17 +210,15 @@ class ServerThread extends Thread {
             // The AccountManager must come before the ContentService
             try {
                 Slog.i(TAG, "Account Manager");
-                ServiceManager.addService(Context.ACCOUNT_SERVICE,
-                        new AccountManagerService(context));
+                accountManager = new AccountManagerService(context);
+                ServiceManager.addService(Context.ACCOUNT_SERVICE, accountManager);
             } catch (Throwable e) {
                 Slog.e(TAG, "Failure starting Account Manager", e);
             }
 
-
             Slog.i(TAG, "Content Manager");
-            ContentService.main(context,
+            contentService = ContentService.main(context,
                     factoryTest == SystemServer.FACTORY_TEST_LOW_LEVEL);
-
 
             Slog.i(TAG, "System Content Providers");
             ActivityManagerService.installSystemProviders();
@@ -222,7 +231,8 @@ class ServerThread extends Thread {
             ServiceManager.addService("battery", battery);
 
             Slog.i(TAG, "Vibrator Service");
-            ServiceManager.addService("vibrator", new VibratorService(context));
+            vibrator = new VibratorService(context);
+            ServiceManager.addService("vibrator", vibrator);
 
             // only initialize the power service after we have started the
             // lights service, content providers and the battery service.
@@ -239,8 +249,10 @@ class ServerThread extends Thread {
             Slog.i(TAG, "Window Manager");
             wm = WindowManagerService.main(context, power,
                     factoryTest != SystemServer.FACTORY_TEST_LOW_LEVEL,
-                    !firstBoot);
+                    !firstBoot, onlyCore);
             ServiceManager.addService(Context.WINDOW_SERVICE, wm);
+            inputManager = wm.getInputManagerService();
+            ServiceManager.addService(Context.INPUT_SERVICE, inputManager);
 
             ActivityManagerService.self().setWindowManager(wm);
 
@@ -256,28 +268,19 @@ class ServerThread extends Thread {
                 bluetooth = new BluetoothService(context);
                 ServiceManager.addService(BluetoothAdapter.BLUETOOTH_SERVICE, bluetooth);
                 bluetooth.initAfterRegistration();
-                bluetoothA2dp = new BluetoothA2dpService(context, bluetooth);
-                ServiceManager.addService(BluetoothA2dpService.BLUETOOTH_A2DP_SERVICE,
-                                          bluetoothA2dp);
-                bluetooth.initAfterA2dpRegistration();
 
-                int airplaneModeOn = Settings.System.getInt(mContentResolver,
-                        Settings.System.AIRPLANE_MODE_ON, 0);
+                if (!"0".equals(SystemProperties.get("system_init.startaudioservice"))) {
+                    bluetoothA2dp = new BluetoothA2dpService(context, bluetooth);
+                    ServiceManager.addService(BluetoothA2dpService.BLUETOOTH_A2DP_SERVICE,
+                                              bluetoothA2dp);
+                    bluetooth.initAfterA2dpRegistration();
+                }
+
                 int bluetoothOn = Settings.Secure.getInt(mContentResolver,
                     Settings.Secure.BLUETOOTH_ON, 0);
-                if (airplaneModeOn == 0 && bluetoothOn != 0) {
+                if (bluetoothOn != 0) {
                     bluetooth.enable();
                 }
-            }
-
-            if (SystemProperties.QCOM_HARDWARE) {
-                Slog.i(TAG, "DynamicMemoryManager Service");
-                dmm = new DynamicMemoryManagerService(context);
-            }
-
-            cpuGovernorManager = new CpuGovernorService(context);
-            if (cpuGovernorManager == null) {
-                Slog.e(TAG, "CpuGovernorService failed to start");
             }
 
         } catch (RuntimeException e) {
@@ -298,12 +301,14 @@ class ServerThread extends Thread {
         LocationManagerService location = null;
         CountryDetectorService countryDetector = null;
         TextServicesManagerService tsms = null;
+        LockSettingsService lockSettings = null;
+        DreamManagerService dreamy = null;
 
         // Bring up services needed for UI.
         if (factoryTest != SystemServer.FACTORY_TEST_LOW_LEVEL) {
             try {
                 Slog.i(TAG, "Input Method Service");
-                imm = new InputMethodManagerService(context);
+                imm = new InputMethodManagerService(context, wm);
                 ServiceManager.addService(Context.INPUT_METHOD_SERVICE, imm);
             } catch (Throwable e) {
                 reportWtf("starting Input Manager Service", e);
@@ -339,6 +344,29 @@ class ServerThread extends Thread {
         }
 
         if (factoryTest != SystemServer.FACTORY_TEST_LOW_LEVEL) {
+            MountService mountService = null;
+            if (!"0".equals(SystemProperties.get("system_init.startmountservice"))) {
+                try {
+                    /*
+                     * NotificationManagerService is dependant on MountService,
+                     * (for media / usb notifications) so we must start MountService first.
+                     */
+                    Slog.i(TAG, "Mount Service");
+                    mountService = new MountService(context);
+                    ServiceManager.addService("mount", mountService);
+                } catch (Throwable e) {
+                    reportWtf("starting Mount Service", e);
+                }
+            }
+
+            try {
+                Slog.i(TAG,  "LockSettingsService");
+                lockSettings = new LockSettingsService(context);
+                ServiceManager.addService("lock_settings", lockSettings);
+            } catch (Throwable e) {
+                reportWtf("starting LockSettingsService service", e);
+            }
+
             try {
                 Slog.i(TAG, "Device Policy");
                 devicePolicy = new DevicePolicyManagerService(context);
@@ -427,6 +455,15 @@ class ServerThread extends Thread {
             }
 
             try {
+                Slog.i(TAG, "Network Service Discovery Service");
+                serviceDiscovery = NsdService.create(context);
+                ServiceManager.addService(
+                        Context.NSD_SERVICE, serviceDiscovery);
+            } catch (Throwable e) {
+                reportWtf("starting Service Discovery Service", e);
+            }
+
+            try {
                 Slog.i(TAG, "Throttle Service");
                 throttle = new ThrottleService(context);
                 ServiceManager.addService(
@@ -436,30 +473,20 @@ class ServerThread extends Thread {
             }
 
             try {
-                /*
-                 * NotificationManagerService is dependant on MountService,
-                 * (for media / usb notifications) so we must start MountService first.
-                 */
-                Slog.i(TAG, "Mount Service");
-                ServiceManager.addService("mount", new MountService(context));
+                Slog.i(TAG, "UpdateLock Service");
+                ServiceManager.addService(Context.UPDATE_LOCK_SERVICE,
+                        new UpdateLockService(context));
             } catch (Throwable e) {
-                reportWtf("starting Mount Service", e);
+                reportWtf("starting UpdateLockService", e);
             }
 
-            try {
-                Slog.i(TAG, "FM receiver Service");
-                ServiceManager.addService("fm_receiver",
-                        new FmReceiverService(context));
-            } catch (Throwable e) {
-                Slog.e(TAG, "Failure starting FM receiver Service", e);
-            }
-
-            try {
-                Slog.i(TAG, "FM transmitter Service");
-                ServiceManager.addService("fm_transmitter",
-                        new FmTransmitterService(context));
-            } catch (Throwable e) {
-                Slog.e(TAG, "Failure starting FM transmitter Service", e);
+            /*
+             * MountService has a few dependencies: Notification Manager and
+             * AppWidget Provider. Make sure MountService is completely started
+             * first before continuing.
+             */
+            if (mountService != null) {
+                mountService.waitForAsecScan();
             }
 
             try {
@@ -471,22 +498,26 @@ class ServerThread extends Thread {
             }
 
             try {
+                if (accountManager != null)
+                    accountManager.systemReady();
+            } catch (Throwable e) {
+                reportWtf("making Account Manager Service ready", e);
+            }
+
+            try {
+                if (contentService != null)
+                    contentService.systemReady();
+            } catch (Throwable e) {
+                reportWtf("making Content Service ready", e);
+            }
+
+            try {
                 Slog.i(TAG, "Notification Manager");
                 notification = new NotificationManagerService(context, statusBar, lights);
                 ServiceManager.addService(Context.NOTIFICATION_SERVICE, notification);
                 networkPolicy.bindNotificationManager(notification);
             } catch (Throwable e) {
                 reportWtf("starting Notification Manager", e);
-            }
-
-	    //QCOM HDMI OUT
-            if (SystemProperties.QCOM_HDMI_OUT ) {
-                try {
-                    Slog.i(TAG, "HDMI Service");
-                    ServiceManager.addService("hdmi", new HDMIService(context));
-                } catch (Throwable e) {
-                    Slog.e(TAG, "Failure starting HDMI Service ", e);
-                }
             }
 
             try {
@@ -529,19 +560,26 @@ class ServerThread extends Thread {
                 reportWtf("starting DropBoxManagerService", e);
             }
 
-            try {
-                Slog.i(TAG, "Wallpaper Service");
-                wallpaper = new WallpaperManagerService(context);
-                ServiceManager.addService(Context.WALLPAPER_SERVICE, wallpaper);
-            } catch (Throwable e) {
-                reportWtf("starting Wallpaper Service", e);
+            if (context.getResources().getBoolean(
+                        com.android.internal.R.bool.config_enableWallpaperService)) {
+                try {
+                    Slog.i(TAG, "Wallpaper Service");
+                    if (!headless) {
+                        wallpaper = new WallpaperManagerService(context);
+                        ServiceManager.addService(Context.WALLPAPER_SERVICE, wallpaper);
+                    }
+                } catch (Throwable e) {
+                    reportWtf("starting Wallpaper Service", e);
+                }
             }
 
-            try {
-                Slog.i(TAG, "Audio Service");
-                ServiceManager.addService(Context.AUDIO_SERVICE, new AudioService(context));
-            } catch (Throwable e) {
-                reportWtf("starting Audio Service", e);
+            if (!"0".equals(SystemProperties.get("system_init.startaudioservice"))) {
+                try {
+                    Slog.i(TAG, "Audio Service");
+                    ServiceManager.addService(Context.AUDIO_SERVICE, new AudioService(context));
+                } catch (Throwable e) {
+                    reportWtf("starting Audio Service", e);
+                }
             }
 
             try {
@@ -554,9 +592,9 @@ class ServerThread extends Thread {
 
             try {
                 if (hasRotationLock) {
-                        Slog.i(TAG, "Rotation Switch Observer");
-                        // Listen for switch changes
-                        rotateSwitch = new RotationSwitchObserver(context);
+                    Slog.i(TAG, "Rotation Switch Observer");
+                    // Listen for switch changes
+                    rotateSwitch = new RotationSwitchObserver(context);
                 }
             } catch (Throwable e) {
                 reportWtf("starting RotationSwitchObserver", e);
@@ -577,6 +615,15 @@ class ServerThread extends Thread {
                 ServiceManager.addService(Context.USB_SERVICE, usb);
             } catch (Throwable e) {
                 reportWtf("starting UsbService", e);
+            }
+
+            try {
+                Slog.i(TAG, "Serial Service");
+                // Serial port support
+                serial = new SerialService(context);
+                ServiceManager.addService(Context.SERIAL_SERVICE, serial);
+            } catch (Throwable e) {
+                Slog.e(TAG, "Failure starting SerialService", e);
             }
 
             try {
@@ -637,6 +684,33 @@ class ServerThread extends Thread {
             }
 
             try {
+                Slog.i(TAG, "CommonTimeManagementService");
+                commonTimeMgmtService = new CommonTimeManagementService(context);
+                ServiceManager.addService("commontime_management", commonTimeMgmtService);
+            } catch (Throwable e) {
+                reportWtf("starting CommonTimeManagementService service", e);
+            }
+
+            try {
+                Slog.i(TAG, "CertBlacklister");
+                CertBlacklister blacklister = new CertBlacklister(context);
+            } catch (Throwable e) {
+                reportWtf("starting CertBlacklister", e);
+            }
+            
+            if (context.getResources().getBoolean(
+                    com.android.internal.R.bool.config_enableDreams)) {
+                try {
+                    Slog.i(TAG, "Dreams Service");
+                    // Dreams (interactive idle-time views, a/k/a screen savers)
+                    dreamy = new DreamManagerService(context);
+                    ServiceManager.addService("dreams", dreamy);
+                } catch (Throwable e) {
+                    reportWtf("starting DreamManagerService", e);
+                }
+            }
+
+            try {
                 Slog.i(TAG, "AssetRedirectionManager Service");
                 ServiceManager.addService("assetredirection", new AssetRedirectionManagerService(context));
             } catch (Throwable e) {
@@ -668,6 +742,12 @@ class ServerThread extends Thread {
         }
 
         // It is now time to start up the app processes...
+
+        try {
+            vibrator.systemReady();
+        } catch (Throwable e) {
+            reportWtf("making Vibrator Service ready", e);
+        }
 
         if (devicePolicy != null) {
             try {
@@ -710,6 +790,11 @@ class ServerThread extends Thread {
         } catch (Throwable e) {
             reportWtf("making Package Manager Service ready", e);
         }
+        try {
+            lockSettings.systemReady();
+        } catch (Throwable e) {
+            reportWtf("making Lock Settings Service ready", e);
+        }
 
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_APP_LAUNCH_FAILURE);
@@ -739,8 +824,12 @@ class ServerThread extends Thread {
         final LocationManagerService locationF = location;
         final CountryDetectorService countryDetectorF = countryDetector;
         final NetworkTimeUpdateService networkTimeUpdaterF = networkTimeUpdater;
+        final CommonTimeManagementService commonTimeMgmtServiceF = commonTimeMgmtService;
         final TextServicesManagerService textServiceManagerServiceF = tsms;
         final StatusBarManagerService statusBarF = statusBar;
+        final DreamManagerService dreamyF = dreamy;
+        final InputManagerService inputManagerF = inputManager;
+        final BluetoothService bluetoothF = bluetooth;
 
         // We now tell the activity manager it is okay to run third party
         // code.  It will call back into us once it has gotten to the state
@@ -751,7 +840,7 @@ class ServerThread extends Thread {
             public void run() {
                 Slog.i(TAG, "Making services ready");
 
-                startSystemUi(contextF);
+                if (!headless) startSystemUi(contextF);
                 try {
                     if (batteryF != null) batteryF.systemReady();
                 } catch (Throwable e) {
@@ -843,9 +932,24 @@ class ServerThread extends Thread {
                     reportWtf("making Network Time Service ready", e);
                 }
                 try {
+                    if (commonTimeMgmtServiceF != null) commonTimeMgmtServiceF.systemReady();
+                } catch (Throwable e) {
+                    reportWtf("making Common time management service ready", e);
+                }
+                try {
                     if (textServiceManagerServiceF != null) textServiceManagerServiceF.systemReady();
                 } catch (Throwable e) {
                     reportWtf("making Text Services Manager Service ready", e);
+                }
+                try {
+                    if (dreamyF != null) dreamyF.systemReady();
+                } catch (Throwable e) {
+                    reportWtf("making DreamManagerService ready", e);
+                }
+                try {
+                    if (inputManagerF != null) inputManagerF.systemReady(bluetoothF);
+                } catch (Throwable e) {
+                    reportWtf("making InputManagerService ready", e);
                 }
             }
         });

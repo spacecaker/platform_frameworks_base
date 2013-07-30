@@ -133,10 +133,12 @@ class ProcessList {
             24576, 28672, 32768
     };
 
+    // reintroduce settings of OOM adj and lowmem values via properties
+	// (lagloose 11/2012)
     static {
 		int memAdj = 0;
 		int memMem = 0;
-
+		
 		memAdj = SystemProperties.getInt("sys.mem.FOREGROUND_APP_ADJ",0);
 		if (memAdj > 0) mOomAdj[0] = memAdj;
 		memAdj = SystemProperties.getInt("sys.mem.VISIBLE_APP_ADJ",0);
@@ -163,12 +165,15 @@ class ProcessList {
 		memMem = SystemProperties.getInt("sys.mem.HIDDEN_APP_MAX_MEM",0);
 		if (memMem > 0) mOomMinFreeLow[5] = memMem;
 	}
+	// end (lagloose)
+	
     // These are the high-end OOM level limits.  This is appropriate for a
     // 1280x800 or larger screen with around 1GB RAM.  Values are in KB.
     private final long[] mOomMinFreeHigh = new long[] {
             32768, 40960, 49152,
             57344, 65536, 81920
     };
+
     // The actual OOM killer memory levels we are using.
     private final long[] mOomMinFree = new long[mOomAdj.length];
 

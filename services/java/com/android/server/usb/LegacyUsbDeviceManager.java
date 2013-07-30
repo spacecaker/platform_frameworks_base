@@ -179,7 +179,7 @@ public class LegacyUsbDeviceManager extends UsbDeviceManager {
 
         if (volumes.length > 0) {
             if (Settings.Secure.getInt(mContentResolver, Settings.Secure.USB_MASS_STORAGE_ENABLED, 0) == 1 ) {
-                massStorageSupported = volumes[0].allowMassStorage();
+                massStorageSupported = storageManager.isUsbMassStorageSupported();
             } else {
                 massStorageSupported = false;
             }
@@ -317,6 +317,14 @@ public class LegacyUsbDeviceManager extends UsbDeviceManager {
                 mContentResolver.registerContentObserver(
                     Settings.Secure.getUriFor(Settings.Secure.ADB_ENABLED),
                     false, new AdbSettingsObserver());
+
+                mContentResolver.registerContentObserver(
+                    Settings.Secure.getUriFor(Settings.Secure.ADB_NOTIFY),
+                    false, new ContentObserver(null) {
+                        public void onChange(boolean selfChange) {
+                            updateAdbNotification();
+                        }
+                    });
 
                 // Watch for USB configuration changes
                 if (mLegacy) {
@@ -597,7 +605,10 @@ public class LegacyUsbDeviceManager extends UsbDeviceManager {
             if (mNotificationManager == null) return;
             final int id = com.android.internal.R.string.adb_active_notification_title;
             if (mAdbEnabled && mConnected) {
-                if ("0".equals(SystemProperties.get("persist.adb.notify"))) return;
+                if ("0".equals(SystemProperties.get("persist.adb.notify"))
+                 || Settings.Secure.getInt(mContext.getContentResolver(),
+                    Settings.Secure.ADB_NOTIFY, 1) == 0)
+                    return;
 
                 if (!mAdbNotificationShown) {
                     Resources r = mContext.getResources();
@@ -645,11 +656,5 @@ public class LegacyUsbDeviceManager extends UsbDeviceManager {
                 pw.println("IOException: " + e);
             }
         }
-    }
-
-    @Override
-    public void setCurrentFunction(String function, boolean makeDefault) {
-        if (DEBUG) Slog.d(TAG, "setCurrentFunction(" + function + ") default: " + makeDefault);
-        mHandler.sendMessage(MSG_SET_CURRENT_FUNCTION, function, makeDefault);
     }
 }

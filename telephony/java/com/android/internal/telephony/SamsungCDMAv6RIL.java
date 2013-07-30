@@ -53,6 +53,7 @@ import com.android.internal.telephony.cdma.CdmaInformationRecords;
 import com.android.internal.telephony.cdma.CdmaInformationRecords.CdmaSignalInfoRec;
 import com.android.internal.telephony.cdma.SignalToneUtil;
 
+import android.text.TextUtils;
 import android.util.Log;
 
 public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
@@ -144,7 +145,7 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
             | egrep "^ *{RIL_" \
             | sed -re 's/\{([^,]+),[^,]+,([^}]+).+/case \1: ret = \2(p); break;/'
              */
-            case RIL_REQUEST_GET_SIM_STATUS: ret =  responseIccCardStatus(p); break;
+            case RIL_REQUEST_GET_SIM_STATUS: ret = responseIccCardStatus(p); break;
             case RIL_REQUEST_ENTER_SIM_PIN: ret =  responseInts(p); break;
             case RIL_REQUEST_ENTER_SIM_PUK: ret =  responseInts(p); break;
             case RIL_REQUEST_ENTER_SIM_PIN2: ret =  responseInts(p); break;
@@ -570,6 +571,36 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         Collections.sort(response);
 
         return response;
+    }
+
+    @Override
+    protected DataCallState getDataCallState(Parcel p, int version) {
+        DataCallState dataCall = new DataCallState();
+
+        dataCall.version = version;
+        dataCall.status = p.readInt();
+        dataCall.suggestedRetryTime = p.readInt();
+        dataCall.cid = p.readInt();
+        dataCall.active = p.readInt();
+        dataCall.type = p.readString();
+        dataCall.ifname = SystemProperties.get("net.cdma.ppp.interface");
+        if ((dataCall.status == DataConnection.FailCause.NONE.getErrorCode()) &&
+                TextUtils.isEmpty(dataCall.ifname)) {
+            throw new RuntimeException("getDataCallState, no ifname");
+        }
+        String addresses = p.readString();
+        if (!TextUtils.isEmpty(addresses)) {
+            dataCall.addresses = addresses.split(" ");
+        }
+        String dnses = p.readString();
+        if (!TextUtils.isEmpty(dnses)) {
+            dataCall.dnses = dnses.split(" ");
+        }
+        String gateways = p.readString();
+        if (!TextUtils.isEmpty(gateways)) {
+            dataCall.gateways = gateways.split(" ");
+        }
+        return dataCall;
     }
 
     protected Object

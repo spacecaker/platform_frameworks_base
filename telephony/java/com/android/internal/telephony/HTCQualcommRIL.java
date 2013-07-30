@@ -20,6 +20,8 @@ import static com.android.internal.telephony.RILConstants.*;
 
 import android.content.Context;
 import android.os.AsyncResult;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.Message;
 import android.os.Parcel;
 import android.text.TextUtils;
@@ -36,6 +38,9 @@ import java.util.ArrayList;
  * {@hide}
  */
 public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterface {
+    private final int RIL_INT_RADIO_OFF = 0;
+    private final int RIL_INT_RADIO_UNAVAILABLE = 1;
+    private final int RIL_INT_RADIO_ON = 13;
 
     public HTCQualcommRIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
@@ -46,6 +51,9 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
     responseIccCardStatus(Parcel p) {
         IccCardApplication ca;
 
+        // use old needsOldRilFeature method for feature. it would be redundant to make
+        // a new method just for naming sake.
+        boolean subscriptionFromSource = needsOldRilFeature("subscriptionFromSource");
         boolean oldRil = needsOldRilFeature("icccardstatus");
 
         IccCardStatus status = new IccCardStatus();
@@ -70,6 +78,14 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
             ca.app_type       = ca.AppTypeFromRILInt(p.readInt());
             ca.app_state      = ca.AppStateFromRILInt(p.readInt());
             ca.perso_substate = ca.PersoSubstateFromRILInt(p.readInt());
+            if ((ca.app_state == IccCardApplication.AppState.APPSTATE_SUBSCRIPTION_PERSO) &&
+                ((ca.perso_substate == IccCardApplication.PersoSubState.PERSOSUBSTATE_READY) ||
+                (ca.perso_substate == IccCardApplication.PersoSubState.PERSOSUBSTATE_UNKNOWN))) {
+                // ridiculous HTC hack
+                ca.app_state = IccCardApplication.AppState.APPSTATE_UNKNOWN;
+                Log.d(LOG_TAG, "ca.app_state == AppState.APPSTATE_SUBSCRIPTION_PERSO");
+                Log.d(LOG_TAG, "ca.perso_substate == PersoSubState.PERSOSUBSTATE_READY");
+            }
             ca.aid            = p.readString();
             ca.app_label      = p.readString();
             ca.pin1_replaced  = p.readInt();
@@ -78,8 +94,12 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
             status.addApplication(ca);
         }
 
+        // use ril response to determine subscription source
+        if (subscriptionFromSource)
+            return status;
+
         int appIndex = -1;
-        if (mPhoneType == RILConstants.CDMA_PHONE) {
+        if (mPhoneType == RILConstants.CDMA_PHONE && !skipCdmaSubcription) {
             appIndex = status.getCdmaSubscriptionAppIndex();
             Log.d(LOG_TAG, "This is a CDMA PHONE " + appIndex);
         } else {
@@ -87,7 +107,17 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
             Log.d(LOG_TAG, "This is a GSM PHONE " + appIndex);
         }
 
-        mAid = status.getApplication(appIndex).aid;
+        if (numApplications > 0) {
+            IccCardApplication application = status.getApplication(appIndex);
+            mAid = application.aid;
+            mUSIM = application.app_type
+                      == IccCardApplication.AppType.APPTYPE_USIM;
+            mSetPreferredNetworkType = mPreferredNetworkType;
+
+            if (TextUtils.isEmpty(mAid))
+               mAid = "";
+            Log.d(LOG_TAG, "mAid " + mAid);
+        }
 
         return status;
     }
@@ -136,6 +166,7 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
         int response = p.readInt();
 
         switch(response) {
+            case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: ret = responseVoid(p); break;
             case 21004: ret = responseVoid(p); break; // RIL_UNSOL_VOICE_RADIO_TECH_CHANGED
             case 21005: ret = responseVoid(p); break; // RIL_UNSOL_IMS_NETWORK_STATE_CHANGED
             case 21007: ret = responseVoid(p); break; // RIL_UNSOL_DATA_NETWORK_STATE_CHANGED
@@ -150,6 +181,10 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
         }
 
         switch(response) {
+            case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED:
+                int state = p.readInt();
+                setRadioStateFromRILInt(state);
+                break;
             case 21004:
             case 21005:
             case 21007:
@@ -160,6 +195,43 @@ public class HTCQualcommRIL extends QualcommSharedRIL implements CommandsInterfa
                                         new AsyncResult (null, null, null));
                 }
                 break;
-                    }
+        }
+    }
+
+    private void setRadioStateFromRILInt(int stateCode) {
+        CommandsInterface.RadioState radioState;
+        HandlerThread handlerThread;
+        Looper looper;
+        IccHandler iccHandler;
+
+        switch (stateCode) {
+            case RIL_INT_RADIO_OFF:
+                radioState = CommandsInterface.RadioState.RADIO_OFF;
+                if (mIccHandler != null) {
+                    mIccThread = null;
+                    mIccHandler = null;
+                }
+                break;
+            case RIL_INT_RADIO_UNAVAILABLE:
+                radioState = CommandsInterface.RadioState.RADIO_UNAVAILABLE;
+                break;
+            case RIL_INT_RADIO_ON:
+                if (mIccHandler == null) {
+                    handlerThread = new HandlerThread("IccHandler");
+                    mIccThread = handlerThread;
+
+                    mIccThread.start();
+
+                    looper = mIccThread.getLooper();
+                    mIccHandler = new IccHandler(this,looper);
+                    mIccHandler.run();
+                }
+                radioState = CommandsInterface.RadioState.RADIO_ON;
+                break;
+            default:
+                throw new RuntimeException("Unrecognized RIL_RadioState: " + stateCode);
+        }
+
+        setRadioState(radioState);
     }
 }

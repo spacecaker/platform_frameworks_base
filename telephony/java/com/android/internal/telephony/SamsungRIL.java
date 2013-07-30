@@ -379,9 +379,9 @@ public class SamsungRIL extends RIL implements CommandsInterface {
             String curState = SystemProperties.get(TelephonyProperties.PROPERTY_DATA_NETWORK_TYPE);
             boolean curHsdpa = false;
 
-            if (curState.equals("HSDPA:9")) {
+            if (curState.startsWith("HSDPA")) {
                 curHsdpa = true;
-            } else if (!curState.equals("UMTS:3")) {
+            } else if (!curState.startsWith("UMTS")) {
                 // Don't send poll request if not on 3g
                 break;
             }
@@ -575,6 +575,14 @@ public class SamsungRIL extends RIL implements CommandsInterface {
     @Override
     protected Object
     responseSignalStrength(Parcel p) {
+        // When SIM is PIN-unlocked, the RIL responds with APPSTATE_UNKNOWN and
+        // does not follow up with RIL_UNSOL_RESPONSE_SIM_STATUS_CHANGED. We
+        // notify the system here.
+        String state = SystemProperties.get(TelephonyProperties.PROPERTY_SIM_STATE);
+        if ("NOT_READY".equals(state) && mIccStatusChangedRegistrants != null) {
+            mIccStatusChangedRegistrants.notifyRegistrants();
+        }
+
         int numInts = 12;
         int response[];
 

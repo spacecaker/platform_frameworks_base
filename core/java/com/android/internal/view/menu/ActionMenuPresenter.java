@@ -16,6 +16,7 @@
 
 package com.android.internal.view.menu;
 
+import com.android.internal.view.ActionBarPolicy;
 import com.android.internal.view.menu.ActionMenuView.ActionMenuChildView;
 
 import android.content.Context;
@@ -29,7 +30,6 @@ import android.view.MenuItem;
 import android.view.SoundEffectConstants;
 import android.view.View;
 import android.view.View.MeasureSpec;
-import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
 
@@ -79,17 +79,18 @@ public class ActionMenuPresenter extends BaseMenuPresenter
 
         final Resources res = context.getResources();
 
+        final ActionBarPolicy abp = ActionBarPolicy.get(context);
         if (!mReserveOverflowSet) {
-            mReserveOverflow = !ViewConfiguration.get(context).hasPermanentMenuKey();
+            mReserveOverflow = abp.showsOverflowMenuButton();
         }
 
         if (!mWidthLimitSet) {
-            mWidthLimit = res.getDisplayMetrics().widthPixels / 2;
+            mWidthLimit = abp.getEmbeddedMenuWidthLimit();
         }
 
         // Measure for initial configuration
         if (!mMaxItemsSet) {
-            mMaxItems = res.getInteger(com.android.internal.R.integer.max_action_buttons);
+            mMaxItems = abp.getMaxActionButtons();
         }
 
         int width = mWidthLimit;
@@ -116,9 +117,9 @@ public class ActionMenuPresenter extends BaseMenuPresenter
         if (!mMaxItemsSet) {
             mMaxItems = mContext.getResources().getInteger(
                     com.android.internal.R.integer.max_action_buttons);
-            if (mMenu != null) {
-                mMenu.onItemsChanged(true);
-            }
+        }
+        if (mMenu != null) {
+            mMenu.onItemsChanged(true);
         }
     }
 
@@ -396,6 +397,7 @@ public class ActionMenuPresenter extends BaseMenuPresenter
         }
 
         // Flag as many more requested items as will fit.
+        // Compute required items prior to optional items
         for (int i = 0; i < itemsSize; i++) {
             MenuItemImpl item = visibleItems.get(i);
 
@@ -420,7 +422,12 @@ public class ActionMenuPresenter extends BaseMenuPresenter
                     seenGroups.put(groupId, true);
                 }
                 item.setIsActionButton(true);
-            } else if (item.requestsActionButton()) {
+            }
+        }
+        for (int i = 0; i < itemsSize; i++) {
+            MenuItemImpl item = visibleItems.get(i);
+
+            if (item.requestsActionButton()) {
                 // Items in a group with other items that already have an action slot
                 // can break the max actions rule, but not the width limit.
                 final int groupId = item.getGroupId();

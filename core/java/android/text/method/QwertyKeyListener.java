@@ -27,6 +27,10 @@ import android.view.View;
  * This is the standard key listener for alphabetic input on qwerty
  * keyboards.  You should generally not need to instantiate this yourself;
  * TextKeyListener will do it for you.
+ * <p></p>
+ * As for all implementations of {@link KeyListener}, this class is only concerned
+ * with hardware keyboards.  Software input methods have no obligation to trigger
+ * the methods in this class.
  */
 public class QwertyKeyListener extends BaseKeyListener {
     private static QwertyKeyListener[] sInstance =
@@ -126,12 +130,6 @@ public class QwertyKeyListener extends BaseKeyListener {
                                     KeyCharacterMap.PICKER_DIALOG_INPUT, true, 1);
             }
             resetMetaState(content);
-            return true;
-        }
-
-        if (i == KeyCharacterMap.DOT_WWW_INPUT || i == KeyCharacterMap.DOT_COM_INPUT) {
-            content.replace(selStart, selEnd, selStart == 0 ? "www." : ".com");
-            adjustMetaAfterKeypress(content);
             return true;
         }
 

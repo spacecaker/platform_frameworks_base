@@ -28,7 +28,6 @@ import android.util.Log;
 import java.io.IOException;
 
 /**
- * @hide
  * Provides access to ISO-PCD type B (ISO 14443-4) properties and I/O operations on a {@link Tag}.
  *
  * <p>Acquire an {@link IsoPcdB} object using {@link #get}.
@@ -37,6 +36,7 @@ import java.io.IOException;
  *
  * <p class="note"><strong>Note:</strong> Methods that perform I/O operations
  * require the {@link android.Manifest.permission#NFC} permission.
+ * @hide
  */
 public final class IsoPcdB extends BasicTagTechnology {
 

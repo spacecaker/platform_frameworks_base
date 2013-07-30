@@ -107,9 +107,13 @@ public class KeyguardViewManager implements KeyguardWindowController {
         if (DEBUG) Log.d(TAG, "show(); mKeyguardView==" + mKeyguardView);
 
         Resources res = mContext.getResources();
+        boolean enableLockScreenRotation = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.LOCKSCREEN_ROTATION, 0) != 0;
+        boolean enableAccelerometerRotation = Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.ACCELEROMETER_ROTATION, 1) != 0;
         boolean enableScreenRotation =
                 SystemProperties.getBoolean("lockscreen.rot_override",false)
-                || (res.getBoolean(R.bool.config_enableLockScreenRotation) && (Settings.System.getInt(mContext.getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 1) != 0));
+                || (enableLockScreenRotation && enableAccelerometerRotation);
         if (mKeyguardHost == null) {
             if (DEBUG) Log.d(TAG, "keyguard host is null, creating it...");
 
@@ -118,7 +122,7 @@ public class KeyguardViewManager implements KeyguardWindowController {
             final int stretch = ViewGroup.LayoutParams.MATCH_PARENT;
             int flags = WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN
                     | WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER
-                    | WindowManager.LayoutParams.FLAG_KEEP_SURFACE_WHILE_ANIMATING
+                    | WindowManager.LayoutParams.FLAG_SLIPPERY
                     /*| WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR*/ ;
             if (!mNeedsInput) {
@@ -148,7 +152,7 @@ public class KeyguardViewManager implements KeyguardWindowController {
 
         if (enableScreenRotation) {
             if (DEBUG) Log.d(TAG, "Rotation sensor for lock screen On!");
-            mWindowLayoutParams.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR;
+            mWindowLayoutParams.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_USER;
         } else {
             if (DEBUG) Log.d(TAG, "Rotation sensor for lock screen Off!");
             mWindowLayoutParams.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR;
@@ -158,9 +162,9 @@ public class KeyguardViewManager implements KeyguardWindowController {
 
         if (mKeyguardView == null) {
             if (DEBUG) Log.d(TAG, "keyguard view is null, creating it...");
-            mKeyguardView = mKeyguardViewProperties.createKeyguardView(mContext, mUpdateMonitor, this);
+            mKeyguardView = mKeyguardViewProperties.createKeyguardView(mContext, mCallback,
+                    mUpdateMonitor, this);
             mKeyguardView.setId(R.id.lock_screen);
-            mKeyguardView.setCallback(mCallback);
 
             final ViewGroup.LayoutParams lp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -181,6 +185,7 @@ public class KeyguardViewManager implements KeyguardWindowController {
                 ( View.STATUS_BAR_DISABLE_BACK
                 | View.STATUS_BAR_DISABLE_HOME
                 );
+        Log.v(TAG, "KGVM: Set visibility on " + mKeyguardHost + " to " + visFlags);
         mKeyguardHost.setSystemUiVisibility(visFlags);
 
         mViewManager.updateViewLayout(mKeyguardHost, mWindowLayoutParams);

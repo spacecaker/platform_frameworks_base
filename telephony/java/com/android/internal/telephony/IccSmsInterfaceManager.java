@@ -222,7 +222,7 @@ public abstract class IccSmsInterfaceManager extends ISms.Stub {
     public void sendRawPduSat(byte[] smsc, byte[] pdu, PendingIntent sentIntent,
             PendingIntent deliveryIntent) {
         mPhone.getContext();
-        mDispatcher.sendRawPdu(smsc, pdu, sentIntent, deliveryIntent);
+        mDispatcher.sendRawPdu(smsc, pdu, sentIntent, deliveryIntent,"");
     }
 
     protected abstract void log(String msg);

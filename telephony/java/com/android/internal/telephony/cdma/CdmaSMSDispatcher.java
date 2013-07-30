@@ -20,18 +20,23 @@ package com.android.internal.telephony.cdma;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.app.PendingIntent.CanceledException;
-import android.content.ContentValues;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.database.Cursor;
-import android.database.SQLException;
+import android.content.res.Resources;
+import android.os.Bundle;
 import android.os.Message;
 import android.os.SystemProperties;
 import android.preference.PreferenceManager;
 import android.provider.Telephony;
 import android.provider.Telephony.Sms.Intents;
+import android.telephony.PhoneNumberUtils;
+import android.telephony.SmsCbMessage;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage.MessageClass;
+import android.telephony.cdma.CdmaSmsCbProgramData;
+import android.telephony.cdma.CdmaSmsCbProgramResults;
 import android.util.Log;
 
 import com.android.internal.telephony.CommandsInterface;
@@ -43,16 +48,19 @@ import com.android.internal.telephony.SmsStorageMonitor;
 import com.android.internal.telephony.SmsUsageMonitor;
 import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.WspTypeDecoder;
+import com.android.internal.telephony.cdma.sms.BearerData;
+import com.android.internal.telephony.cdma.sms.CdmaSmsAddress;
 import com.android.internal.telephony.cdma.sms.SmsEnvelope;
 import com.android.internal.telephony.cdma.sms.UserData;
 import com.android.internal.util.BitwiseInputStream;
 import com.android.internal.util.HexDump;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-
-import android.content.res.Resources;
 
 
 final class CdmaSMSDispatcher extends SMSDispatcher {
@@ -98,6 +106,25 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
         }
     }
 
+    /**
+     * Dispatch service category program data to the CellBroadcastReceiver app, which filters
+     * the broadcast alerts to display.
+     * @param sms the SMS message containing one or more
+     * {@link android.telephony.cdma.CdmaSmsCbProgramData} objects.
+     */
+    private void handleServiceCategoryProgramData(SmsMessage sms) {
+        ArrayList<CdmaSmsCbProgramData> programDataList = sms.getSmsCbProgramData();
+        if (programDataList == null) {
+            Log.e(TAG, "handleServiceCategoryProgramData: program data list is null!");
+            return;
+        }
+
+        Intent intent = new Intent(Intents.SMS_SERVICE_CATEGORY_PROGRAM_DATA_RECEIVED_ACTION);
+        intent.putExtra("sender", sms.getOriginatingAddress());
+        intent.putParcelableArrayListExtra("program_data", programDataList);
+        dispatch(intent, RECEIVE_SMS_PERMISSION, mScpResultsReceiver);
+    }
+
     /** {@inheritDoc} */
     @Override
     public int dispatchMessage(SmsMessageBase smsb) {
@@ -120,8 +147,19 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
             return Intents.RESULT_SMS_HANDLED;
         }
 
-        // See if we have a network duplicate SMS.
         SmsMessage sms = (SmsMessage) smsb;
+
+        // Handle CMAS emergency broadcast messages.
+        if (SmsEnvelope.MESSAGE_TYPE_BROADCAST == sms.getMessageType()) {
+            Log.d(TAG, "Broadcast type message");
+            SmsCbMessage message = sms.parseBroadcastSms();
+            if (message != null) {
+                dispatchBroadcastMessage(message);
+            }
+            return Intents.RESULT_SMS_HANDLED;
+        }
+
+        // See if we have a network duplicate SMS.
         mLastDispatchedSmsFingerprint = sms.getIncomingSmsFingerprint();
         if (mLastAcknowledgedSmsFingerprint != null &&
                 Arrays.equals(mLastDispatchedSmsFingerprint, mLastAcknowledgedSmsFingerprint)) {
@@ -149,6 +187,9 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
                 (SmsEnvelope.TELESERVICE_WEMT == teleService)) &&
                 sms.isStatusReportMessage()) {
             handleCdmaStatusReport(sms);
+            handled = true;
+        } else if (SmsEnvelope.TELESERVICE_SCPT == teleService) {
+            handleServiceCategoryProgramData(sms);
             handled = true;
         } else if ((sms.getUserData() == null)) {
             if (false) {
@@ -317,7 +358,7 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
             byte[] data, PendingIntent sentIntent, PendingIntent deliveryIntent) {
         SmsMessage.SubmitPdu pdu = SmsMessage.getSubmitPdu(
                 scAddr, destAddr, destPort, data, (deliveryIntent != null));
-        sendSubmitPdu(pdu, sentIntent, deliveryIntent);
+        sendSubmitPdu(pdu, sentIntent, deliveryIntent, destAddr);
     }
 
     /** {@inheritDoc} */
@@ -326,7 +367,7 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
             PendingIntent sentIntent, PendingIntent deliveryIntent) {
         SmsMessage.SubmitPdu pdu = SmsMessage.getSubmitPdu(
                 scAddr, destAddr, text, (deliveryIntent != null), null);
-        sendSubmitPdu(pdu, sentIntent, deliveryIntent);
+        sendSubmitPdu(pdu, sentIntent, deliveryIntent, destAddr);
     }
 
     /** {@inheritDoc} */
@@ -358,11 +399,11 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
         SmsMessage.SubmitPdu submitPdu = SmsMessage.getSubmitPdu(destinationAddress,
                 uData, (deliveryIntent != null) && lastPart);
 
-        sendSubmitPdu(submitPdu, sentIntent, deliveryIntent);
+        sendSubmitPdu(submitPdu, sentIntent, deliveryIntent, destinationAddress);
     }
 
     protected void sendSubmitPdu(SmsMessage.SubmitPdu pdu,
-            PendingIntent sentIntent, PendingIntent deliveryIntent) {
+            PendingIntent sentIntent, PendingIntent deliveryIntent, String destAddr) {
         if (SystemProperties.getBoolean(TelephonyProperties.PROPERTY_INECM_MODE, false)) {
             if (sentIntent != null) {
                 try {
@@ -374,7 +415,7 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
             }
             return;
         }
-        sendRawPdu(pdu.encodedScAddress, pdu.encodedMessage, sentIntent, deliveryIntent);
+        sendRawPdu(pdu.encodedScAddress, pdu.encodedMessage, sentIntent, deliveryIntent, destAddr);
     }
 
     /** {@inheritDoc} */
@@ -459,4 +500,72 @@ final class CdmaSMSDispatcher extends SMSDispatcher {
         }
         return false;
     }
+
+    // Receiver for Service Category Program Data results.
+    // We already ACK'd the original SCPD SMS, so this sends a new response SMS.
+    // TODO: handle retries if the RIL returns an error.
+    private final BroadcastReceiver mScpResultsReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            int rc = getResultCode();
+            boolean success = (rc == Activity.RESULT_OK) || (rc == Intents.RESULT_SMS_HANDLED);
+            if (!success) {
+                Log.e(TAG, "SCP results error: result code = " + rc);
+                return;
+            }
+            Bundle extras = getResultExtras(false);
+            if (extras == null) {
+                Log.e(TAG, "SCP results error: missing extras");
+                return;
+            }
+            String sender = extras.getString("sender");
+            if (sender == null) {
+                Log.e(TAG, "SCP results error: missing sender extra.");
+                return;
+            }
+            ArrayList<CdmaSmsCbProgramResults> results
+                    = extras.getParcelableArrayList("results");
+            if (results == null) {
+                Log.e(TAG, "SCP results error: missing results extra.");
+                return;
+            }
+
+            BearerData bData = new BearerData();
+            bData.messageType = BearerData.MESSAGE_TYPE_SUBMIT;
+            bData.messageId = SmsMessage.getNextMessageId();
+            bData.serviceCategoryProgramResults = results;
+            byte[] encodedBearerData = BearerData.encode(bData);
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(100);
+            DataOutputStream dos = new DataOutputStream(baos);
+            try {
+                dos.writeInt(SmsEnvelope.TELESERVICE_SCPT);
+                dos.writeInt(0); //servicePresent
+                dos.writeInt(0); //serviceCategory
+                CdmaSmsAddress destAddr = CdmaSmsAddress.parse(
+                        PhoneNumberUtils.cdmaCheckAndProcessPlusCode(sender));
+                dos.write(destAddr.digitMode);
+                dos.write(destAddr.numberMode);
+                dos.write(destAddr.ton); // number_type
+                dos.write(destAddr.numberPlan);
+                dos.write(destAddr.numberOfDigits);
+                dos.write(destAddr.origBytes, 0, destAddr.origBytes.length); // digits
+                // Subaddress is not supported.
+                dos.write(0); //subaddressType
+                dos.write(0); //subaddr_odd
+                dos.write(0); //subaddr_nbr_of_digits
+                dos.write(encodedBearerData.length);
+                dos.write(encodedBearerData, 0, encodedBearerData.length);
+                // Ignore the RIL response. TODO: implement retry if SMS send fails.
+                mCm.sendCdmaSms(baos.toByteArray(), null);
+            } catch (IOException e) {
+                Log.e(TAG, "exception creating SCP results PDU", e);
+            } finally {
+                try {
+                    dos.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    };
 }

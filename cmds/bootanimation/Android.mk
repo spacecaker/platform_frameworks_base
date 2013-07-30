@@ -9,6 +9,7 @@ LOCAL_CFLAGS += -DGL_GLEXT_PROTOTYPES -DEGL_EGLEXT_PROTOTYPES
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
+	libandroidfw \
 	libutils \
 	libbinder \
     libui \
@@ -30,6 +31,10 @@ endif
 
 ifeq ($(TARGET_BOOTANIMATION_TEXTURE_CACHE),false)
     LOCAL_CFLAGS += -DNO_TEXTURE_CACHE=1
+endif
+
+ifeq ($(TARGET_BOOTANIMATION_USE_RGB565),true)
+    LOCAL_CFLAGS += -DUSE_565
 endif
 
 LOCAL_MODULE:= bootanimation

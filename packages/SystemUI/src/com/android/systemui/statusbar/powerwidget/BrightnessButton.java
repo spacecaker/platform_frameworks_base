@@ -1,17 +1,17 @@
 
 package com.android.systemui.statusbar.powerwidget;
 
+import com.android.server.PowerManagerService;
 import com.android.systemui.R;
 
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.os.Power;
+import android.os.IPowerManager;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.preference.ListPreferenceMultiSelect;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
@@ -27,8 +27,8 @@ public class BrightnessButton extends PowerButton {
      * Minimum and maximum brightnesses. Don't go to 0 since that makes the
      * display unusable
      */
-    private static final int MIN_BACKLIGHT = Power.BRIGHTNESS_DIM + 10;
-    private static final int MAX_BACKLIGHT = Power.BRIGHTNESS_ON;
+    private static final int MIN_BACKLIGHT = PowerManager.BRIGHTNESS_DIM + 10;
+    private static final int MAX_BACKLIGHT = PowerManager.BRIGHTNESS_ON;
 
     // Auto-backlight level
     private static final int AUTO_BACKLIGHT = -1;
@@ -121,7 +121,9 @@ public class BrightnessButton extends PowerButton {
                 Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS_MODE,
                         Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
             }
-            power.setBacklightBrightness(brightness);
+            if (power != null) {
+                power.setBacklightBrightness(brightness);
+            }
             Settings.System.putInt(resolver, Settings.System.SCREEN_BRIGHTNESS, brightness);
         }
     }
@@ -163,7 +165,7 @@ public class BrightnessButton extends PowerButton {
             BACKLIGHTS[1] = MIN_BACKLIGHT;
         }
 
-        String[] modes = ListPreferenceMultiSelect.parseStoredValue(Settings.System.getString(
+        String[] modes = parseStoredValue(Settings.System.getString(
                 resolver, Settings.System.EXPANDED_BRIGHTNESS_MODE));
         if (modes == null || modes.length == 0) {
             mBacklightValues = new int[] {

@@ -21,15 +21,13 @@ import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
+import android.graphics.drawable.Drawable;
 import android.graphics.Canvas;
 import android.graphics.RectF;
-import android.graphics.drawable.Drawable;
-import android.os.RemoteException;
-import android.os.ServiceManager;
+import android.hardware.input.InputManager;
 import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.view.HapticFeedbackConstants;
-import android.view.IWindowManager;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
@@ -50,16 +48,17 @@ public class KeyButtonView extends ImageView {
     private static final String TAG = "StatusBar.KeyButtonView";
 
     final float GLOW_MAX_SCALE_FACTOR = 1.8f;
-    final float BUTTON_QUIESCENT_ALPHA = 0.6f;
+    final float BUTTON_QUIESCENT_ALPHA = 0.70f;
 
-    IWindowManager mWindowManager;
     long mDownTime;
     int mCode;
     int mTouchSlop;
     Drawable mGlowBG;
+    int mGlowWidth, mGlowHeight;
     float mGlowAlpha = 0f, mGlowScale = 1f, mDrawingAlpha = 1f;
     boolean mSupportsLongpress = true;
     RectF mRect = new RectF(0f,0f,0f,0f);
+    AnimatorSet mPressedAnim;
 
     Runnable mCheckLongPress = new Runnable() {
         public void run() {
@@ -92,13 +91,12 @@ public class KeyButtonView extends ImageView {
 
         mGlowBG = a.getDrawable(R.styleable.KeyButtonView_glowBackground);
         if (mGlowBG != null) {
-            mDrawingAlpha = BUTTON_QUIESCENT_ALPHA;
+            setDrawingAlpha(BUTTON_QUIESCENT_ALPHA);
+            mGlowWidth = mGlowBG.getIntrinsicWidth();
+            mGlowHeight = mGlowBG.getIntrinsicHeight();
         }
         
         a.recycle();
-
-        mWindowManager = IWindowManager.Stub.asInterface(
-                ServiceManager.getService(Context.WINDOW_SERVICE));
 
         setClickable(true);
         mTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
@@ -110,19 +108,19 @@ public class KeyButtonView extends ImageView {
             canvas.save();
             final int w = getWidth();
             final int h = getHeight();
+            final float aspect = (float)mGlowWidth / mGlowHeight;
+            final int drawW = (int)(h*aspect);
+            final int drawH = h;
+            final int margin = (drawW-w)/2;
             canvas.scale(mGlowScale, mGlowScale, w*0.5f, h*0.5f);
-            mGlowBG.setBounds(0, 0, w, h);
-            mGlowBG.setAlpha((int)(mGlowAlpha * 255));
+            mGlowBG.setBounds(-margin, 0, drawW-margin, drawH);
+            mGlowBG.setAlpha((int)(mDrawingAlpha * mGlowAlpha * 255));
             mGlowBG.draw(canvas);
             canvas.restore();
             mRect.right = w;
             mRect.bottom = h;
-            canvas.saveLayerAlpha(mRect, (int)(mDrawingAlpha * 255), Canvas.ALL_SAVE_FLAG);
         }
         super.onDraw(canvas);
-        if (mGlowBG != null) {
-            canvas.restore();
-        }
     }
 
     public float getDrawingAlpha() {
@@ -132,8 +130,11 @@ public class KeyButtonView extends ImageView {
 
     public void setDrawingAlpha(float x) {
         if (mGlowBG == null) return;
+        // Calling setAlpha(int), which is an ImageView-specific
+        // method that's different from setAlpha(float). This sets
+        // the alpha on this ImageView's drawable directly
+        setAlpha((int) (x * 255));
         mDrawingAlpha = x;
-        invalidate();
     }
 
     public float getGlowAlpha() {
@@ -179,7 +180,10 @@ public class KeyButtonView extends ImageView {
     public void setPressed(boolean pressed) {
         if (mGlowBG != null) {
             if (pressed != isPressed()) {
-                AnimatorSet as = new AnimatorSet();
+                if (mPressedAnim != null && mPressedAnim.isRunning()) {
+                    mPressedAnim.cancel();
+                }
+                final AnimatorSet as = mPressedAnim = new AnimatorSet();
                 if (pressed) {
                     if (mGlowScale < GLOW_MAX_SCALE_FACTOR) 
                         mGlowScale = GLOW_MAX_SCALE_FACTOR;
@@ -232,6 +236,8 @@ public class KeyButtonView extends ImageView {
             }
         } else if (itemKey.equals(NavbarEditor.NAVBAR_CONDITIONAL_MENU)) {
             setVisibility(NavigationBarView.getEditMode() ? View.VISIBLE : View.INVISIBLE);
+        } else if (itemKey.equals(NavbarEditor.NAVBAR_HOME)) {
+            mSupportsLongpress = false;
         }
     }
 
@@ -311,12 +317,8 @@ public class KeyButtonView extends ImageView {
                 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
                 flags | KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY,
                 InputDevice.SOURCE_KEYBOARD);
-        try {
-            //Slog.d(TAG, "injecting event " + ev);
-            mWindowManager.injectInputEventNoWait(ev);
-        } catch (RemoteException ex) {
-            // System process is dead
-        }
+        InputManager.getInstance().injectInputEvent(ev,
+                InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
     }
 }
 

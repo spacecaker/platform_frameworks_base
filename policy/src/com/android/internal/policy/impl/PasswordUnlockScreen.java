@@ -109,13 +109,30 @@ public class PasswordUnlockScreen extends LinearLayout implements KeyguardScreen
 
         mKeyboardView = (PasswordEntryKeyboardView) findViewById(R.id.keyboard);
         mPasswordEntry = (EditText) findViewById(R.id.passwordEntry);
+        mPasswordEntry.setOnKeyListener(new OnKeyListener() {
+            @Override
+            public boolean onKey(View v, int keyCode, KeyEvent event) {
+                if (event.getAction()==KeyEvent.ACTION_DOWN
+                        && (keyCode == KeyEvent.KEYCODE_BACK
+                        || keyCode == KeyEvent.KEYCODE_MENU
+                        || keyCode == KeyEvent.KEYCODE_HOME)) {
+                    if ((event.getFlags() & KeyEvent.FLAG_LONG_PRESS) == 0) {
+                        event.startTracking();
+                        return true;
+                    } else {
+                        if (LockScreen.handleKeyLongPress(getContext(), keyCode)) {
+                            mCallback.pokeWakelock();
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+        });
         mPasswordEntry.setOnEditorActionListener(this);
 
         mKeyboardHelper = new PasswordEntryKeyboardHelper(context, mKeyboardView, this, false);
-        mKeyboardHelper.setEnableHaptics(
-                Settings.Secure.getInt(mContext.getContentResolver(),
-                        Settings.Secure.LOCK_PATTERN_TACTILE_FEEDBACK_ENABLED, 0)
-                        != 0);
+        mKeyboardHelper.setEnableHaptics(mLockPatternUtils.isTactileFeedbackEnabled());
         boolean imeOrDeleteButtonVisible = false;
         if (mIsAlpha) {
             // We always use the system IME for alpha keyboard, so hide lockscreen's soft keyboard
@@ -270,6 +287,11 @@ public class PasswordUnlockScreen extends LinearLayout implements KeyguardScreen
     protected boolean onRequestFocusInDescendants(int direction, Rect previouslyFocusedRect) {
         // send focus to the password field
         return mPasswordEntry.requestFocus(direction, previouslyFocusedRect);
+    }
+
+    /** {@inheritDoc} */
+    public boolean suspendRecreate() {
+        return false;
     }
 
     /** {@inheritDoc} */

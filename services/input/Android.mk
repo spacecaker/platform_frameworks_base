@@ -29,6 +29,7 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
+    libandroidfw \
     libutils \
     libhardware \
     libhardware_legacy \
@@ -45,6 +46,10 @@ endif
 
 ifeq ($(BOARD_USE_LEGACY_TRACKPAD),true)
 LOCAL_CFLAGS += -DLEGACY_TRACKPAD
+endif
+
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+    LOCAL_CFLAGS += -DALSA_HEADSET_DETECTION
 endif
 
 LOCAL_MODULE:= libinput

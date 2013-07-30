@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright (C) 2009 The Android Open Source Project
-     Copyright (C) 2012 The CyanogenMod Project
+<?xml version="1.0" encoding="utf-8"?>
+<!--  Copyright (C) 2009 The Android Open Source Project
+      Copyright (C) 2012 The CyanogenMod Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
      See the License for the specific language governing permissions and
      limitations under the License.
--->
+ -->
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="app_label" msgid="7164937344850004466">"Systeem-UI"</string>
@@ -24,10 +24,6 @@
     <string name="status_bar_recent_inspect_item_title" msgid="7793624864528818569">"App-info"</string>
     <string name="status_bar_no_recent_apps" msgid="6576392951053994640">"Geen recente apps"</string>
     <string name="status_bar_accessibility_dismiss_recents" msgid="4576076075226540105">"Recente apps negeren"</string>
-  <plurals name="status_bar_accessibility_recent_apps">
-    <item quantity="one" msgid="5854176083865845541">"1 recente app"</item>
-    <item quantity="other" msgid="1040784359794890744">"%d recente apps"</item>
-  </plurals>
     <string name="status_bar_no_notifications_title" msgid="4755261167193833213">"Geen meldingen"</string>
     <string name="status_bar_ongoing_events_title" msgid="1682504513316879202">"Actief"</string>
     <string name="status_bar_latest_events_title" msgid="6594767438577593172">"Meldingen"</string>
@@ -41,11 +37,11 @@
     <string name="status_bar_settings_airplane" msgid="4879879698500955300">"Vliegtuigmodus"</string>
     <string name="status_bar_settings_auto_rotation" msgid="3790482541357798421">"Scherm automatisch draaien"</string>
     <string name="status_bar_settings_mute_label" msgid="554682549917429396">"DEMPEN"</string>
-    <string name="status_bar_settings_auto_brightness_label" msgid="511453614962324674">"AUTO"</string>
+    <string name="status_bar_settings_auto_brightness_label" msgid="511453614962324674">"AUTOMATISCH"</string>
     <string name="status_bar_settings_notifications" msgid="397146176280905137">"Meldingen"</string>
     <string name="bluetooth_tethered" msgid="7094101612161133267">"Bluetooth getetherd"</string>
     <string name="status_bar_input_method_settings_configure_input_methods" msgid="3504292471512317827">"Invoermethoden instellen"</string>
-    <string name="status_bar_use_physical_keyboard" msgid="3695516942412442936">"Fysiek toetsenbord gebruiken"</string>
+    <string name="status_bar_use_physical_keyboard" msgid="7551903084416057810">"Fysiek toetsenbord"</string>
     <string name="usb_device_permission_prompt" msgid="834698001271562057">"De app <xliff:g id="APPLICATION">%1$s</xliff:g> toegang geven tot het USB-apparaat?"</string>
     <string name="usb_accessory_permission_prompt" msgid="5171775411178865750">"De app <xliff:g id="APPLICATION">%1$s</xliff:g> toegang geven tot het USB-accessoire?"</string>
     <string name="usb_device_confirm_prompt" msgid="5161205258635253206">"<xliff:g id="ACTIVITY">%1$s</xliff:g> openen wanneer dit USB-apparaat wordt aangesloten?"</string>
@@ -58,13 +54,13 @@
     <string name="compat_mode_on" msgid="6623839244840638213">"Zoom om scherm te vullen"</string>
     <string name="compat_mode_off" msgid="4434467572461327898">"Rek uit v. schermvulling"</string>
     <string name="compat_mode_help_header" msgid="7969493989397529910">"Compatibiliteitszoom"</string>
-    <string name="compat_mode_help_body" msgid="4946726776359270040">"Wanneer een app is ontworpen voor een kleiner scherm, wordt naast de klok een zoomknop getoond."</string>
+    <string name="compat_mode_help_body" msgid="4946726776359270040">"Wanneer een app is ontworpen voor een kleiner scherm, wordt naast de klok een zoomknop weergegeven."</string>
     <string name="screenshot_saving_ticker" msgid="7403652894056693515">"Schermafbeelding opslaan\u2026"</string>
     <string name="screenshot_saving_title" msgid="8242282144535555697">"Schermafbeelding opslaan\u2026"</string>
     <string name="screenshot_saving_text" msgid="2419718443411738818">"Schermafbeelding wordt opgeslagen."</string>
     <string name="screenshot_saved_title" msgid="6461865960961414961">"Schermafbeelding gemaakt."</string>
-    <string name="screenshot_saved_text" msgid="1152839647677558815">"Raak aan om uw schermafbeelding te bekijken."</string>
-    <string name="screenshot_failed_title" msgid="705781116746922771">"Schermafbeelding is niet gemaakt."</string>
+    <string name="screenshot_saved_text" msgid="1152839647677558815">"Tik om uw schermafbeelding te bekijken."</string>
+    <string name="screenshot_failed_title" msgid="705781116746922771">"Schermafbeelding niet gemaakt."</string>
     <string name="screenshot_failed_text" msgid="8134011269572415402">"Kan schermafbeelding niet opslaan. Mogelijk is de opslag in gebruik."</string>
     <string name="usb_preference_title" msgid="6551050377388882787">"Opties voor USB-bestandsoverdracht"</string>
     <string name="use_mtp_button_title" msgid="4333504413563023626">"Koppelen als mediaspeler (MTP)"</string>
@@ -132,20 +128,20 @@
     <string name="data_usage_disabled_dialog_enable" msgid="7729772039208664606">"Gegevens opnieuw inschakelen"</string>
     <string name="status_bar_settings_signal_meter_disconnected" msgid="1940231521274147771">"Geen internetverbinding"</string>
     <string name="status_bar_settings_signal_meter_wifi_nossid" msgid="6557486452774597820">"Verbonden via Wi-Fi"</string>
-    <string name="gps_notification_searching_text" msgid="8574247005642736060">"Zoeken naar GPS"</string>
+    <string name="gps_notification_searching_text" msgid="8574247005642736060">"Zoeken naar GPS\u2026"</string>
     <string name="gps_notification_found_text" msgid="4619274244146446464">"Locatie bepaald met GPS"</string>
     <string name="accessibility_clear_all" msgid="5235938559247164925">"Alle meldingen wissen."</string>
+    <string name="dreams_dock_launcher" msgid="3541196417659166245">"Schermbeveiliging inschakelen"</string>
+    <string name="status_bar_notification_inspect_item_title" msgid="1163547729015390250">"App-info"</string>
+    <string name="notifications_off_title" msgid="8936620513608443224">"Meldingen uit"</string>
+    <string name="notifications_off_text" msgid="2529001315769385273">"Tik hier om meldingen weer in te schakelen."</string>
+    <string name="accessibility_rotation_lock_off" msgid="4062780228931590069">"Scherm wordt automatisch gedraaid."</string>
+    <string name="accessibility_rotation_lock_on_landscape" msgid="6731197337665366273">"Het scherm is nu vergrendeld in landschapsmodus."</string>
+    <string name="accessibility_rotation_lock_on_portrait" msgid="5809367521644012115">"Het scherm is nu vergrendeld in portretmodus."</string>
 
     <!-- CYANOGENMOD EDITS -->
-
-    <!-- Dialog title for navigation bar button selection -->
-    <string name="navbar_dialog_title">Kies de toe te wijzen functie</string>
-    <string name="navbar_home_button">Thuisknop</string>
-    <string name="navbar_recent_button">Recentknop</string>
-    <string name="navbar_search_button">Zoekknop</string>
-    <string name="navbar_back_button">Terugknop</string>
-    <string name="navbar_empty_button">Functieloze knop</string>
-    <string name="navbar_menu_conditional_button">Menuknop (altijd verbergen)</string>
-    <string name="navbar_menu_always_button">Menuknop (altijd tonen)</string>
-    <string name="navbar_menu_big_button">Menuknop</string>
+    <string name="status_bar_settings_flashlight">Zaklamp</string>
+    <string name="status_bar_settings_mobile_data">Mobiele gegevens</string>
+    <string name="status_bar_settings_sound_mode">Geluid</string>
+    <string name="powerwidget_screen_timeout_toast">Time-out scherm ingesteld op: %1$d %2$s</string>
 </resources>

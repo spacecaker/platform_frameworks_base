@@ -44,6 +44,8 @@ import com.android.internal.R;
  */
 public class SimUnlockScreen extends LinearLayout implements KeyguardScreen, View.OnClickListener {
 
+    private boolean mSimCheckInProgress;
+
     private static final int DIGIT_PRESS_WAKE_MILLIS = 5000;
 
     private final KeyguardUpdateMonitor mUpdateMonitor;
@@ -115,6 +117,11 @@ public class SimUnlockScreen extends LinearLayout implements KeyguardScreen, Vie
                 lockpatternutils, callback, false);
 
         setFocusableInTouchMode(true);
+    }
+
+    /** {@inheritDoc} */
+    public boolean suspendRecreate() {
+        return mSimCheckInProgress;
     }
 
     /** {@inheritDoc} */
@@ -237,12 +244,15 @@ public class SimUnlockScreen extends LinearLayout implements KeyguardScreen, Vie
             mCallback.pokeWakelock();
             return;
         }
+
+        mSimCheckInProgress = true;
         getSimUnlockProgressDialog().show();
 
         new CheckSimPin(mPinText.getText().toString()) {
             void onSimLockChangedResponse(final boolean success) {
                 mPinText.post(new Runnable() {
                     public void run() {
+                        mSimCheckInProgress = false;
                         if (mSimUnlockProgressDialog != null) {
                             mSimUnlockProgressDialog.hide();
                         }
@@ -263,7 +273,7 @@ public class SimUnlockScreen extends LinearLayout implements KeyguardScreen, Vie
         }.start();
     }
 
-
+    @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             mCallback.goToLockScreen();
@@ -288,6 +298,22 @@ public class SimUnlockScreen extends LinearLayout implements KeyguardScreen, Vie
             return true;
         }
 
+        if (keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_MENU
+                || keyCode == KeyEvent.KEYCODE_HOME) {
+            event.startTracking();
+            return true;
+        }
+
+        return false;
+    }
+
+    @Override
+    public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+        if (LockScreen.handleKeyLongPress(getContext(), keyCode)) {
+            mCallback.pokeWakelock();
+            return true;
+        }
         return false;
     }
 
@@ -308,10 +334,6 @@ public class SimUnlockScreen extends LinearLayout implements KeyguardScreen, Vie
             mCallback.recreateMe(newConfig);
         } else if (newConfig.hardKeyboardHidden != mKeyboardHidden) {
             mKeyboardHidden = newConfig.hardKeyboardHidden;
-            final boolean isKeyboardOpen = mKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO;
-            if (mUpdateMonitor.isKeyguardBypassEnabled() && isKeyboardOpen) {
-                mCallback.goToUnlockScreen();
-            }
         }
     }
 

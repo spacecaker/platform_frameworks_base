@@ -32,8 +32,6 @@ import android.os.ServiceManager;
 import android.util.Slog;
 import android.view.IWindowManager;
 
-import android.widget.FrameLayout;
-
 public class SystemUIService extends Service {
     static final String TAG = "SystemUIService";
 
@@ -43,6 +41,7 @@ public class SystemUIService extends Service {
     final Object[] SERVICES = new Object[] {
             0, // system bar or status bar, filled in below.
             com.android.systemui.power.PowerUI.class,
+            com.android.systemui.media.RingtonePlayer.class,
         };
 
     /**
@@ -71,9 +70,9 @@ public class SystemUIService extends Service {
         IWindowManager wm = IWindowManager.Stub.asInterface(
                 ServiceManager.getService(Context.WINDOW_SERVICE));
         try {
-            SERVICES[0] = wm.canStatusBarHide()
-                    ? R.string.config_statusBarComponent
-                    : R.string.config_systemBarComponent;
+            SERVICES[0] = wm.hasSystemNavBar()
+                    ? R.string.config_systemBarComponent
+                    : R.string.config_statusBarComponent;
         } catch (RemoteException e) {
             Slog.w(TAG, "Failing checking whether status bar can hide", e);
         }
@@ -91,7 +90,6 @@ public class SystemUIService extends Service {
                 throw new RuntimeException(ex);
             }
             mServices[i].mContext = this;
-            mServices[i].mStatusBarContainer = new FrameLayout(this);
             Slog.d(TAG, "running: " + mServices[i]);
 
             mServices[i].start();
@@ -115,14 +113,6 @@ public class SystemUIService extends Service {
 
     @Override
     protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        if (checkCallingOrSelfPermission(android.Manifest.permission.DUMP)
-                != PackageManager.PERMISSION_GRANTED) {
-            pw.println("Permission Denial: can't dump StatusBar from from pid="
-                    + Binder.getCallingPid()
-                    + ", uid=" + Binder.getCallingUid());
-            return;
-        }
-
         if (args == null || args.length == 0) {
             for (SystemUI ui: mServices) {
                 pw.println("dumping service: " + ui.getClass().getName());

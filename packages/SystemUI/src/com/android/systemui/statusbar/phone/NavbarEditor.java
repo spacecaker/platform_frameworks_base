@@ -5,13 +5,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 
-import android.animation.LayoutTransition;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.res.Configuration;
 import android.database.DataSetObserver;
 import android.graphics.Color;
 import android.provider.Settings;
+import android.util.DisplayMetrics;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -22,6 +23,7 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListAdapter;
 import android.widget.TextView;
 
@@ -55,6 +57,7 @@ public class NavbarEditor implements OnTouchListener {
             new LinkedHashMap<String,ButtonInfo>();
 
     protected static int visibleCount = 4;
+    private static Boolean mIsDeviceHybrid = null;
 
     /**
      * Holds reference to the parent/root of the inflated view
@@ -164,6 +167,21 @@ public class NavbarEditor implements OnTouchListener {
         }
     };
 
+    protected static boolean isDeviceHybrid(Context con) {
+        if (mIsDeviceHybrid == null) {
+            WindowManager wm = (WindowManager)con.getSystemService(Context.WINDOW_SERVICE);
+            android.view.Display display = wm.getDefaultDisplay();
+            int shortSize = Math.min(display.getRawHeight(), display.getRawWidth());
+            int shortSizeDp = shortSize * DisplayMetrics.DENSITY_DEFAULT / DisplayMetrics.DENSITY_DEVICE;
+            if (shortSizeDp < 720 && shortSizeDp >= 600) {
+                mIsDeviceHybrid = true;
+            } else {
+                mIsDeviceHybrid = false;
+            }
+        }
+        return mIsDeviceHybrid;
+    }
+
     @Override
     public boolean onTouch(final View view, MotionEvent event) {
         if (!NavigationBarView.getEditMode() || (mDialog != null && mDialog.isShowing())) {
@@ -227,7 +245,7 @@ public class NavbarEditor implements OnTouchListener {
                         ((KeyButtonView) view).setInfo(list.getItem(which).toString(), mVertical);
                     }
                 })
-                .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
                     }
@@ -336,6 +354,7 @@ public class NavbarEditor implements OnTouchListener {
      * number of keys in use.
      */
     private void adjustPadding() {
+        adjustOuterPadding((ViewGroup) mParent.findViewById(R.id.nav_buttons));
         ViewGroup viewParent = (ViewGroup) mParent.findViewById(R.id.mid_nav_buttons);
         int sCount = visibleCount;
         for (int v = 0; v < viewParent.getChildCount();v++) {
@@ -370,6 +389,7 @@ public class NavbarEditor implements OnTouchListener {
 
     protected void updateLowLights(View current) {
         ViewGroup lowLights = (ViewGroup) current.findViewById(R.id.lights_out);
+        adjustOuterPadding((ViewGroup) lowLights.getParent());
         int totalViews = lowLights.getChildCount();
         int visibleCount = NavbarEditor.visibleCount;
         for (int v = 0;v<totalViews;v++) {
@@ -389,6 +409,20 @@ public class NavbarEditor implements OnTouchListener {
                         blank.setVisibility(View.GONE);
                     }
                 }
+            }
+        }
+    }
+
+    private void adjustOuterPadding(ViewGroup parent) {
+        boolean editMode = NavigationBarView.getEditMode();
+        boolean isLandscape = mContext.getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+        //Hide the extra padding on hybrid devices
+        for (int c = 0; c < parent.getChildCount(); c++) {
+            View v = parent.getChildAt(c);
+            if (v != null && !(v instanceof KeyButtonView) && !(v instanceof LinearLayout)) {
+                boolean hidePadding = editMode || (visibleCount == 4 && !isLandscape);
+                v.setVisibility(hidePadding ? View.GONE : View.VISIBLE);
             }
         }
     }
@@ -482,7 +516,7 @@ public class NavbarEditor implements OnTouchListener {
             if (takenItems.contains(items.get(arg0))) {
                 text.setBackgroundColor(Color.parseColor("#181818"));
             } else {
-                text.setBackgroundDrawable(null);
+                text.setBackground(null);
             }
             text.setText(mParent.getResources().getString(buttonMap.get(items.get(arg0)).displayId));
             return convertView;

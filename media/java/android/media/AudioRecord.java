@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.SystemProperties;
 import android.util.Log;
 
 /**
@@ -161,7 +162,7 @@ public class AudioRecord
     /**
      * Lock to make sure mRecordingState updates are reflecting the actual state of the object.
      */
-    private Object mRecordingStateLock = new Object();
+    private final Object mRecordingStateLock = new Object();
     /**
      * The listener the AudioRecord notifies when the record position reaches a marker
      * or for periodic updates during the progression of the record head.
@@ -310,6 +311,15 @@ public class AudioRecord
         case AudioFormat.ENCODING_PCM_8BIT:
             mAudioFormat = audioFormat;
             break;
+        case AudioFormat.ENCODING_AMRNB:
+        case AudioFormat.ENCODING_AMRWB:
+        case AudioFormat.ENCODING_EVRC:
+        case AudioFormat.ENCODING_EVRCB:
+        case AudioFormat.ENCODING_EVRCWB:
+            if (SystemProperties.QCOM_HARDWARE) {
+                mAudioFormat = audioFormat;
+                break;
+            }
         default:
             mAudioFormat = AudioFormat.ENCODING_INVALID;
         throw (new IllegalArgumentException("Unsupported sample encoding." 
@@ -476,7 +486,12 @@ public class AudioRecord
         }
         
         // PCM_8BIT is not supported at the moment
-        if (audioFormat != AudioFormat.ENCODING_PCM_16BIT) {
+        if (audioFormat != AudioFormat.ENCODING_PCM_16BIT
+            && audioFormat != AudioFormat.ENCODING_AMRNB
+            && audioFormat != AudioFormat.ENCODING_AMRWB
+            && audioFormat != AudioFormat.ENCODING_EVRC
+            && audioFormat != AudioFormat.ENCODING_EVRCB
+            && audioFormat != AudioFormat.ENCODING_EVRCWB) {
             loge("getMinBufferSize(): Invalid audio format.");
             return AudioRecord.ERROR_BAD_VALUE;
         }
@@ -497,7 +512,6 @@ public class AudioRecord
      * Returns the audio session ID.
      *
      * @return the ID of the audio session this AudioRecord belongs to.
-     * @hide
      */
     public int getAudioSessionId() {
         return mSessionId;
@@ -519,13 +533,33 @@ public class AudioRecord
 
         // start recording
         synchronized(mRecordingStateLock) {
-            if (native_start() == SUCCESS) {
+            if (native_start(MediaSyncEvent.SYNC_EVENT_NONE, 0) == SUCCESS) {
                 mRecordingState = RECORDSTATE_RECORDING;
             }
         }
     }
 
+    /**
+     * Starts recording from the AudioRecord instance when the specified synchronization event
+     * occurs on the specified audio session.
+     * @throws IllegalStateException
+     * @param syncEvent event that triggers the capture.
+     * @see MediaSyncEvent
+     */
+    public void startRecording(MediaSyncEvent syncEvent)
+    throws IllegalStateException {
+        if (mState != STATE_INITIALIZED) {
+            throw(new IllegalStateException("startRecording() called on an "
+                    +"uninitialized AudioRecord."));
+        }
 
+        // start recording
+        synchronized(mRecordingStateLock) {
+            if (native_start(syncEvent.getType(), syncEvent.getAudioSessionId()) == SUCCESS) {
+                mRecordingState = RECORDSTATE_RECORDING;
+            }
+        }
+    }
 
     /**
      * Stops recording.
@@ -787,7 +821,7 @@ public class AudioRecord
     
     private native final void native_release();
 
-    private native final int native_start();
+    private native final int native_start(int syncEvent, int sessionId);
 
     private native final void native_stop();
 

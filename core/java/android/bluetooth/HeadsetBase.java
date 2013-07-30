@@ -128,6 +128,7 @@ public final class HeadsetBase {
                 sAtInputCount++;
             }
         }
+
         if (DBG) timestamp = System.currentTimeMillis();
         AtCommandResult result = mAtParser.process(input);
         if (DBG) Log.d(TAG, "Processing " + input + " took " +
@@ -163,6 +164,7 @@ public final class HeadsetBase {
                 public void run() {
                     int last_read_error;
                     while (!mEventThreadInterrupted) {
+
                         String input;
                         if (null == specialPDUInputHandler) {
                             input = readNative(500);
@@ -290,6 +292,7 @@ public final class HeadsetBase {
         return true;
     }
     private native boolean sendURCNative(String urc);
+    private native boolean sendURCNativeChars(String urc);
 
     public synchronized boolean sendURCChars(String urc) {
         if (urc.length() > 0) {
@@ -298,7 +301,6 @@ public final class HeadsetBase {
         }
         return true;
     }
-    private native boolean sendURCNativeChars(String urc);
 
     private synchronized void acquireWakeLock() {
         if (!mWakeLock.isHeld()) {

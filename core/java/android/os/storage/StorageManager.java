@@ -16,6 +16,7 @@
 
 package android.os.storage;
 
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -55,7 +56,7 @@ public class StorageManager
     /*
      * Our internal MountService binder reference
      */
-    private IMountService mMountService;
+    final private IMountService mMountService;
 
     /*
      * The looper target for callbacks
@@ -288,7 +289,7 @@ public class StorageManager
      * Constructs a StorageManager object through which an application can
      * can communicate with the systems mount service.
      * 
-     * @param tgtLooper The {@android.os.Looper} which events will be received on.
+     * @param tgtLooper The {@link android.os.Looper} which events will be received on.
      *
      * <p>Applications can get instance of this class by calling
      * {@link android.content.Context#getSystemService(java.lang.String)} with an argument
@@ -303,8 +304,6 @@ public class StorageManager
             return;
         }
         mTgtLooper = tgtLooper;
-        mBinderListener = new MountServiceBinderListener();
-        mMountService.registerListener(mBinderListener);
     }
 
 
@@ -321,6 +320,15 @@ public class StorageManager
         }
 
         synchronized (mListeners) {
+            if (mBinderListener == null ) {
+                try {
+                    mBinderListener = new MountServiceBinderListener();
+                    mMountService.registerListener(mBinderListener);
+                } catch (RemoteException rex) {
+                    Log.e(TAG, "Register mBinderListener failed");
+                    return;
+                }
+            }
             mListeners.add(new ListenerDelegate(listener));
         }
     }
@@ -346,7 +354,15 @@ public class StorageManager
                     break;
                 }
             }
-        }
+            if (mListeners.size() == 0 && mBinderListener != null) {
+                try {
+                    mMountService.unregisterListener(mBinderListener);
+                } catch (RemoteException rex) {
+                    Log.e(TAG, "Unregister mBinderListener failed");
+                    return;
+                }
+            }
+       }
     }
 
     /**
@@ -401,6 +417,24 @@ public class StorageManager
             return mMountService.isUsbMassStorageEnabled();
         } catch (RemoteException rex) {
             Log.e(TAG, "Failed to get UMS enable state", rex);
+        }
+        return false;
+    }
+
+    /**
+     * Query if a USB Mass Storage (UMS) is supported on the device.
+     * @return true if UMS is supported.
+     *
+     * @hide
+     */
+    public boolean isUsbMassStorageSupported() {
+        // TODO: Maybe query mMountService instead?
+        StorageVolume[] volumes = getVolumeList();
+        if (volumes == null) return false;
+        for (int i = 0; i < volumes.length; i++) {
+            if (volumes[i].allowMassStorage()) {
+                return true;
+            }
         }
         return false;
     }
@@ -534,6 +568,7 @@ public class StorageManager
      * @hide
      */
     public String getVolumeState(String mountPoint) {
+         if (mMountService == null) return Environment.MEDIA_REMOVED;
         try {
             return mMountService.getVolumeState(mountPoint);
         } catch (RemoteException e) {
@@ -547,6 +582,7 @@ public class StorageManager
      * @hide
      */
     public StorageVolume[] getVolumeList() {
+        if (mMountService == null) return new StorageVolume[0];
         try {
             Parcelable[] list = mMountService.getVolumeList();
             if (list == null) return new StorageVolume[0];

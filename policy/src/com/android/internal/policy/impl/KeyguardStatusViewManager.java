@@ -17,9 +17,24 @@
 
 package com.android.internal.policy.impl;
 
+import com.android.internal.R;
+import com.android.internal.telephony.IccCard;
+import com.android.internal.telephony.IccCard.State;
+import com.android.internal.widget.DigitalClock;
+import com.android.internal.widget.LockPatternUtils;
+import com.android.internal.widget.TransportControlView;
+import com.android.internal.policy.impl.KeyguardUpdateMonitor.InfoCallbackImpl;
+import com.android.internal.policy.impl.KeyguardUpdateMonitor.SimStateCallback;
+
+import java.util.ArrayList;
+import java.util.Date;
+
+import libcore.util.MutableInt;
+
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Resources;
+import android.content.res.Configuration;
 import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationManager;
@@ -28,9 +43,14 @@ import android.os.Message;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.text.format.DateUtils;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.view.ViewGroup;
+import android.view.ViewGroup.MarginLayoutParams;
+import android.provider.Settings;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -67,6 +87,7 @@ class KeyguardStatusViewManager implements OnClickListener {
     public static final int LOCK_ICON = 0; // R.drawable.ic_lock_idle_lock;
     public static final int ALARM_ICON = R.drawable.ic_lock_idle_alarm;
     public static final int CHARGING_ICON = 0; //R.drawable.ic_lock_idle_charging;
+    public static final int DISCHARGING_ICON = 0; // no icon used in ics+ currently
     public static final int BATTERY_LOW_ICON = 0; //R.drawable.ic_lock_idle_low_battery;
     private static final long INSTRUCTION_RESET_DELAY = 2000; // time until instruction text resets
 
@@ -88,6 +109,7 @@ class KeyguardStatusViewManager implements OnClickListener {
     private TextView mStatus1View;
     private TextView mOwnerInfoView;
     private TextView mAlarmStatusView;
+    private LinearLayout mDateLineView;
     private TransportControlView mTransportView;
     private RelativeLayout mWeatherPanel, mWeatherTempsPanel;
     private TextView mWeatherCity, mWeatherCondition, mWeatherLowHigh, mWeatherTemp, mWeatherUpdateTime;
@@ -106,6 +128,9 @@ class KeyguardStatusViewManager implements OnClickListener {
 
     // last known battery level
     private int mBatteryLevel = 100;
+
+    // always show battery status?
+    private boolean mAlwaysShowBattery = false;
 
     // last known SIM state
     protected State mSimState;
@@ -127,6 +152,7 @@ class KeyguardStatusViewManager implements OnClickListener {
     private CharSequence mPlmn;
     private CharSequence mSpn;
     protected int mPhoneState;
+    private DigitalClock mDigitalClock;
 
     private class TransientTextManager {
         private TextView mTextView;
@@ -200,9 +226,11 @@ class KeyguardStatusViewManager implements OnClickListener {
         mStatus1View = (TextView) findViewById(R.id.status1);
         mAlarmStatusView = (TextView) findViewById(R.id.alarm_status);
         mOwnerInfoView = (TextView) findViewById(R.id.propertyOf);
+        mDateLineView = (LinearLayout) findViewById(R.id.date_line);
         mTransportView = (TransportControlView) findViewById(R.id.transport);
         mEmergencyCallButton = (Button) findViewById(R.id.emergencyCallButton);
         mEmergencyCallButtonEnabledInScreen = emergencyButtonEnabledInScreen;
+        mDigitalClock = (DigitalClock) findViewById(R.id.time);
 
         // Weather panel
         mWeatherPanel = (RelativeLayout) findViewById(R.id.weather_panel);
@@ -251,6 +279,9 @@ class KeyguardStatusViewManager implements OnClickListener {
         updateOwnerInfo();
         refreshWeather();
         refreshCalendar();
+        if (mDigitalClock != null) {
+            updateClockAlign();
+        }
 
         // Required to get Marquee to work.
         final View scrollableViews[] = { mCarrierView, mDateView, mStatus1View, mOwnerInfoView,
@@ -269,6 +300,7 @@ class KeyguardStatusViewManager implements OnClickListener {
     private static WeatherInfo mWeatherInfo = new WeatherInfo();
     private static final int QUERY_WEATHER = 0;
     private static final int UPDATE_WEATHER = 1;
+    private boolean mWeatherRefreshing;
 
     private Handler mHandler = new Handler() {
         @Override
@@ -318,33 +350,34 @@ class KeyguardStatusViewManager implements OnClickListener {
                                 e.printStackTrace();
                             }
                         }
+                        if (DEBUG) {
+                            Log.d(TAG, "Location code is " + woeid);
+                        }
+                        WeatherInfo w = null;
+                        if (woeid != null) {
+                            try {
+                                w = parseXml(getDocument(woeid));
+                            } catch (Exception e) {
+                            }
+                        }
                         Message msg = Message.obtain();
                         msg.what = UPDATE_WEATHER;
-                        msg.obj = woeid;
+                        msg.obj = w;
                         mHandler.sendMessage(msg);
                     }
                 });
+                mWeatherRefreshing = true;
                 queryWeather.setPriority(Thread.MIN_PRIORITY);
                 queryWeather.start();
                 break;
             case UPDATE_WEATHER:
-                String woeid = (String) msg.obj;
-                if (woeid != null) {
-                    if (DEBUG) {
-                        Log.d(TAG, "Location code is " + woeid);
-                    }
-                    WeatherInfo w = null;
-                    try {
-                        w = parseXml(getDocument(woeid));
-                    } catch (Exception e) {
-                    }
-                    if (w == null) {
-                        setNoWeatherData();
-                    } else {
-                        setWeatherData(w);
-                        mWeatherInfo = w;
-                    }
+                WeatherInfo w = (WeatherInfo) msg.obj;
+                if (w != null) {
+                    mWeatherRefreshing = false;
+                    setWeatherData(w);
+                    mWeatherInfo = w;
                 } else {
+                    mWeatherRefreshing = false;
                     if (mWeatherInfo.temp.equals(WeatherInfo.NODATA)) {
                         setNoWeatherData();
                     } else {
@@ -368,7 +401,9 @@ class KeyguardStatusViewManager implements OnClickListener {
                     Settings.System.WEATHER_UPDATE_INTERVAL, 60); // Default to hourly
             boolean manualSync = (interval == 0);
             if (!manualSync && (((System.currentTimeMillis() - mWeatherInfo.last_sync) / 60000) >= interval)) {
-                mHandler.sendEmptyMessage(QUERY_WEATHER);
+                if (!mWeatherRefreshing) {
+                    mHandler.sendEmptyMessage(QUERY_WEATHER);
+                }
             } else if (manualSync && mWeatherInfo.last_sync == 0) {
                 setNoWeatherData();
             } else {
@@ -416,15 +451,18 @@ class KeyguardStatusViewManager implements OnClickListener {
                 mWeatherCity.setText(w.city);
                 mWeatherCity.setVisibility(showLocation ? View.VISIBLE : View.GONE);
             }
-            if (mWeatherCondition != null) {
+            if (mWeatherCondition != null && !mWeatherRefreshing) {
                 mWeatherCondition.setText(w.condition);
                 mWeatherCondition.setVisibility(View.VISIBLE);
             }
             if (mWeatherUpdateTime != null) {
-                Date lastTime = new Date(mWeatherInfo.last_sync);
-                String date = DateFormat.getDateFormat(getContext()).format(lastTime);
-                String time = DateFormat.getTimeFormat(getContext()).format(lastTime);
-                mWeatherUpdateTime.setText(date + " " + time);
+                long now = System.currentTimeMillis();
+                if (now - w.last_sync < 60000) {
+                    mWeatherUpdateTime.setText(R.string.weather_last_sync_just_now);
+                } else {
+                    mWeatherUpdateTime.setText(DateUtils.getRelativeTimeSpanString(
+                            w.last_sync, now, DateUtils.MINUTE_IN_MILLIS));
+                }
                 mWeatherUpdateTime.setVisibility(showTimestamp ? View.VISIBLE : View.GONE);
             }
             if (mWeatherTempsPanel != null && mWeatherTemp != null && mWeatherLowHigh != null) {
@@ -452,7 +490,7 @@ class KeyguardStatusViewManager implements OnClickListener {
                 mWeatherCity.setText(R.string.weather_no_data);
                 mWeatherCity.setVisibility(View.VISIBLE);
             }
-            if (mWeatherCondition != null) {
+            if (mWeatherCondition != null && !mWeatherRefreshing) {
                 mWeatherCondition.setText(R.string.weather_tap_to_refresh);
             }
             if (mWeatherUpdateTime != null) {
@@ -637,9 +675,23 @@ class KeyguardStatusViewManager implements OnClickListener {
     /** {@inheritDoc} */
     public void onResume() {
         if (DEBUG) Log.v(TAG, "onResume()");
+
+        // First update the clock, if present.
+        if (mDigitalClock != null) {
+            mDigitalClock.updateTime();
+            updateClockAlign();
+        }
+        refreshWeather();
+
         mUpdateMonitor.registerInfoCallback(mInfoCallback);
         mUpdateMonitor.registerSimStateCallback(mSimStateCallback);
         resetStatusInfo();
+        // Issue the biometric unlock failure message in a centralized place
+        // TODO: we either need to make the Face Unlock multiple failures string a more general
+        // 'biometric unlock' or have each biometric unlock handle this on their own.
+        if (mUpdateMonitor.getMaxBiometricUnlockAttemptsReached()) {
+            setInstructionText(getContext().getString(R.string.faceunlock_multiple_failures));
+        }
     }
 
     void resetStatusInfo() {
@@ -647,6 +699,7 @@ class KeyguardStatusViewManager implements OnClickListener {
         mShowingBatteryInfo = mUpdateMonitor.shouldShowBatteryInfo();
         mPluggedIn = mUpdateMonitor.isDevicePluggedIn();
         mBatteryLevel = mUpdateMonitor.getBatteryLevel();
+        mAlwaysShowBattery = KeyguardUpdateMonitor.shouldAlwaysShowBatteryInfo(getContext());
         updateStatusLines(true);
     }
 
@@ -688,6 +741,62 @@ class KeyguardStatusViewManager implements OnClickListener {
         }
     }
 
+    private void updateClockAlign() {
+        final Configuration config = getContext().getResources().getConfiguration();
+        // No alignment on landscape.
+        if (config.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            return;
+        }
+
+        final int clockAlign = Settings.System.getInt(getContext().getContentResolver(),
+                Settings.System.LOCKSCREEN_CLOCK_ALIGN, 2);
+        int margin = (int) Math.round(getContext().getResources().getDimension(
+                R.dimen.keyguard_lockscreen_status_line_font_right_margin));
+
+        // Adjust for each layout
+        if (config.screenWidthDp >= 600) { // sw600dp
+            margin = 0;
+        }
+
+        int leftMargin = 0, rightMargin = 0;
+        int gravity = Gravity.RIGHT;
+
+        switch (clockAlign) {
+        case 0:
+            gravity = Gravity.LEFT;
+            leftMargin = margin;
+            break;
+        case 1:
+            gravity = Gravity.CENTER;
+            break;
+        case 2:
+            rightMargin = margin;
+            break;
+        }
+
+        mDigitalClock.setGravity(gravity);
+        setSpecificMargins(mDigitalClock, leftMargin, -1, rightMargin, -1);
+
+        if (mDateLineView != null) {
+            mDateLineView.setGravity(gravity);
+            setSpecificMargins(mDateLineView, leftMargin, -1, rightMargin, -1);
+        }
+        if (mStatus1View != null) {
+            mStatus1View.setGravity(gravity);
+            setSpecificMargins(mStatus1View, leftMargin, -1, rightMargin, -1);
+        }
+    }
+
+    private void setSpecificMargins(View view, int left, int top, int right,
+            int bottom) {
+        MarginLayoutParams params = (MarginLayoutParams) view.getLayoutParams();
+        if (left != -1) params.leftMargin = left;
+        if (top != -1) params.topMargin = top;
+        if (right != -1) params.rightMargin = right;
+        if (bottom != -1) params.bottomMargin = bottom;
+        view.setLayoutParams(params);
+    }
+
     private void updateStatus1() {
         if (mStatus1View != null) {
             MutableInt icon = new MutableInt(0);
@@ -720,8 +829,12 @@ class KeyguardStatusViewManager implements OnClickListener {
                 icon.value = CHARGING_ICON;
             } else if (mBatteryLevel < KeyguardUpdateMonitor.LOW_BATTERY_THRESHOLD) {
                 // Battery is low
-                string = getContext().getString(R.string.lockscreen_low_battery);
+                string = getContext().getString(R.string.lockscreen_low_battery, mBatteryLevel);
                 icon.value = BATTERY_LOW_ICON;
+            } else if (mAlwaysShowBattery) {
+                // Discharging
+                string = getContext().getString(R.string.lockscreen_discharging, mBatteryLevel);
+                icon.value = DISCHARGING_ICON;
             }
         } else {
             string = mCarrierText;
@@ -747,8 +860,12 @@ class KeyguardStatusViewManager implements OnClickListener {
                 icon.value = CHARGING_ICON;
             } else if (mBatteryLevel < KeyguardUpdateMonitor.LOW_BATTERY_THRESHOLD) {
                 // Battery is low
-                string = getContext().getString(R.string.lockscreen_low_battery);
+                string = getContext().getString(R.string.lockscreen_low_battery, mBatteryLevel);
                 icon.value = BATTERY_LOW_ICON;
+            } else if (mAlwaysShowBattery) {
+                // Discharging
+                string = getContext().getString(R.string.lockscreen_discharging, mBatteryLevel);
+                icon.value = DISCHARGING_ICON;
             }
         } else if (!inWidgetMode() && mOwnerInfoView == null && mOwnerInfoText != null) {
             // OwnerInfo shows in status if we don't have a dedicated widget
@@ -840,7 +957,8 @@ class KeyguardStatusViewManager implements OnClickListener {
                 break;
 
             case SimPermDisabled:
-                carrierText = getContext().getText(R.string.lockscreen_missing_sim_message_short);
+                carrierText = getContext().getText(
+                        R.string.lockscreen_permanent_disabled_sim_message_short);
                 carrierHelpTextId = R.string.lockscreen_permanent_disabled_sim_instructions;
                 mEmergencyButtonEnabledBecauseSimLocked = true;
                 break;
@@ -959,9 +1077,9 @@ class KeyguardStatusViewManager implements OnClickListener {
         }
     }
 
-    private KeyguardUpdateMonitor.InfoCallback mInfoCallback
-            = new KeyguardUpdateMonitor.InfoCallback() {
+    private InfoCallbackImpl mInfoCallback = new InfoCallbackImpl() {
 
+        @Override
         public void onRefreshBatteryInfo(boolean showBatteryInfo, boolean pluggedIn,
                 int batteryLevel) {
             mShowingBatteryInfo = showBatteryInfo;
@@ -971,33 +1089,25 @@ class KeyguardStatusViewManager implements OnClickListener {
             update(BATTERY_INFO, getAltTextMessage(tmpIcon));
         }
 
+        @Override
         public void onTimeChanged() {
             refreshDate();
+            refreshWeather();
         }
 
+        @Override
         public void onRefreshCarrierInfo(CharSequence plmn, CharSequence spn) {
             mPlmn = plmn;
             mSpn = spn;
             updateCarrierStateWithSimStatus(mSimState);
         }
 
-        public void onRingerModeChanged(int state) {
-
-        }
-
+        @Override
         public void onPhoneStateChanged(int phoneState) {
             mPhoneState = phoneState;
             updateEmergencyCallButtonState(phoneState);
         }
 
-        /** {@inheritDoc} */
-        public void onClockVisibilityChanged() {
-            // ignored
-        }
-
-        public void onDeviceProvisioned() {
-            // ignored
-        }
     };
 
     private SimStateCallback mSimStateCallback = new SimStateCallback() {
@@ -1017,7 +1127,7 @@ class KeyguardStatusViewManager implements OnClickListener {
             }
 
             mCallback.pokeWakelock();
-            if (!mHandler.hasMessages(QUERY_WEATHER)) {
+            if (!mWeatherRefreshing) {
                 mHandler.sendEmptyMessage(QUERY_WEATHER);
             }
         }

@@ -37,8 +37,8 @@ import android.view.LayoutInflater;
 import com.android.systemui.R;
 import com.android.systemui.statusbar.policy.AirplaneModeController;
 import com.android.systemui.statusbar.policy.AutoRotateController;
-import com.android.systemui.statusbar.policy.BrightnessController;
 import com.android.systemui.statusbar.policy.BluetoothController;
+import com.android.systemui.statusbar.policy.BrightnessController;
 import com.android.systemui.statusbar.policy.DoNotDisturbController;
 import com.android.systemui.statusbar.policy.ToggleSlider;
 import com.android.systemui.statusbar.policy.VolumeController;
@@ -82,6 +82,7 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
     NetworkModeController mNetworkMode;
     SoundController mSound;
     WifiController mWifi;
+    View mRotationLockContainer;
 
     private Context mContext;
     private Handler mHandler;
@@ -133,14 +134,17 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
     protected void onFinishInflate() {
         super.onFinishInflate();
 
-        mBrightness = new BrightnessController(mContext, (ToggleSlider)findViewById(R.id.brightness));
-        mDoNotDisturb = new DoNotDisturbController(mContext, (CompoundButton)findViewById(R.id.do_not_disturb_checkbox));
+        final Context context = getContext();
+
+        mBrightness = new BrightnessController(context,
+                (ToggleSlider)findViewById(R.id.brightness));
+        mDoNotDisturb = new DoNotDisturbController(context,
+                (CompoundButton)findViewById(R.id.do_not_disturb_checkbox));
 
         if(mToggleContainer == null)
            mToggleContainer = BUTTONS_DEFAULT;
-        if(!mToggleContainer.equals(NO_TOGGLES)){
-               updateToggles();
-        }
+        if(!mToggleContainer.equals(NO_TOGGLES))
+            updateToggles();
         findViewById(R.id.settings).setOnClickListener(this);
     }
 
@@ -151,15 +155,14 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
                 removeView(v);
         }
     }
-
     private void updateToggles(){
         clearToggleControllers();
         clearToggles();
         mToggles = mToggleContainer.split("\\|");
         for(int i=mToggles.length - 1; i>=0; i--){
-                String mToggleName = mToggles[i].replace("\\", "");
-                int[] resources = getResourcesById(mToggleName);
-                addToggle(resources, mToggleName);
+            String mToggleName = mToggles[i].replace("\\", "");
+            int[] resources = getResourcesById(mToggleName);
+            addToggle(resources, mToggleName);
         }
     }
 
@@ -176,22 +179,22 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
         toggle.setTag(new ButtonTag(res[2]));
         toggle.setOnClickListener(this);
 
-        setToggleController(name, (CompoundButton)checkbox);
+        setToggleController(name, (CompoundButton)checkbox, toggle);
     }
-
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         if(mAirplane != null)
-             mAirplane.release();
+            mAirplane.release();
         if(mGps != null)
-             mGps.release();
+            mGps.release();
         if(mSound != null)
-             mSound.release();
+            mSound.release();
+        if(mRotate != null)
+            mRotate.release();
         mDoNotDisturb.release();
     }
-
 
     private void clearToggleControllers() {
         mAirplane = null;
@@ -205,11 +208,19 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
         mWifi = null;
     }
 
-    private void setToggleController(String id, CompoundButton checkbox) {
+    private void setToggleController(String id, CompoundButton checkbox, LinearLayout toggle) {
         if(id.equals(KEY_TOGGLES[0]))
            mAirplane = new AirplaneModeController(mContext, checkbox);
-        else if(id.equals(KEY_TOGGLES[1]))
-           mRotate = new AutoRotateController(mContext, checkbox);
+        else if(id.equals(KEY_TOGGLES[1])){
+            mRotationLockContainer = toggle;
+            mRotate = new AutoRotateController(mContext, checkbox,
+                new AutoRotateController.RotationLockCallbacks() {
+                    @Override
+                    public void setRotationLockControlVisibility(boolean show) {
+                        mRotationLockContainer.setVisibility(show ? View.VISIBLE : View.GONE);
+                    }
+                });
+        }
         else if(id.equals(KEY_TOGGLES[2]))
            mBluetooth = new BluetoothController(mContext, checkbox);
         else if(id.equals(KEY_TOGGLES[3]))
@@ -263,6 +274,13 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
         }
     }
 
+    // Network
+    // ----------------------------
+    private void onClickNetwork() {
+        getContext().startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+
     /*
      * OnClickListener for custom toggles
      */
@@ -299,6 +317,7 @@ public class SettingsView extends LinearLayout implements View.OnClickListener {
                         .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 break;
         }
+
         getStatusBarManager().collapse();
     }
 

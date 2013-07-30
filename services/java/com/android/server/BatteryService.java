@@ -16,6 +16,9 @@
 
 package com.android.server;
 
+import com.android.internal.app.IBatteryStats;
+import com.android.server.am.BatteryStatsService;
+
 import android.app.ActivityManagerNative;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -26,10 +29,10 @@ import android.database.ContentObserver;
 import android.graphics.Color;
 import android.os.BatteryManager;
 import android.os.Binder;
-import android.os.DropBoxManager;
 import android.os.FileUtils;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.DropBoxManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemClock;
@@ -38,14 +41,13 @@ import android.provider.Settings;
 import android.util.EventLog;
 import android.util.Slog;
 
-import com.android.internal.app.IBatteryStats;
-import com.android.server.am.BatteryStatsService;
-
 import java.io.File;
 import java.io.FileDescriptor;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.Arrays;
 import java.util.Calendar;
 
 /**
@@ -105,10 +107,6 @@ class BatteryService extends Binder {
     private boolean mBatteryLevelCritical;
     private int mInvalidCharger;
 
-    private int mDockBatteryStatus;
-    private int mDockBatteryLevel;
-    private String mDockBatteryPresent;
-
     private int mLastBatteryStatus;
     private int mLastBatteryHealth;
     private boolean mLastBatteryPresent;
@@ -118,10 +116,18 @@ class BatteryService extends Binder {
     private boolean mLastBatteryLevelCritical;
     private int mLastInvalidCharger;
 
+    private boolean mHasDockBattery;
+
+    private int mDockBatteryStatus;
+    private int mDockBatteryLevel;
+    private boolean mDockBatteryPresent;
+
+    private int mLastDockBatteryStatus;
+    private int mLastDockBatteryLevel;
+    private boolean mLastDockBatteryPresent;
+
     private int mLowBatteryWarningLevel;
     private int mLowBatteryCloseWarningLevel;
-
-    private boolean mHasDockBattery;
 
     private int mPlugType;
     private int mLastPlugType = -1; // Extra state so we can detect first run
@@ -285,6 +291,14 @@ class BatteryService extends Binder {
         shutdownIfNoPower();
         shutdownIfOverTemp();
 
+        boolean dockBatteryChanged = false;
+        if (mHasDockBattery &&
+                (mDockBatteryLevel != mLastDockBatteryLevel ||
+                mDockBatteryStatus != mLastDockBatteryStatus ||
+                mDockBatteryPresent != mLastDockBatteryPresent)) {
+            dockBatteryChanged = true;
+        }
+
         if (mBatteryStatus != mLastBatteryStatus ||
                 mBatteryHealth != mLastBatteryHealth ||
                 mBatteryPresent != mLastBatteryPresent ||
@@ -292,7 +306,8 @@ class BatteryService extends Binder {
                 mPlugType != mLastPlugType ||
                 mBatteryVoltage != mLastBatteryVoltage ||
                 mBatteryTemperature != mLastBatteryTemperature ||
-                mInvalidCharger != mLastInvalidCharger) {
+                mInvalidCharger != mLastInvalidCharger ||
+                dockBatteryChanged) {
 
             if (mPlugType != mLastPlugType) {
                 if (mLastPlugType == BATTERY_PLUGGED_NONE) {
@@ -393,6 +408,12 @@ class BatteryService extends Binder {
             mLastBatteryTemperature = mBatteryTemperature;
             mLastBatteryLevelCritical = mBatteryLevelCritical;
             mLastInvalidCharger = mInvalidCharger;
+
+            if (mHasDockBattery) {
+                mLastDockBatteryLevel = mDockBatteryLevel;
+                mLastDockBatteryStatus = mDockBatteryStatus;
+                mLastDockBatteryPresent = mDockBatteryPresent;
+            }
         }
     }
 
@@ -417,9 +438,9 @@ class BatteryService extends Binder {
         intent.putExtra(BatteryManager.EXTRA_INVALID_CHARGER, mInvalidCharger);
 
         if (mHasDockBattery){
+            intent.putExtra(BatteryManager.EXTRA_DOCK_PRESENT, mDockBatteryPresent);
             intent.putExtra(BatteryManager.EXTRA_DOCK_STATUS, mDockBatteryStatus);
             intent.putExtra(BatteryManager.EXTRA_DOCK_LEVEL, mDockBatteryLevel);
-            intent.putExtra(BatteryManager.EXTRA_DOCK_AC_ONLINE, false);
         }
 
         if (false) {
@@ -585,12 +606,7 @@ class BatteryService extends Binder {
         private int mBatteryLedOn;
         private int mBatteryLedOff;
 
-        private boolean mBatteryCharging;
-        private boolean mBatteryLow;
-        private boolean mBatteryFull;
-
         Led(Context context, LightsService lights) {
-
             mLightsService = lights;
             mBatteryLight = lights.getLight(LightsService.LIGHT_ID_BATTERY);
 
@@ -728,7 +744,7 @@ class BatteryService extends Binder {
             mQuietHoursEnd = Settings.System.getInt(resolver,
                     Settings.System.QUIET_HOURS_END, 0);
             mQuietHoursDim = Settings.System.getInt(resolver,
-                    Settings.System.QUIET_HOURS_DIM, 0) != 0;
+                    Settings.System.QUIET_HOURS_DIM, 0) != 0; 
 
             updateLedPulse();
         }

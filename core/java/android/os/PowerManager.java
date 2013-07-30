@@ -197,7 +197,31 @@ public class PowerManager
      * Does not work with PARTIAL_WAKE_LOCKs.
      */
     public static final int ON_AFTER_RELEASE = 0x20000000;
-    
+
+    /**
+     * Brightness value to use when battery is low.
+     * @hide
+     */
+    public static final int BRIGHTNESS_LOW_BATTERY = 10;
+
+    /**
+     * Brightness value for fully on.
+     * @hide
+     */
+    public static final int BRIGHTNESS_ON = 255;
+
+    /**
+     * Brightness value for dim backlight.
+     * @hide
+     */
+    public static final int BRIGHTNESS_DIM = 20;
+
+    /**
+     * Brightness value for fully off.
+     * @hide
+     */
+    public static final int BRIGHTNESS_OFF = 0;
+
     /**
      * Class lets you say that you need to have the device on.
      * <p>
@@ -531,6 +555,24 @@ public class PowerManager
     {
         try {
             mService.reboot(reason);
+        } catch (RemoteException e) {
+        }
+    }
+
+    /**
+     * Boost the CPU. Boosts the cpu for the given duration in microseconds.
+     * Requires the {@link android.Manifest.permission#CPU_BOOST} permission.
+     *
+     * @param duration in microseconds to boost the CPU
+     *
+     * @hide
+     */
+    public void cpuBoost(int duration)
+    {
+        try {
+            if (mService != null) {
+                mService.cpuBoost(duration);
+            }
         } catch (RemoteException e) {
         }
     }

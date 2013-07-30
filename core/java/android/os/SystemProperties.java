@@ -17,6 +17,10 @@
 
 package android.os;
 
+import java.util.ArrayList;
+
+import android.util.Log;
+
 
 /**
  * Gives access to the system properties store.  The system properties
@@ -29,13 +33,9 @@ public class SystemProperties
     public static final int PROP_NAME_MAX = 31;
     public static final int PROP_VALUE_MAX = 91;
 
-    // OMAP4 and OMAP3's OMAP_COMPAT
-    public static final boolean OMAP_ENHANCEMENT = native_get_boolean("com.ti.omap_enhancement", false);
-    public static final boolean OMAP_COMPAT = native_get_boolean("com.ti.omap_compat", false);
-
-    // QCOM Hardware
     public static final boolean QCOM_HARDWARE = native_get_boolean("com.qc.hardware", false);
-    public static final boolean QCOM_HDMI_OUT = native_get_boolean("com.qc.hdmi_out", false);
+
+    private static final ArrayList<Runnable> sChangeCallbacks = new ArrayList<Runnable>();
 
     private static native String native_get(String key);
     private static native String native_get(String key, String def);
@@ -43,6 +43,7 @@ public class SystemProperties
     private static native long native_get_long(String key, long def);
     private static native boolean native_get_boolean(String key, boolean def);
     private static native void native_set(String key, String def);
+    private static native void native_add_change_callback();
 
     /**
      * Get the value for the given key.
@@ -132,6 +133,28 @@ public class SystemProperties
                 PROP_VALUE_MAX);
         }
         native_set(key, val);
+    }
+
+    public static void addChangeCallback(Runnable callback) {
+        synchronized (sChangeCallbacks) {
+            if (sChangeCallbacks.size() == 0) {
+                native_add_change_callback();
+            }
+            sChangeCallbacks.add(callback);
+        }
+    }
+
+    static void callChangeCallbacks() {
+        synchronized (sChangeCallbacks) {
+            //Log.i("foo", "Calling " + sChangeCallbacks.size() + " change callbacks!");
+            if (sChangeCallbacks.size() == 0) {
+                return;
+            }
+            ArrayList<Runnable> callbacks = new ArrayList<Runnable>(sChangeCallbacks);
+            for (int i=0; i<callbacks.size(); i++) {
+                callbacks.get(i).run();
+            }
+        }
     }
 
     /**

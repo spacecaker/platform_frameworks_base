@@ -66,6 +66,8 @@ public class UsbManager {
      * PTP function is enabled
      * <li> {@link #USB_FUNCTION_PTP} boolean extra indicating whether the
      * accessory function is enabled
+     * <li> {@link #USB_FUNCTION_AUDIO_SOURCE} boolean extra indicating whether the
+     * audio source function is enabled
      * </ul>
      *
      * {@hide}
@@ -178,6 +180,14 @@ public class UsbManager {
     public static final String USB_FUNCTION_PTP = "ptp";
 
     /**
+     * Name of the audio source USB function.
+     * Used in extras for the {@link #ACTION_USB_STATE} broadcast
+     *
+     * {@hide}
+     */
+    public static final String USB_FUNCTION_AUDIO_SOURCE = "audio_source";
+
+    /**
      * Name of the Accessory USB function.
      * Used in extras for the {@link #ACTION_USB_STATE} broadcast
      *
@@ -247,7 +257,7 @@ public class UsbManager {
      * data using {@link android.hardware.usb.UsbRequest}.
      *
      * @param device the device to open
-     * @return true if we successfully opened the device
+     * @return a {@link UsbDeviceConnection}, or {@code null} if open failed
      */
     public UsbDeviceConnection openDevice(UsbDevice device) {
         try {

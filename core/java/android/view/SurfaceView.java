@@ -230,7 +230,17 @@ public class SurfaceView extends View {
     public void setVisibility(int visibility) {
         super.setVisibility(visibility);
         mViewVisibility = visibility == VISIBLE;
-        mRequestedVisible = mWindowVisibility && mViewVisibility;
+        boolean newRequestedVisible = mWindowVisibility && mViewVisibility;
+        if (newRequestedVisible != mRequestedVisible) {
+            // our base class (View) invalidates the layout only when
+            // we go from/to the GONE state. However, SurfaceView needs
+            // to request a re-layout when the visibility changes at all.
+            // This is needed because the transparent region is computed
+            // as part of the layout phase, and it changes (obviously) when
+            // the visibility changes.
+            requestLayout();
+        }
+        mRequestedVisible = newRequestedVisible;
         updateWindow(false, false);
     }
 
@@ -384,7 +394,7 @@ public class SurfaceView extends View {
         if (!mHaveFrame) {
             return;
         }
-        ViewRootImpl viewRoot = (ViewRootImpl) getRootView().getParent();
+        ViewRootImpl viewRoot = getViewRootImpl();
         if (viewRoot != null) {
             mTranslator = viewRoot.mTranslator;
         }
@@ -521,7 +531,7 @@ public class SurfaceView extends View {
 
                     mSurface.transferFrom(mNewSurface);
 
-                    if (visible) {
+                    if (visible && mSurface.isValid()) {
                         if (!mSurfaceCreated && (surfaceChanged || visibleChanged)) {
                             mSurfaceCreated = true;
                             mIsCreating = true;
@@ -605,7 +615,7 @@ public class SurfaceView extends View {
             mSurfaceView = new WeakReference<SurfaceView>(surfaceView);
         }
 
-        public void resized(int w, int h, Rect coveredInsets,
+        public void resized(int w, int h, Rect contentInsets,
                 Rect visibleInsets, boolean reportDraw, Configuration newConfig) {
             SurfaceView surfaceView = mSurfaceView.get();
             if (surfaceView != null) {
@@ -692,16 +702,7 @@ public class SurfaceView extends View {
         }
 
         public void setFormat(int format) {
-            switch (format) {
-                case STEREOSCOPIC_3D_FORMAT_SIDE_BY_SIDE_HALF_L_R:
-                case STEREOSCOPIC_3D_FORMAT_SIDE_BY_SIDE_R_L:
-                case STEREOSCOPIC_3D_FORMAT_TOP_BOTTOM:
-                case STEREOSCOPIC_3D_FORMAT_INTERLEAVED:
-                    mSurface.setStereoscopic3DFormat(format);
-                    return;
-                default:
-                    break;
-            }
+
             // for backward compatibility reason, OPAQUE always
             // means 565 for SurfaceView
             if (format == PixelFormat.OPAQUE)

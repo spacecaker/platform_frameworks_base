@@ -37,6 +37,11 @@
 // Textures used by layers must have dimensions multiples of this number
 #define LAYER_SIZE 64
 
+// Defines the size in bits of the stencil buffer
+// Note: Only 1 bit is required for clipping but more bits are required
+// to properly implement the winding fill rule when rasterizing paths
+#define STENCIL_BUFFER_SIZE 0
+
 /**
  * Debug level for app developers.
  */
@@ -73,6 +78,12 @@ enum DebugLevel {
 #define PROPERTY_TEXT_BLACK_GAMMA_THRESHOLD "ro.text_gamma.black_threshold"
 #define PROPERTY_TEXT_WHITE_GAMMA_THRESHOLD "ro.text_gamma.white_threshold"
 
+// Subpixel positioning
+#define PROPERTY_TEXT_SUBPIXEL_POSITIONING "ro.text_subpixel_positioning"
+
+// TODO: This should be set by a system property
+#define PANEL_BIT_DEPTH 20
+
 // Converts a number of mega-bytes into bytes
 #define MB(s) s * 1024 * 1024
 
@@ -84,6 +95,7 @@ enum DebugLevel {
 #define DEFAULT_GRADIENT_CACHE_SIZE 0.5f
 #define DEFAULT_DROP_SHADOW_CACHE_SIZE 2.0f
 #define DEFAULT_FBO_CACHE_SIZE 16
+#define DEFAULT_TEXT_SUBPIXEL_POSITIONING false
 
 #define DEFAULT_TEXTURE_CACHE_FLUSH_RATE 0.6f
 

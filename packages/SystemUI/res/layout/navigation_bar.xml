@@ -23,7 +23,7 @@
     xmlns:systemui="http://schemas.android.com/apk/res/com.android.systemui"
     android:layout_height="match_parent"
     android:layout_width="match_parent"
-    android:background="#FF000000"
+    android:background="@drawable/nav_bar_bg"
     >
 
     <FrameLayout android:id="@+id/rot0"
@@ -41,6 +41,7 @@
             >
             <include layout="@layout/mid_navigation_bar_port"/>
         </LinearLayout>
+
         <!-- lights out layout to match exactly -->
         <LinearLayout
             android:layout_height="match_parent"
@@ -95,13 +96,13 @@
                 android:src="@drawable/ic_sysbar_lights_out_dot_large"
                 android:scaleType="center"
                 />
-
         </LinearLayout>
-        <View android:id="@+id/deadzone"
+
+        <com.android.systemui.statusbar.policy.DeadZone
+            android:id="@+id/deadzone"
             android:layout_height="@dimen/navigation_bar_deadzone_size"
             android:layout_width="match_parent"
             android:layout_gravity="top"
-            android:clickable="true"
             />
     </FrameLayout>
 
@@ -181,11 +182,11 @@
                 />
         </LinearLayout>
 
-        <View android:id="@+id/deadzone"
+        <com.android.systemui.statusbar.policy.DeadZone
+            android:id="@+id/deadzone"
             android:layout_width="@dimen/navigation_bar_deadzone_size"
             android:layout_height="match_parent"
             android:layout_gravity="left"
-            android:clickable="true"
             />
     </FrameLayout>
 

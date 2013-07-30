@@ -22,12 +22,25 @@
 <com.android.systemui.statusbar.phone.PhoneStatusBarView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:systemui="http://schemas.android.com/apk/res/com.android.systemui"
+    android:id="@+id/status_bar"
     android:background="@drawable/status_bar_background"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:focusable="true"
     android:descendantFocusability="afterDescendants"
+    android:fitsSystemWindows="true"
     >
+
+    <ImageView
+        android:id="@+id/notification_lights_out"
+        android:layout_width="@dimen/status_bar_icon_size"
+        android:layout_height="match_parent"
+        android:paddingLeft="6dip"
+		android:paddingBottom="2dip"
+        android:src="@drawable/ic_sysbar_lights_out_dot_small"
+        android:scaleType="center"
+        android:visibility="gone"
+        />
 
     <LinearLayout android:id="@+id/icons"
         android:layout_width="match_parent"
@@ -38,6 +51,7 @@
         >
 
         <LinearLayout
+			android:id="@+id/notification_icon_area"
             android:layout_width="0dip"
             android:layout_height="match_parent"
             android:layout_weight="1"
@@ -72,7 +86,7 @@
             android:orientation="horizontal"
             android:gravity="center"
             >
-            <include layout="@layout/signal_cluster_view"
+            <include layout="@layout/signal_cluster_view" 
                 android:id="@+id/signal_cluster"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -118,22 +132,8 @@
             android:singleLine="true"
             android:paddingLeft="6dip"
             android:gravity="center_vertical|left"
+            android:clickable="false"
             />
-    </LinearLayout>
-
-    <LinearLayout
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:layout_width="fill_parent"
-        android:layout_height="fill_parent">
-            <com.android.systemui.statusbar.policy.CenterClock
-                android:textAppearance="@style/TextAppearance.StatusBar.Clock"
-                android:gravity="center"
-                android:id="@+id/centerclock"
-                android:paddingLeft="6.0dip"
-                android:layout_width="wrap_content"
-                android:layout_height="fill_parent"
-                android:singleLine="true" />
     </LinearLayout>
         
     <LinearLayout android:id="@+id/ticker"

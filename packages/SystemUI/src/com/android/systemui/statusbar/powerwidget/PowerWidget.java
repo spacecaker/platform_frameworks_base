@@ -31,18 +31,18 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
-import android.view.ViewGroup;
 
 import com.android.systemui.R;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class PowerWidget extends FrameLayout {
     private static final String TAG = "PowerWidget";
@@ -62,7 +62,7 @@ public class PowerWidget extends FrameLayout {
     private static final LinearLayout.LayoutParams BUTTON_LAYOUT_PARAMS = new LinearLayout.LayoutParams(
                                         ViewGroup.LayoutParams.WRAP_CONTENT, // width = wrap_content
                                         ViewGroup.LayoutParams.MATCH_PARENT, // height = match_parent
-                                        1.0f                                    // weight = 1
+                                        1.0f                                 // weight = 1
                                         );
 
     private static final int LAYOUT_SCROLL_BUTTON_THRESHOLD = 6;
@@ -111,7 +111,7 @@ public class PowerWidget extends FrameLayout {
     private long[] mLongPressVibePattern;
 
     private LinearLayout mButtonLayout;
-    private HorizontalScrollView mScrollView;
+    private SnappingScrollView mScrollView;
 
     public PowerWidget(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -128,6 +128,11 @@ public class PowerWidget extends FrameLayout {
         // get an initial width
         updateButtonLayoutWidth();
         setupWidget();
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
         updateVisibility();
     }
 
@@ -191,7 +196,7 @@ public class PowerWidget extends FrameLayout {
         setupBroadcastReceiver();
         IntentFilter filter = getMergedBroadcastIntentFilter();
         // we add this so we can update views and such if the settings for our widget change
-        filter.addAction(Settings.SETTINGS_CHANGED);
+        //filter.addAction(Settings.SETTINGS_CHANGED);
         // we need to detect orientation changes and update the static button width value appropriately
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         // register the receiver
@@ -247,6 +252,44 @@ public class PowerWidget extends FrameLayout {
         mButtonNames.clear();
     }
 
+    static class SnappingScrollView extends HorizontalScrollView {
+
+        private boolean mSnapTrigger = false;
+
+        public SnappingScrollView(Context context) {
+            super(context);
+        }
+
+        Runnable mSnapRunnable = new Runnable(){
+            @Override
+            public void run() {
+                int mSelectedItem = ((getScrollX() + (BUTTON_LAYOUT_PARAMS.width / 2)) / BUTTON_LAYOUT_PARAMS.width);
+                int scrollTo = mSelectedItem * BUTTON_LAYOUT_PARAMS.width;
+                smoothScrollTo(scrollTo, 0);
+                mSnapTrigger = false;
+            }
+        };
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            if (Math.abs(oldl - l) <= 1 && mSnapTrigger) {
+                removeCallbacks(mSnapRunnable);
+                postDelayed(mSnapRunnable, 100);
+            }
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent ev) {
+            int action = ev.getAction();
+            if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP) {
+                mSnapTrigger = true;
+            }
+            return super.onTouchEvent(ev);
+        }
+
+    }
+
     private void recreateButtonLayout() {
         removeAllViews();
 
@@ -267,7 +310,7 @@ public class PowerWidget extends FrameLayout {
         // we determine if we're using a horizontal scroll view based on a threshold of button counts
         if (mButtonLayout.getChildCount() > LAYOUT_SCROLL_BUTTON_THRESHOLD) {
             // we need our horizontal scroll view to wrap the linear layout
-            mScrollView = new HorizontalScrollView(mContext);
+            mScrollView = new SnappingScrollView(mContext);
             // make the fading edge the size of a button (makes it more noticible that we can scroll
             mScrollView.setFadingEdgeLength(mContext.getResources().getDisplayMetrics().widthPixels / LAYOUT_SCROLL_BUTTON_THRESHOLD);
             mScrollView.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET);
@@ -365,15 +408,6 @@ public class PowerWidget extends FrameLayout {
         boolean hideScrollBar = Settings.System.getInt(mContext.getContentResolver(),
                     Settings.System.EXPANDED_HIDE_SCROLLBAR, 0) == 1;
         mScrollView.setHorizontalScrollBarEnabled(!hideScrollBar);
-
-        // set the padding on the linear layout to the size of our scrollbar,
-        // so we don't have them overlap
-        // need to be here for make use of EXPANDED_HIDE_SCROLLBAR, expanding or collapsing
-        // the space used by the scrollbar
-        if (mButtonLayout != null) {
-            mButtonLayout.setPadding(0, 0, 0,
-                    !hideScrollBar ? mScrollView.getVerticalScrollbarWidth() : 0);
-        }
     }
 
     private void updateHapticFeedbackSetting() {
@@ -455,17 +489,7 @@ public class PowerWidget extends FrameLayout {
                     Settings.System.getUriFor(Settings.System.WIDGET_BUTTONS),
                             false, this);
 
-            // watch for changes in color
-            resolver.registerContentObserver(
-                    Settings.System.getUriFor(Settings.System.EXPANDED_VIEW_WIDGET_COLOR),
-                            false, this);
-
-            // watch for changes in indicator visibility
-            resolver.registerContentObserver(
-                    Settings.System.getUriFor(Settings.System.EXPANDED_HIDE_INDICATOR),
-                            false, this);
-
-            // watch for power-button specifc stuff that has been loaded
+            // watch for power-button specific stuff that has been loaded
             for(Uri uri : getAllObservedUris()) {
                 resolver.registerContentObserver(uri, false, this);
             }
@@ -478,7 +502,7 @@ public class PowerWidget extends FrameLayout {
         }
 
         @Override
-        public void onChangeUri(Uri uri, boolean selfChange) {
+        public void onChange(boolean selfChange, Uri uri) {
             ContentResolver resolver = mContext.getContentResolver();
             Resources res = mContext.getResources();
 
@@ -490,8 +514,7 @@ public class PowerWidget extends FrameLayout {
                 updateVisibility();
             // now check for scrollbar hiding
             } else if(uri.equals(Settings.System.getUriFor(Settings.System.EXPANDED_HIDE_SCROLLBAR))) {
-                // Needed to remove scrollview to gain the space of the scrollable area
-                recreateButtonLayout();
+                updateScrollbar();
             }
 
             if (uri.equals(Settings.System.getUriFor(Settings.System.HAPTIC_FEEDBACK_ENABLED))

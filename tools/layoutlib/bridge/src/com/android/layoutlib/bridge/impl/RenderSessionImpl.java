@@ -33,10 +33,10 @@ import com.android.ide.common.rendering.api.RenderSession;
 import com.android.ide.common.rendering.api.ResourceReference;
 import com.android.ide.common.rendering.api.ResourceValue;
 import com.android.ide.common.rendering.api.Result;
-import com.android.ide.common.rendering.api.SessionParams;
-import com.android.ide.common.rendering.api.ViewInfo;
 import com.android.ide.common.rendering.api.Result.Status;
+import com.android.ide.common.rendering.api.SessionParams;
 import com.android.ide.common.rendering.api.SessionParams.RenderingMode;
+import com.android.ide.common.rendering.api.ViewInfo;
 import com.android.internal.util.XmlUtils;
 import com.android.layoutlib.bridge.Bridge;
 import com.android.layoutlib.bridge.android.BridgeContext;
@@ -69,8 +69,8 @@ import android.util.TypedValue;
 import android.view.AttachInfo_Accessor;
 import android.view.BridgeInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.View.MeasureSpec;
+import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
 import android.view.ViewGroup.MarginLayoutParams;
 import android.widget.AbsListView;
@@ -82,8 +82,8 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.QuickContactBadge;
 import android.widget.TabHost;
-import android.widget.TabWidget;
 import android.widget.TabHost.TabSpec;
+import android.widget.TabWidget;
 
 import java.awt.AlphaComposite;
 import java.awt.Color;
@@ -835,6 +835,7 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
                 previousTransition.addTransitionListener(new TransitionListener() {
                     private int mChangeDisappearingCount = 0;
 
+                    @Override
                     public void startTransition(LayoutTransition transition, ViewGroup container,
                             View view, int transitionType) {
                         if (transitionType == LayoutTransition.CHANGE_DISAPPEARING) {
@@ -842,6 +843,7 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
                         }
                     }
 
+                    @Override
                     public void endTransition(LayoutTransition transition, ViewGroup container,
                             View view, int transitionType) {
                         if (transitionType == LayoutTransition.CHANGE_DISAPPEARING) {
@@ -950,7 +952,8 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
 
     private void findBackground(RenderResources resources) {
         if (getParams().isBgColorOverridden() == false) {
-            mWindowBackground = resources.findItemInTheme("windowBackground");
+            mWindowBackground = resources.findItemInTheme("windowBackground",
+                    true /*isFrameworkAttr*/);
             if (mWindowBackground != null) {
                 mWindowBackground = resources.resolveResValue(mWindowBackground);
             }
@@ -1001,7 +1004,8 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
             mActionBarSize = DEFAULT_TITLE_BAR_HEIGHT;
 
             // get value from the theme.
-            ResourceValue value = resources.findItemInTheme("actionBarSize");
+            ResourceValue value = resources.findItemInTheme("actionBarSize",
+                    true /*isFrameworkAttr*/);
 
             // resolve it
             value = resources.resolveResValue(value);
@@ -1026,7 +1030,8 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
                 mTitleBarSize = DEFAULT_TITLE_BAR_HEIGHT;
 
                 // get value from the theme.
-                ResourceValue value = resources.findItemInTheme("windowTitleSize");
+                ResourceValue value = resources.findItemInTheme("windowTitleSize",
+                        true /*isFrameworkAttr*/);
 
                 // resolve it
                 value = resources.resolveResValue(value);
@@ -1066,11 +1071,20 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
         }
     }
 
+    /**
+     * Looks for a attribute in the current theme. The attribute is in the android
+     * namespace.
+     *
+     * @param resources the render resources
+     * @param name the name of the attribute
+     * @param defaultValue the default value.
+     * @return the value of the attribute or the default one if not found.
+     */
     private boolean getBooleanThemeValue(RenderResources resources,
             String name, boolean defaultValue) {
 
         // get the title bar flag from the current theme.
-        ResourceValue value = resources.findItemInTheme(name);
+        ResourceValue value = resources.findItemInTheme(name, true /*isFrameworkAttr*/);
 
         // because it may reference something else, we resolve it.
         value = resources.resolveResValue(value);
@@ -1227,6 +1241,7 @@ public class RenderSessionImpl extends RenderAction<SessionParams> {
             TabSpec spec = tabHost.newTabSpec("tag").setIndicator("Tab Label",
                     tabHost.getResources().getDrawable(android.R.drawable.ic_menu_info_details))
                     .setContent(new TabHost.TabContentFactory() {
+                        @Override
                         public View createTabContent(String tag) {
                             return new LinearLayout(getContext());
                         }

@@ -380,6 +380,7 @@ public final class ServerOperation implements Operation, BaseStream {
                     out.write((byte)bodyLength);
                     out.write(body);
                 }
+
             }
         }
 
@@ -390,7 +391,6 @@ public final class ServerOperation implements Operation, BaseStream {
                out.write((byte)(orginalBodyLength >> 8));
                out.write((byte)orginalBodyLength);
            }
-
         }
 
         mResponseSize = 3;

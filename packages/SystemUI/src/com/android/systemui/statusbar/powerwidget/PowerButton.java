@@ -1,25 +1,23 @@
 package com.android.systemui.statusbar.powerwidget;
 
-import com.android.systemui.R;
-
 import android.app.ActivityManagerNative;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
-import android.content.res.Resources;
-import android.graphics.drawable.Drawable;
 import android.graphics.PorterDuff.Mode;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.Vibrator;
-import android.util.Log;
-import android.widget.ImageView;
-import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.View;
+import android.widget.ImageView;
+
+import com.android.systemui.R;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,7 +52,7 @@ public abstract class PowerButton {
     public static final String BUTTON_LTE = "toggleLte";
     public static final String BUTTON_WIMAX = "toggleWimax";
     public static final String BUTTON_UNKNOWN = "unknown";
-
+    private static final String SEPARATOR = "OV=I=XseparatorX=I=VO";
     private static final Mode MASK_MODE = Mode.SCREEN;
 
     protected int mIcon;
@@ -63,7 +61,6 @@ public abstract class PowerButton {
     protected String mType = BUTTON_UNKNOWN;
 
     private ImageView mIconView;
-    private ImageView mIndicatorView;
 
     private View.OnClickListener mExternalClickListener;
     private View.OnLongClickListener mExternalLongClickListener;
@@ -80,32 +77,6 @@ public abstract class PowerButton {
             if (mIconView != null) {
                 mIconView.setImageResource(mIcon);
             }
-            if (mIndicatorView != null) {
-                Context context = mIndicatorView.getContext();
-                ContentResolver cr = context.getContentResolver();
-                Resources res = context.getResources();
-
-                boolean visible = Settings.System.getInt(cr,
-                        Settings.System.EXPANDED_HIDE_INDICATOR, 0) != 1;
-                int colorMask = res.getColor(android.R.color.holo_blue_light);
-
-                mIndicatorView.setVisibility(visible ? View.VISIBLE : View.GONE);
-
-                switch (mState) {
-                    case STATE_ENABLED:
-                        colorMask = (colorMask & 0x00FFFFFF) | 0xA0000000;
-                        break;
-                    case STATE_DISABLED:
-                        colorMask = (colorMask & 0x00FFFFFF) | 0x33000000;
-                        break;
-                    default:
-                        colorMask = (colorMask & 0x00FFFFFF) | 0x60000000;
-                        break;
-                }
-
-                mIndicatorView.setImageDrawable(context.getResources().getDrawable(
-                            R.drawable.stat_bgon_custom, colorMask, MASK_MODE));
-            }
         }
     };
 
@@ -116,6 +87,14 @@ public abstract class PowerButton {
     protected void update(Context context) {
         updateState(context);
         updateView();
+    }
+
+    public String[] parseStoredValue(CharSequence val) {
+        if (TextUtils.isEmpty(val)) {
+          return null;
+        } else {
+          return val.toString().split(SEPARATOR);
+        }
     }
 
     protected void onReceive(Context context, Intent intent) {
@@ -151,11 +130,9 @@ public abstract class PowerButton {
             mView.setOnLongClickListener(mLongClickListener);
 
             mIconView = (ImageView) mView.findViewById(R.id.power_widget_button_image);
-            mIndicatorView = (ImageView) mView.findViewById(R.id.power_widget_button_indic);
             mVibrator = (Vibrator) mView.getContext().getSystemService(Context.VIBRATOR_SERVICE);
         } else {
             mIconView = null;
-            mIndicatorView = null;
         }
     }
 
@@ -166,7 +143,13 @@ public abstract class PowerButton {
     private View.OnClickListener mClickListener = new View.OnClickListener() {
         public void onClick(View v) {
             if (mHapticFeedback && mClickPattern != null) {
-                mVibrator.vibrate(mClickPattern, -1);
+                if (mClickPattern.length == 1) {
+                    // One-shot vibration
+                    mVibrator.vibrate(mClickPattern[0]);
+                } else {
+                    // Pattern vibration
+                    mVibrator.vibrate(mClickPattern, -1);
+                }
             }
             toggleState(v.getContext());
             update(v.getContext());
